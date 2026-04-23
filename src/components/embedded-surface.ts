@@ -47,7 +47,14 @@ const EmbeddedSurfaceComponent: DisplayComponent<EmbeddedSurfaceProps, EmbeddedS
   },
   render(ctx) {
     const theme = ctx.services.theme.getTokens();
-    const viewportRect = getViewportRect(ctx.bounds, theme.padding);
+    const attachment = ctx.services.surfaces.getAttachment(ctx.id);
+    const viewportRect = getViewportRect(
+      ctx.bounds,
+      theme.padding,
+      Boolean(ctx.props.title),
+      attachment?.preserveAspectRatio ?? ctx.props.preserveAspectRatio ?? true,
+      attachment?.aspectRatio
+    );
     const commands: DrawCommand[] = [
       {
         type: "rect" as const,
@@ -161,11 +168,23 @@ const EmbeddedSurfaceComponent: DisplayComponent<EmbeddedSurfaceProps, EmbeddedS
       return { targetId: `${ctx.id}:dismiss`, role: "dismiss" };
     }
 
-    if (rectContainsPoint(getViewportRect(ctx.bounds, theme.padding), ctx.point)) {
+    if (!(ctx.props.interactive ?? false)) {
+      return null;
+    }
+
+    const attachment = ctx.services.surfaces.getAttachment(ctx.id);
+    const viewportRect = getViewportRect(
+      ctx.bounds,
+      theme.padding,
+      Boolean(ctx.props.title),
+      attachment?.preserveAspectRatio ?? ctx.props.preserveAspectRatio ?? true,
+      attachment?.aspectRatio
+    );
+    if (rectContainsPoint(viewportRect, ctx.point)) {
       return { targetId: `${ctx.id}:viewport`, role: "viewport" };
     }
 
-    return { targetId: `${ctx.id}:frame`, role: "frame" };
+    return null;
   },
   handleEvent(ctx) {
     if (!isDisplayEvent(ctx.event)) {
@@ -238,12 +257,42 @@ export function createEmbeddedSurface(
   return createNode(id, EmbeddedSurfaceComponent, props);
 }
 
-function getViewportRect(bounds: Rect, padding: number): Rect {
-  return createRect(
+function getViewportRect(
+  bounds: Rect,
+  padding: number,
+  hasTitle: boolean,
+  preserveAspectRatio: boolean,
+  aspectRatio: number | undefined
+): Rect {
+  const headerHeight = hasTitle ? 20 : 0;
+  const availableRect = createRect(
     bounds.x + padding,
-    bounds.y + padding + 20,
+    bounds.y + padding + headerHeight,
     Math.max(0, bounds.width - padding * 2),
-    Math.max(0, bounds.height - padding * 2 - 20)
+    Math.max(0, bounds.height - padding * 2 - headerHeight)
+  );
+  if (!preserveAspectRatio || !aspectRatio || aspectRatio <= 0) {
+    return availableRect;
+  }
+
+  const availableAspectRatio =
+    availableRect.height > 0 ? availableRect.width / availableRect.height : aspectRatio;
+  if (availableAspectRatio >= aspectRatio) {
+    const width = availableRect.height * aspectRatio;
+    return createRect(
+      availableRect.x + (availableRect.width - width) / 2,
+      availableRect.y,
+      width,
+      availableRect.height
+    );
+  }
+
+  const height = availableRect.width / aspectRatio;
+  return createRect(
+    availableRect.x,
+    availableRect.y + (availableRect.height - height) / 2,
+    availableRect.width,
+    height
   );
 }
 

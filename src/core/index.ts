@@ -61,7 +61,8 @@ export type {
   PointerType,
   PointerUpEvent,
   PressEvent,
-  ScrollEvent
+  ScrollEvent,
+  TickEvent
 } from "./events.js";
 export { DEFAULT_MODIFIERS } from "./events.js";
 export type {

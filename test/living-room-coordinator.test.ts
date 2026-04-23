@@ -76,4 +76,40 @@ describe("living room panel coordinator", () => {
     });
     expect(calls).toEqual(["hud:process", "tv:process"]);
   });
+
+  it("lets an empty overlay HUD miss fall through to the wall panel in the same frame", () => {
+    const calls: string[] = [];
+    const panels: CoordinatedPanel<{ pointerId: string }, undefined>[] = [
+      {
+        key: "hud",
+        enabled: true,
+        process() {
+          calls.push("hud:empty");
+          return { claimed: false, blocked: false };
+        },
+        clearPointer(pointerId) {
+          calls.push(`hud:clear:${pointerId}`);
+        }
+      },
+      {
+        key: "tv",
+        enabled: true,
+        process() {
+          calls.push("tv:hit");
+          return { claimed: true, blocked: true };
+        },
+        clearPointer(pointerId) {
+          calls.push(`tv:clear:${pointerId}`);
+        }
+      }
+    ];
+
+    const result = routePointerSample(panels, { pointerId: "overlay-miss" }, undefined);
+
+    expect(result).toEqual({
+      ownerKey: "tv",
+      blocked: true
+    });
+    expect(calls).toEqual(["hud:empty", "tv:hit"]);
+  });
 });

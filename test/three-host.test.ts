@@ -177,7 +177,7 @@ describe("three host adapters", () => {
       ]
     });
 
-    expect(host.mesh.parent).toBe(camera);
+    expect(host.mesh.parent).toBe(scene);
     expect(host.mesh.position.x).toBeCloseTo(0.1);
     expect(host.mesh.position.y).toBeCloseTo(-0.05);
     expect(host.mesh.position.z).toBeCloseTo(-0.75);
@@ -190,6 +190,89 @@ describe("three host adapters", () => {
       blocked: true,
       source: "screen"
     });
+
+    host.detach();
+  });
+
+  it("supports viewport-sized HUD overlays that track active surface metrics", () => {
+    const runtime = createRuntime({
+      root: createButtonFixture(),
+      surface: { width: 160, height: 100 }
+    });
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 640 / 360, 0.1, 10);
+    camera.updateProjectionMatrix();
+    scene.add(camera);
+
+    const host = createHudHost({
+      runtime,
+      surface: { width: 160, height: 100 },
+      distance: 0.75,
+      sizing: "viewport",
+      createCanvas: createFakeCanvas
+    });
+
+    host.attach();
+    host.update({
+      scene,
+      camera,
+      surfaceMetrics: {
+        width: 640,
+        height: 360,
+        pixelDensity: 2
+      }
+    });
+
+    const expectedHeight = 2 * Math.tan((THREE.MathUtils.degToRad(50) / 2)) * 0.75;
+    const expectedWidth = expectedHeight * (640 / 360);
+
+    expect(host.mesh.parent).toBe(scene);
+    expect(host.mesh.scale.x).toBeCloseTo(expectedWidth, 5);
+    expect(host.mesh.scale.y).toBeCloseTo(expectedHeight, 5);
+    expect(host.getSurfaceMetrics()).toMatchObject({
+      width: 640,
+      height: 360,
+      pixelDensity: 2
+    });
+    expect(host.canvas.width).toBe(1280);
+    expect(host.canvas.height).toBe(720);
+
+    host.detach();
+  });
+
+  it("anchors HUD placement from the camera world transform instead of camera parenting", () => {
+    const runtime = createRuntime({
+      root: createButtonFixture(),
+      surface: { width: 160, height: 100 }
+    });
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1.6, 0.1, 10);
+    camera.position.set(0.25, 0.4, 1.5);
+    camera.updateMatrixWorld(true);
+    scene.add(camera);
+
+    const host = createHudHost({
+      runtime,
+      surface: { width: 160, height: 100 },
+      panelWidth: 1,
+      panelHeight: 0.625,
+      distance: 0.75,
+      offset: { x: 0.1, y: -0.05 },
+      createCanvas: createFakeCanvas
+    });
+
+    host.attach();
+    host.update({
+      scene,
+      camera
+    });
+
+    expect(host.mesh.parent).toBe(scene);
+    expect(host.mesh.position.x).toBeCloseTo(0.35);
+    expect(host.mesh.position.y).toBeCloseTo(0.35);
+    expect(host.mesh.position.z).toBeCloseTo(0.75);
 
     host.detach();
   });

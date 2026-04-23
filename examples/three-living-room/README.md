@@ -8,12 +8,15 @@ npm run example:living-room
 
 Desktop controls:
 
-- `W`, `A`, `S`, `D`: walk around the room
-- Right mouse drag: look around
-- Left click: interact with the HUD or TV touch panels
+- `W`, `A`, `S`, `D`: fallback keyboard locomotion
+- Right mouse drag or `Shift` + left drag: look around
+- Left click: interact with the transparent HUD overlay or the TV panel
+- Hold the HUD movement controls to drive continuous motion
+- Hold the HUD turn controls to rotate; hold the speed controls to adjust move speed
 
 XR behavior:
 
-- Enter XR with the button shown in the demo overlay
-- The desktop HUD hides and the arm-mounted controller panel appears
+- Enter XR with the browser XR button in the top-right corner
+- A reduced HUD remains visible in XR with just the rear-view mirror
+- The arm-mounted controller panel still appears for interactive controls
 - Use the dominant controller ray to interact with the arm panel or the TV

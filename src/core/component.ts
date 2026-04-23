@@ -130,6 +130,7 @@ export function isDisplayEvent(event: ComponentEvent): event is DisplayEvent {
     case "scroll":
     case "focus":
     case "blur":
+    case "tick":
       return true;
     default:
       return false;

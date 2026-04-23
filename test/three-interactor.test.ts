@@ -1,9 +1,14 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { createRuntime } from "../src/index.js";
+import {
+  createDockLayout,
+  createHoldButton,
+  createRuntime
+} from "../src/index.js";
 import { createButtonFixture } from "../src/examples/reference-fixtures.js";
 import {
   createDirectTouchPointerSource,
+  createHudHost,
   createPanelInteractor,
   createScenePanelDriver,
   createScenePanelHost,
@@ -213,6 +218,165 @@ describe("three interactor", () => {
     host.detach();
   });
 
+  it("lets empty viewport-sized HUD space pass through", () => {
+    const runtime = createRuntime({
+      root: createDockLayout("hud-root", {
+        topLeft: {
+          maxWidth: 180,
+          child: createButtonFixture()
+        }
+      }),
+      surface: { width: 800, height: 600 }
+    });
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 800 / 600, 0.1, 10);
+    camera.position.set(0, 0, 1);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    scene.add(camera);
+
+    const host = createHudHost({
+      runtime,
+      surface: { width: 800, height: 600 },
+      distance: 0.75,
+      sizing: "viewport",
+      createCanvas: createFakeCanvas
+    });
+    host.attach();
+    host.update({
+      scene,
+      camera,
+      surfaceMetrics: { width: 800, height: 600, pixelDensity: 1 }
+    });
+
+    const interactor = createPanelInteractor({
+      runtime,
+      mesh: host.mesh,
+      getSurfaceMetrics: () => host.getSurfaceMetrics(),
+      pointerClaimPolicy: "block-on-hit"
+    });
+
+    const result = interactor.process(
+      {
+        pointerId: "pointer-empty",
+        pointerType: "mouse",
+        transport: "screen",
+        phase: "move",
+        timestamp: 1,
+        ndcX: 0,
+        ndcY: 0
+      },
+      { scene, camera, surfaceMetrics: { width: 800, height: 600, pixelDensity: 1 } }
+    );
+
+    expect(result.claimed).toBe(false);
+    expect(result.blocked).toBe(false);
+    expect(result.hit).toBeNull();
+
+    host.detach();
+  });
+
+  it("keeps a successful HUD press captured until release or clear", () => {
+    const runtime = createRuntime({
+      root: createDockLayout("hud-root", {
+        topLeft: {
+          maxWidth: 180,
+          child: createHoldButton("hold-test", {
+            label: "Forward",
+            actionId: "movement.set",
+            startPayload: { intent: "forward", active: true },
+            stopPayload: { intent: "forward", active: false }
+          })
+        }
+      }),
+      surface: { width: 800, height: 600 }
+    });
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 800 / 600, 0.1, 10);
+    camera.position.set(0, 0, 1);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    scene.add(camera);
+
+    const host = createHudHost({
+      runtime,
+      surface: { width: 800, height: 600 },
+      distance: 0.75,
+      sizing: "viewport",
+      createCanvas: createFakeCanvas
+    });
+    host.attach();
+    host.update({
+      scene,
+      camera,
+      surfaceMetrics: { width: 800, height: 600, pixelDensity: 1 }
+    });
+
+    const interactor = createPanelInteractor({
+      runtime,
+      mesh: host.mesh,
+      getSurfaceMetrics: () => host.getSurfaceMetrics(),
+      pointerClaimPolicy: "block-on-hit"
+    });
+
+    runtime.render();
+    const holdBounds = runtime.getBounds("hold-test");
+    if (!holdBounds) {
+      throw new Error("Expected hold button bounds.");
+    }
+
+    const downResult = interactor.process(
+      {
+        pointerId: "pointer-captured",
+        pointerType: "mouse",
+        transport: "screen",
+        phase: "down",
+        timestamp: 1,
+        ...toNdcSample(holdBounds.x + holdBounds.width / 2, holdBounds.y + holdBounds.height / 2, 800, 600)
+      },
+      { scene, camera, surfaceMetrics: { width: 800, height: 600, pixelDensity: 1 } }
+    );
+    expect(downResult.claimed).toBe(true);
+    expect(downResult.blocked).toBe(true);
+    expect(downResult.hit).toMatchObject({
+      componentId: "hold-test",
+      targetId: "hold-test:face"
+    });
+    expect(runtime.takeOutputs()).toContainEqual({
+      type: "action",
+      actionId: "movement.set",
+      componentId: "hold-test",
+      payload: { intent: "forward", active: true }
+    });
+
+    const moveResult = interactor.process(
+      {
+        pointerId: "pointer-captured",
+        pointerType: "mouse",
+        transport: "screen",
+        phase: "move",
+        timestamp: 2,
+        ndcX: 0,
+        ndcY: 0
+      },
+      { scene, camera, surfaceMetrics: { width: 800, height: 600, pixelDensity: 1 } }
+    );
+    expect(moveResult.claimed).toBe(true);
+    expect(moveResult.blocked).toBe(true);
+
+    interactor.clear("pointer-captured");
+    expect(runtime.takeOutputs()).toContainEqual({
+      type: "action",
+      actionId: "movement.set",
+      componentId: "hold-test",
+      payload: { intent: "forward", active: false }
+    });
+
+    host.detach();
+  });
+
   it("drives panel interaction from pointer sources and exposes state", () => {
     const runtime = createRuntime({
       root: createButtonFixture(),
@@ -385,3 +549,15 @@ describe("three interactor", () => {
     driver.detach();
   });
 });
+
+function toNdcSample(
+  surfaceX: number,
+  surfaceY: number,
+  width: number,
+  height: number
+): { ndcX: number; ndcY: number } {
+  return {
+    ndcX: (surfaceX / width) * 2 - 1,
+    ndcY: -((surfaceY / height) * 2 - 1)
+  };
+}

@@ -1,5 +1,8 @@
 import {
+  createDPad,
   createEmbeddedSurface,
+  createHoldButton,
+  createRepeatButton,
   createTextLabel,
   createToggle,
   createValueReadout,
@@ -7,9 +10,16 @@ import {
   type SurfaceMetrics,
   type ThemeTokens
 } from "../../../src/index.js";
-import { createColumn, createSection } from "../../../src/index.js";
-import { MIRROR_COMPONENT_ID } from "./mirror.js";
-import type { RoomDemoState } from "./store.js";
+import {
+  createColumn,
+  createDockLayout,
+  createSection
+} from "../../../src/index.js";
+import {
+  MIRROR_COMPONENT_ID,
+  WALL_MIRROR_COMPONENT_ID
+} from "./mirror.js";
+import type { MovementIntent, RoomDemoState } from "./store.js";
 
 export type RoomPanelVariant = "tv" | "hud" | "arm";
 
@@ -17,34 +27,31 @@ export function createRoomPanelRoot(
   variant: RoomPanelVariant,
   state: RoomDemoState
 ): DisplayNode<unknown> {
+  const isXrHud = variant === "hud" && state.xrActive;
+
   switch (variant) {
     case "tv":
       return createColumn("tv-root", {
         padding: 12,
-        gap: 10,
+        gap: 8,
         backgroundColor: "#08111d",
         children: [
-          createTextLabel("tv-title", {
-            text: "Living Room TV"
+          createToggle("tv-light-toggle", {
+            label: "Lamp",
+            value: state.lightOn,
+            field: "lightOn"
           }),
-          createTextLabel("tv-subtitle", {
-            text: "Touch the wall panel to control the lamp in the room.",
-            tone: "muted"
+          createValueReadout("tv-mode-readout", {
+            label: "Mode",
+            value: state.xrActive ? "XR" : "Desktop"
           }),
-          createSection("tv-light-section", {
-            title: "Room State",
-            backgroundColor: "#0f1b2d",
-            children: [
-              createValueReadout("tv-light-readout", {
-                label: "Lamp",
-                value: state.lightOn ? "On" : "Off"
-              }),
-              createToggle("tv-light-toggle", {
-                label: "Main Light",
-                value: state.lightOn,
-                field: "lightOn"
-              })
-            ]
+          createValueReadout("tv-speed-readout", {
+            label: "Speed",
+            value: formatSpeed(state.moveSpeed)
+          }),
+          createValueReadout("tv-motion-readout", {
+            label: "Move",
+            value: getMovementSummary(state)
           })
         ]
       });
@@ -55,11 +62,7 @@ export function createRoomPanelRoot(
         backgroundColor: "#101826",
         children: [
           createTextLabel("arm-title", {
-            text: "Arm Controls"
-          }),
-          createTextLabel("arm-subtitle", {
-            text: "XR wrist panel for quick room lighting control.",
-            tone: "muted"
+            text: "Wrist Panel"
           }),
           createToggle("arm-light-toggle", {
             label: "Lamp",
@@ -69,61 +72,168 @@ export function createRoomPanelRoot(
           createValueReadout("arm-light-readout", {
             label: "State",
             value: state.lightOn ? "On" : "Off"
+          }),
+          createValueReadout("arm-speed-readout", {
+            label: "Speed",
+            value: formatSpeed(state.moveSpeed)
+          }),
+          createValueReadout("arm-motion-readout", {
+            label: "Move",
+            value: getMovementSummary(state)
           })
         ]
       });
     case "hud":
     default:
-      return createColumn("hud-root", {
-        padding: 10,
-        gap: 8,
-        backgroundColor: "#0d1726",
-        children: [
-          createTextLabel("hud-title", {
-            text: "HUD Controls"
-          }),
-          createToggle("hud-light-toggle", {
-            label: "Lamp",
-            value: state.lightOn,
-            field: "lightOn"
-          }),
-          createValueReadout("hud-light-readout", {
-            label: "State",
-            value: state.lightOn ? "On" : "Off"
+      return createDockLayout("hud-root", {
+        padding: isXrHud
+          ? { top: 280, right: 0, bottom: 0, left: 0 }
+          : 0,
+        ...(isXrHud
+          ? {}
+          : {
+              topLeft: {
+                maxWidth: 340,
+                child: createSection("hud-overview", {
+                  title: "Touch OS Living Room",
+                  backgroundColor: "#0f1b2d",
+                  children: [
+                    createTextLabel("hud-help-line-1", {
+                      text: "WASD moves. Shift-drag or RMB looks.",
+                      tone: "muted"
+                    }),
+                    createTextLabel("hud-help-line-2", {
+                      text: "Hold the HUD controls to drive motion.",
+                      tone: "muted"
+                    }),
+                    createTextLabel("hud-help-line-3", {
+                      text: "The XR button is the only DOM overlay.",
+                      tone: "muted"
+                    }),
+                    createToggle("hud-light-toggle", {
+                      label: "Main Light",
+                      value: state.lightOn,
+                      field: "lightOn"
+                    }),
+                    createValueReadout("hud-mode-readout", {
+                      label: "Mode",
+                      value: state.xrActive ? "XR" : "Desktop"
+                    })
+                  ]
+                })
+              }
+            }),
+        bottomCenter: {
+          maxWidth: isXrHud ? 240 : 320,
+          child: createEmbeddedSurface(MIRROR_COMPONENT_ID, {
+            sourceId: "camera.rear",
+            interactive: false,
+            acceptsForwardedInput: false,
+            fallbackLabel: "Mirror offline",
+            preserveAspectRatio: true,
+            ...(isXrHud ? {} : { title: "Rear View" })
           })
-        ]
+        },
+        ...(isXrHud
+          ? {}
+          : {
+              topRight: {
+                maxWidth: 260,
+                child: createSection("hud-status", {
+                  title: "Status",
+                  backgroundColor: "#0f1b2d",
+                  children: [
+                    createValueReadout("hud-light-readout", {
+                      label: "Lamp",
+                      value: state.lightOn ? "On" : "Off"
+                    }),
+                    createValueReadout("hud-speed-readout", {
+                      label: "Speed",
+                      value: formatSpeed(state.moveSpeed)
+                    }),
+                    createValueReadout("hud-intent-readout", {
+                      label: "Intent",
+                      value: getMovementSummary(state)
+                    })
+                  ]
+                })
+              }
+            }),
+        ...(isXrHud
+          ? {}
+          : {
+              bottomLeft: {
+                maxWidth: 240,
+                child: createSection("hud-move", {
+                  title: "Move",
+                  backgroundColor: "#0f1b2d",
+                  children: [
+                    createDPad("hud-move-dpad", {
+                      up: createMovementBinding("forward", "Fwd"),
+                      down: createMovementBinding("back", "Back"),
+                      left: createMovementBinding("strafeLeft", "Left"),
+                      right: createMovementBinding("strafeRight", "Right")
+                    })
+                  ]
+                })
+              },
+              bottomRight: {
+                maxWidth: 220,
+                child: createSection("hud-turn", {
+                  title: "Turn + Speed",
+                  backgroundColor: "#0f1b2d",
+                  children: [
+                    createHoldButton("hud-turn-left", {
+                      label: "Turn Left",
+                      actionId: "movement.set",
+                      startPayload: { intent: "turnLeft", active: true },
+                      stopPayload: { intent: "turnLeft", active: false }
+                    }),
+                    createHoldButton("hud-turn-right", {
+                      label: "Turn Right",
+                      actionId: "movement.set",
+                      startPayload: { intent: "turnRight", active: true },
+                      stopPayload: { intent: "turnRight", active: false }
+                    }),
+                    createRepeatButton("hud-speed-down", {
+                      label: "Slower",
+                      actionId: "moveSpeed.adjust",
+                      payload: { delta: -0.2 }
+                    }),
+                    createRepeatButton("hud-speed-up", {
+                      label: "Faster",
+                      actionId: "moveSpeed.adjust",
+                      payload: { delta: 0.2 }
+                    })
+                  ]
+                })
+              }
+            })
       });
   }
 }
 
-export function createMirrorRoot(): DisplayNode<unknown> {
-  return createEmbeddedSurface(MIRROR_COMPONENT_ID, {
-    sourceId: "camera.rear",
-    title: "Rear View",
-    interactive: false,
-    acceptsForwardedInput: false,
-    fallbackLabel: "Mirror offline"
-  });
-}
-
 export function getRoomPanelSurface(
-  variant: RoomPanelVariant | "mirror"
+  variant: RoomPanelVariant
 ): Partial<SurfaceMetrics> {
   switch (variant) {
     case "tv":
-      return { width: 480, height: 300 };
+      return { width: 440, height: 280 };
     case "arm":
-      return { width: 320, height: 220 };
-    case "mirror":
-      return { width: 320, height: 200 };
+      return { width: 300, height: 220 };
     case "hud":
     default:
-      return { width: 260, height: 160 };
+      return {
+        width: 1280,
+        height: 720,
+        pixelDensity: 1,
+        safeArea: { top: 18, right: 18, bottom: 18, left: 18 }
+      };
   }
 }
 
 export function getRoomPanelTheme(
-  variant: RoomPanelVariant | "mirror"
+  variant: RoomPanelVariant
 ): Partial<ThemeTokens> {
   switch (variant) {
     case "tv":
@@ -133,7 +243,7 @@ export function getRoomPanelTheme(
         borderColor: "#28456c",
         accentColor: "#f59e0b",
         focusColor: "#34d399",
-        controlHeight: 50,
+        controlHeight: 48,
         spacing: 10,
         padding: 14,
         radius: 10,
@@ -151,25 +261,16 @@ export function getRoomPanelTheme(
         borderColor: "#35506e",
         accentColor: "#fb7185",
         focusColor: "#22c55e",
-        controlHeight: 56,
+        controlHeight: 52,
         spacing: 10,
-        padding: 14,
+        padding: 12,
         radius: 12,
         typography: {
-          fontSize: 16,
-          lineHeight: 20,
+          fontSize: 15,
+          lineHeight: 18,
           fontWeight: 600,
           fontFamily: "Avenir Next, ui-sans-serif"
         }
-      };
-    case "mirror":
-      return {
-        backgroundColor: "#08111d",
-        surfaceColor: "#0f1b2d",
-        borderColor: "#3b4a63",
-        accentColor: "#60a5fa",
-        controlHeight: 40,
-        radius: 10
       };
     case "hud":
     default:
@@ -179,16 +280,80 @@ export function getRoomPanelTheme(
         borderColor: "#27405e",
         accentColor: "#38bdf8",
         focusColor: "#22c55e",
-        controlHeight: 40,
+        controlHeight: 42,
         spacing: 8,
         padding: 12,
         radius: 10,
         typography: {
-          fontSize: 15,
+          fontSize: 14,
           lineHeight: 18,
           fontWeight: 600,
           fontFamily: "Avenir Next, ui-sans-serif"
         }
       };
   }
+}
+
+export function createWallMirrorRoot(): DisplayNode<unknown> {
+  return createEmbeddedSurface(WALL_MIRROR_COMPONENT_ID, {
+    sourceId: "camera.rear.wall",
+    interactive: false,
+    acceptsForwardedInput: false,
+    fallbackLabel: "Wall mirror offline",
+    preserveAspectRatio: true
+  });
+}
+
+export function getWallMirrorSurface(): Partial<SurfaceMetrics> {
+  return { width: 640, height: 360 };
+}
+
+export function getWallMirrorTheme(): Partial<ThemeTokens> {
+  return {
+    backgroundColor: "#08111d",
+    surfaceColor: "#0f1b2d",
+    borderColor: "#3b4a63",
+    accentColor: "#60a5fa",
+    controlHeight: 40,
+    radius: 10
+  };
+}
+
+function createMovementBinding(
+  intent: MovementIntent,
+  label: string
+) {
+  return {
+    label,
+    actionId: "movement.set",
+    startPayload: { intent, active: true },
+    stopPayload: { intent, active: false }
+  };
+}
+
+function formatSpeed(moveSpeed: number): string {
+  return `${moveSpeed.toFixed(1)} m/s`;
+}
+
+function getMovementSummary(state: RoomDemoState): string {
+  const active: string[] = [];
+  if (state.movement.forward) {
+    active.push("Fwd");
+  }
+  if (state.movement.back) {
+    active.push("Back");
+  }
+  if (state.movement.strafeLeft) {
+    active.push("Left");
+  }
+  if (state.movement.strafeRight) {
+    active.push("Right");
+  }
+  if (state.movement.turnLeft) {
+    active.push("Turn L");
+  }
+  if (state.movement.turnRight) {
+    active.push("Turn R");
+  }
+  return active.length > 0 ? active.join(", ") : "Idle";
 }

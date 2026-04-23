@@ -1024,7 +1024,16 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
     timingService.advanceTo(timestamp);
     syncFocusEvents();
     const pointer = activePointer;
-    if (!pointer || pointer.dragging || pointer.longPressFired) {
+    if (!pointer) {
+      return;
+    }
+
+    dispatchToPath(pointer.pathIds, pointer.targetId, () => ({
+      type: "tick",
+      timestamp
+    }));
+
+    if (pointer.dragging || pointer.longPressFired) {
       return;
     }
 

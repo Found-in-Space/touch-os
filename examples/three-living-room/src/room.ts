@@ -26,6 +26,7 @@ export function createLivingRoomScene(): LivingRoomScene {
 
   const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 40);
   camera.position.set(0, 1.65, 1.75);
+  scene.add(camera);
 
   const ambientLight = new THREE.AmbientLight("#f6ead6", 0.55);
   scene.add(ambientLight);
@@ -177,17 +178,6 @@ export function createLivingRoomScene(): LivingRoomScene {
   tvFrame.position.set(0, 1.52, -2.92);
   room.add(tvFrame);
 
-  const mirrorFrame = new THREE.Mesh(
-    new THREE.BoxGeometry(0.98, 0.66, 0.05),
-    new THREE.MeshStandardMaterial({
-      color: "#4a3322",
-      roughness: 0.62
-    })
-  );
-  mirrorFrame.position.set(-2.92, 1.76, 0.55);
-  mirrorFrame.rotation.y = Math.PI / 2;
-  room.add(mirrorFrame);
-
   const lampBase = new THREE.Mesh(
     new THREE.CylinderGeometry(0.18, 0.22, 0.04, 24),
     new THREE.MeshStandardMaterial({
@@ -224,16 +214,13 @@ export function createLivingRoomScene(): LivingRoomScene {
     position: { x: 0, y: 1.52, z: -2.88 },
     quaternion: { x: 0, y: 0, z: 0, w: 1 }
   };
-  const mirrorQuaternion = new THREE.Quaternion().setFromEuler(
-    new THREE.Euler(0, Math.PI / 2, 0)
-  );
   const mirrorAnchor: PanelAnchor = {
-    position: { x: -2.88, y: 1.76, z: 0.55 },
+    position: { x: -3.02, y: 1.52, z: 0 },
     quaternion: {
-      x: mirrorQuaternion.x,
-      y: mirrorQuaternion.y,
-      z: mirrorQuaternion.z,
-      w: mirrorQuaternion.w
+      x: 0,
+      y: Math.sin(Math.PI / 4),
+      z: 0,
+      w: Math.cos(Math.PI / 4)
     }
   };
 

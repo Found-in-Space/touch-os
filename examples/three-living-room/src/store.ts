@@ -1,6 +1,25 @@
+export type MovementIntent =
+  | "forward"
+  | "back"
+  | "strafeLeft"
+  | "strafeRight"
+  | "turnLeft"
+  | "turnRight";
+
+export interface MovementIntentState {
+  forward: boolean;
+  back: boolean;
+  strafeLeft: boolean;
+  strafeRight: boolean;
+  turnLeft: boolean;
+  turnRight: boolean;
+}
+
 export interface RoomDemoState {
   lightOn: boolean;
   xrActive: boolean;
+  moveSpeed: number;
+  movement: MovementIntentState;
 }
 
 export type RoomDemoAction =
@@ -11,6 +30,15 @@ export type RoomDemoAction =
   | {
       type: "xr.set";
       value: boolean;
+    }
+  | {
+      type: "movement.set";
+      intent: MovementIntent;
+      active: boolean;
+    }
+  | {
+      type: "moveSpeed.adjust";
+      delta: number;
     };
 
 export interface RoomDemoStore {
@@ -19,9 +47,20 @@ export interface RoomDemoStore {
   subscribe(listener: () => void): () => void;
 }
 
+const DEFAULT_MOVEMENT: MovementIntentState = {
+  forward: false,
+  back: false,
+  strafeLeft: false,
+  strafeRight: false,
+  turnLeft: false,
+  turnRight: false
+};
+
 const DEFAULT_STATE: RoomDemoState = {
   lightOn: true,
-  xrActive: false
+  xrActive: false,
+  moveSpeed: 1.9,
+  movement: { ...DEFAULT_MOVEMENT }
 };
 
 export function reduceRoomDemoState(
@@ -30,15 +69,38 @@ export function reduceRoomDemoState(
 ): RoomDemoState {
   switch (action.type) {
     case "light.set":
-      return {
-        ...state,
-        lightOn: action.value
-      };
+      return state.lightOn === action.value
+        ? state
+        : {
+            ...state,
+            lightOn: action.value
+          };
     case "xr.set":
-      return {
-        ...state,
-        xrActive: action.value
-      };
+      return state.xrActive === action.value
+        ? state
+        : {
+            ...state,
+            xrActive: action.value
+          };
+    case "movement.set":
+      return state.movement[action.intent] === action.active
+        ? state
+        : {
+            ...state,
+            movement: {
+              ...state.movement,
+              [action.intent]: action.active
+            }
+          };
+    case "moveSpeed.adjust": {
+      const nextSpeed = clampSpeed(state.moveSpeed + action.delta);
+      return nextSpeed === state.moveSpeed
+        ? state
+        : {
+            ...state,
+            moveSpeed: nextSpeed
+          };
+    }
   }
 }
 
@@ -47,7 +109,11 @@ export function createRoomDemoStore(
 ): RoomDemoStore {
   let state: RoomDemoState = {
     ...DEFAULT_STATE,
-    ...initialState
+    ...initialState,
+    movement: {
+      ...DEFAULT_MOVEMENT,
+      ...initialState.movement
+    }
   };
   const listeners = new Set<() => void>();
 
@@ -57,10 +123,7 @@ export function createRoomDemoStore(
     },
     dispatch(action) {
       const nextState = reduceRoomDemoState(state, action);
-      if (
-        nextState.lightOn === state.lightOn &&
-        nextState.xrActive === state.xrActive
-      ) {
+      if (nextState === state) {
         return state;
       }
 
@@ -77,4 +140,8 @@ export function createRoomDemoStore(
       };
     }
   };
+}
+
+function clampSpeed(value: number): number {
+  return Math.max(0.8, Math.min(3.2, Number(value.toFixed(2))));
 }

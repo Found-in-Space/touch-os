@@ -9,7 +9,16 @@ describe("living room demo store", () => {
     const next = reduceRoomDemoState(
       {
         lightOn: false,
-        xrActive: false
+        xrActive: false,
+        moveSpeed: 1.9,
+        movement: {
+          forward: false,
+          back: false,
+          strafeLeft: false,
+          strafeRight: false,
+          turnLeft: false,
+          turnRight: false
+        }
       },
       {
         type: "light.set",
@@ -19,7 +28,16 @@ describe("living room demo store", () => {
 
     expect(next).toEqual({
       lightOn: true,
-      xrActive: false
+      xrActive: false,
+      moveSpeed: 1.9,
+      movement: {
+        forward: false,
+        back: false,
+        strafeLeft: false,
+        strafeRight: false,
+        turnLeft: false,
+        turnRight: false
+      }
     });
   });
 
@@ -43,5 +61,34 @@ describe("living room demo store", () => {
     expect(notifications).toBe(1);
 
     unsubscribe();
+  });
+
+  it("tracks semantic movement intent changes", () => {
+    const next = reduceRoomDemoState(createRoomDemoStore().getState(), {
+      type: "movement.set",
+      intent: "forward",
+      active: true
+    });
+
+    expect(next.movement.forward).toBe(true);
+    expect(next.movement.turnLeft).toBe(false);
+  });
+
+  it("clamps speed adjustments into a usable range", () => {
+    const store = createRoomDemoStore({
+      moveSpeed: 3.1
+    });
+
+    store.dispatch({
+      type: "moveSpeed.adjust",
+      delta: 1
+    });
+    expect(store.getState().moveSpeed).toBe(3.2);
+
+    store.dispatch({
+      type: "moveSpeed.adjust",
+      delta: -10
+    });
+    expect(store.getState().moveSpeed).toBe(0.8);
   });
 });

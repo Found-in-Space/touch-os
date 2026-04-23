@@ -122,7 +122,11 @@ describe("embedded surface", () => {
 
     const forwardedBeforeDismiss = surfaces.getAttachment("monitor")?.forwardedEvents ?? [];
     expect(forwardedBeforeDismiss.map((event) => event.type)).toEqual(["pointer-down", "press"]);
-    expect(forwardedBeforeDismiss.every((event) => event.targetId === "monitor:viewport")).toBe(true);
+    expect(
+      forwardedBeforeDismiss.every(
+        (event) => "targetId" in event && event.targetId === "monitor:viewport"
+      )
+    ).toBe(true);
 
     const dismiss = findCommandByRole(snapshot.commands, "embedded-surface-dismiss");
     if (dismiss.type !== "circle") {
@@ -177,6 +181,65 @@ describe("embedded surface", () => {
       refreshState: "updating",
       lastFrameTimestamp: 24
     });
+  });
+
+  it("centers preserved-aspect viewports using contain-style letterboxing", () => {
+    const surfaces = createMockEmbeddedSurfaceService({
+      available: true,
+      handle: { kind: "mock-surface" }
+    });
+
+    const runtime = createRuntime({
+      root: createEmbeddedSurface("mirror", {
+        sourceId: "camera.rear",
+        preserveAspectRatio: true
+      }),
+      surface: { width: 320, height: 180 },
+      services: { surfaces }
+    });
+
+    surfaces.setState("mirror", {
+      available: true,
+      handle: { kind: "mock-surface" },
+      sourceWidth: 640,
+      sourceHeight: 360
+    });
+
+    const snapshot = runtime.render();
+    const viewport = findCommandByRole(snapshot.commands, "embedded-surface-viewport");
+    if (viewport.type !== "surface") {
+      throw new Error("Expected the embedded viewport to render as a surface command.");
+    }
+
+    expect(viewport.rect.width).toBeCloseTo(277.3333333333, 5);
+    expect(viewport.rect.height).toBeCloseTo(156, 5);
+    expect(viewport.rect.x).toBeCloseTo(21.3333333333, 5);
+    expect(viewport.rect.y).toBeCloseTo(12, 5);
+  });
+
+  it("does not claim or forward input for a non-interactive mirror", () => {
+    const surfaces = createMockEmbeddedSurfaceService({
+      available: true,
+      handle: { kind: "mock-surface" }
+    });
+
+    const runtime = createRuntime({
+      root: createEmbeddedSurface("mirror", {
+        sourceId: "camera.rear",
+        interactive: false,
+        acceptsForwardedInput: false
+      }),
+      surface: { width: 320, height: 180 },
+      services: { surfaces }
+    });
+
+    runtime.render();
+    const result = pressAt(runtime, 160, 90);
+
+    expect(result.handled).toBe(false);
+    expect(result.outputs).toHaveLength(0);
+    expect(runtime.getInteraction().focusedComponentId).toBeUndefined();
+    expect(surfaces.getAttachment("mirror")?.forwardedEvents).toHaveLength(0);
   });
 });
 

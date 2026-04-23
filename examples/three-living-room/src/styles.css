@@ -31,53 +31,14 @@ body {
   height: 100%;
 }
 
-.demo-overlay {
+.xr-entry {
   position: absolute;
-  top: 20px;
-  left: 20px;
-  width: min(320px, calc(100% - 40px));
-  padding: 16px 18px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 18px;
-  background: rgba(9, 15, 27, 0.72);
-  backdrop-filter: blur(18px);
-  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.3);
-  z-index: 2;
-  pointer-events: none;
+  top: 18px;
+  right: 18px;
+  z-index: 3;
 }
 
-.demo-overlay h1 {
-  margin: 0 0 8px;
-  font-size: 20px;
-  line-height: 1.1;
-  letter-spacing: 0.01em;
-}
-
-.demo-overlay p {
-  margin: 0 0 10px;
-  color: rgba(241, 245, 249, 0.8);
-  font-size: 14px;
-  line-height: 1.45;
-}
-
-.demo-overlay ul {
-  margin: 0;
-  padding-left: 18px;
-  color: rgba(241, 245, 249, 0.86);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.demo-status {
-  margin-top: 12px;
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: rgba(125, 211, 252, 0.95);
-}
-
-.demo-overlay button,
-.demo-overlay a {
-  margin-top: 14px;
+.xr-entry button,
+.xr-entry a {
   pointer-events: auto;
 }

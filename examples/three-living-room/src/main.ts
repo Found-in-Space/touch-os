@@ -2,15 +2,16 @@ import "./styles.css";
 import * as THREE from "three";
 import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
 import {
+  createEmbeddedSurfaceService,
   createHeldTabletDriver,
   createHudPanelDriver,
   createRuntime,
   createScenePanelDriver,
-  createScenePanelHost,
   type ActionEvent,
   type ChangeRequestEvent,
   type DisplayRuntime,
   type RuntimeOutput,
+  type SurfaceMetrics,
   type ThreePanelDriver,
   type ThreePointerSample
 } from "../../../src/index.js";
@@ -19,14 +20,26 @@ import {
   type CoordinatedPanel
 } from "./coordinator.js";
 import {
-  createMirrorRoot,
+  createWallMirrorRoot,
   createRoomPanelRoot,
+  getWallMirrorSurface,
+  getWallMirrorTheme,
   getRoomPanelSurface,
   getRoomPanelTheme
 } from "./panel-ui.js";
-import { MIRROR_COMPONENT_ID, clearMirrorSurface, publishMirrorSurface } from "./mirror.js";
+import {
+  MIRROR_COMPONENT_ID,
+  WALL_MIRROR_COMPONENT_ID,
+  clearMirrorSurface,
+  publishMirrorSurface
+} from "./mirror.js";
 import { createLivingRoomScene } from "./room.js";
-import { createRoomDemoStore, type RoomDemoAction, type RoomDemoState } from "./store.js";
+import {
+  createRoomDemoStore,
+  type MovementIntent,
+  type RoomDemoAction,
+  type RoomDemoState
+} from "./store.js";
 
 type ScreenPointerSample = ThreePointerSample & {
   transport: "screen";
@@ -43,32 +56,20 @@ const wrapper = document.createElement("div");
 wrapper.className = "living-room-demo";
 app.append(wrapper);
 
-const overlay = document.createElement("section");
-overlay.className = "demo-overlay";
-overlay.innerHTML = `
-  <h1>Touch OS Living Room</h1>
-  <p>Walk around a simple room, touch the wall TV or HUD, and confirm both surfaces control the same lamp state.</p>
-  <ul>
-    <li>Desktop: <strong>WASD</strong> or <strong>arrow keys</strong> to move, <strong>left/right arrows</strong> to turn, <strong>right mouse drag</strong> or <strong>Shift + left drag</strong> to look, <strong>left click</strong> to touch panels.</li>
-    <li>XR: the HUD hides, the arm panel appears, and the dominant controller ray can touch the arm panel or TV.</li>
-  </ul>
-  <div class="demo-status">Lamp: On</div>
-`;
-wrapper.append(overlay);
-const statusLabel = overlay.querySelector<HTMLDivElement>(".demo-status");
-if (!statusLabel) {
-  throw new Error("Unable to create the demo status label.");
-}
-
 const renderer = new THREE.WebGLRenderer({
-  antialias: true
+  antialias: true,
+  alpha: true
 });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = false;
 renderer.xr.enabled = true;
 wrapper.append(renderer.domElement);
-overlay.append(VRButton.createButton(renderer));
+
+const xrEntry = document.createElement("div");
+xrEntry.className = "xr-entry";
+xrEntry.append(VRButton.createButton(renderer));
+wrapper.append(xrEntry);
 
 const mirrorCanvas = document.createElement("canvas");
 mirrorCanvas.width = room.mirrorSize.width;
@@ -76,14 +77,23 @@ mirrorCanvas.height = room.mirrorSize.height;
 const mirrorRenderer = new THREE.WebGLRenderer({
   canvas: mirrorCanvas,
   antialias: false,
-  alpha: true
+  alpha: true,
+  preserveDrawingBuffer: true
 });
 mirrorRenderer.setPixelRatio(1);
 mirrorRenderer.setSize(room.mirrorSize.width, room.mirrorSize.height, false);
 
+const sharedSurfaces = createEmbeddedSurfaceService();
+
 interface RuntimeBinding {
   runtime: DisplayRuntime;
   sync(state: RoomDemoState): void;
+  refresh(state: RoomDemoState): void;
+}
+
+interface StaticRuntimeBinding {
+  runtime: DisplayRuntime;
+  refresh(): void;
 }
 
 interface DriverBinding {
@@ -103,35 +113,25 @@ interface THREEFrame {
     position: { x: number; y: number; z: number };
     orientation: { x: number; y: number; z: number; w: number };
   };
+  surfaceMetrics?: Partial<SurfaceMetrics>;
 }
 
 const hudBinding = createRuntimeBinding("hud");
 const tvBinding = createRuntimeBinding("tv");
 const armBinding = createRuntimeBinding("arm");
-const mirrorRuntime = createRuntime({
-  root: createMirrorRoot(),
-  surface: getRoomPanelSurface("mirror"),
-  theme: getRoomPanelTheme("mirror")
-});
+const wallMirrorBinding = createWallMirrorRuntimeBinding();
 
 const hudDriverBinding = createHudDriverBinding(hudBinding.runtime);
 const tvDriverBinding = createTvDriverBinding(tvBinding.runtime);
 const armDriverBinding = createArmDriverBinding(armBinding.runtime);
-const mirrorHost = createScenePanelHost({
-  runtime: mirrorRuntime,
-  surface: getRoomPanelSurface("mirror"),
-  panelWidth: 0.86,
-  panelHeight: 0.54,
-  position: room.mirrorAnchor.position,
-  quaternion: room.mirrorAnchor.quaternion
-});
+const wallMirrorDriverBinding = createWallMirrorDriverBinding(wallMirrorBinding.runtime);
 
 hudDriverBinding.driver.attach();
 tvDriverBinding.driver.attach();
 armDriverBinding.driver.attach();
-mirrorHost.attach();
+wallMirrorDriverBinding.driver.attach();
 
-const keyboardState = new Set<string>();
+const pressedKeys = new Set<string>();
 let lookActive = false;
 let yaw = 0;
 let pitch = -0.08;
@@ -194,27 +194,23 @@ const desktopPanels: CoordinatedPanel<ScreenPointerSample, THREEFrame>[] = [
   toCoordinatedPanel(tvDriverBinding)
 ];
 const xrPanels: CoordinatedPanel<ThreePointerSample, THREEFrame>[] = [
+  toCoordinatedPanel(hudDriverBinding),
   toCoordinatedPanel(armDriverBinding),
   toCoordinatedPanel(tvDriverBinding)
 ];
 
 store.subscribe(() => {
   const state = store.getState();
-  hudBinding.sync(state);
-  tvBinding.sync(state);
-  armBinding.sync(state);
+  syncRuntimeBindings(state);
   room.applyState(state);
-  statusLabel.textContent = `Lamp: ${state.lightOn ? "On" : "Off"}${state.xrActive ? " | XR" : ""}`;
-  if (state.xrActive) {
+  if (isXrPresentationActive()) {
     hudDriverBinding.driver.clearPointer();
   } else {
     armDriverBinding.driver.clearPointer();
   }
 });
 const initialState = store.getState();
-hudBinding.sync(initialState);
-tvBinding.sync(initialState);
-armBinding.sync(initialState);
+syncRuntimeBindings(initialState);
 room.applyState(initialState);
 
 renderer.xr.addEventListener("sessionstart", () => {
@@ -231,13 +227,22 @@ renderer.xr.addEventListener("sessionend", () => {
 });
 
 window.addEventListener("keydown", (event) => {
-  keyboardState.add(event.code);
+  if (pressedKeys.has(event.code)) {
+    return;
+  }
+
+  pressedKeys.add(event.code);
+  syncMovementFromKeyboard(event.code);
 });
 window.addEventListener("keyup", (event) => {
-  keyboardState.delete(event.code);
+  pressedKeys.delete(event.code);
+  syncMovementFromKeyboard(event.code);
 });
 window.addEventListener("blur", () => {
-  keyboardState.clear();
+  for (const code of [...pressedKeys]) {
+    pressedKeys.delete(code);
+    syncMovementFromKeyboard(code);
+  }
   lookActive = false;
   lastLookPoint = undefined;
 });
@@ -256,7 +261,7 @@ renderer.domElement.addEventListener("mousedown", (event) => {
     event.preventDefault();
     return;
   }
-  if (event.button !== 0 || store.getState().xrActive) {
+  if (event.button !== 0 || isXrPresentationActive()) {
     return;
   }
   latestPointerNdc.copy(getNdcFromMouseEvent(event, renderer.domElement));
@@ -268,7 +273,7 @@ window.addEventListener("mouseup", (event) => {
     lastLookPoint = undefined;
     return;
   }
-  if (event.button !== 0 || store.getState().xrActive) {
+  if (event.button !== 0 || isXrPresentationActive()) {
     return;
   }
   latestPointerNdc.copy(getNdcFromMouseEvent(event, renderer.domElement));
@@ -278,7 +283,7 @@ window.addEventListener("mousemove", (event) => {
   latestPointerNdc.copy(getNdcFromMouseEvent(event, renderer.domElement));
   const rightButtonDown = (event.buttons & 2) === 2;
   const shiftLeftLook = event.shiftKey && (event.buttons & 1) === 1;
-  if (!store.getState().xrActive && (rightButtonDown || shiftLeftLook)) {
+  if (!isXrPresentationActive() && (rightButtonDown || shiftLeftLook)) {
     const deltaX = event.clientX - (lastLookPoint?.x ?? event.clientX);
     const deltaY = event.clientY - (lastLookPoint?.y ?? event.clientY);
     yaw -= deltaX * 0.0035;
@@ -294,13 +299,13 @@ window.addEventListener("mousemove", (event) => {
     lookActive = false;
     lastLookPoint = undefined;
   }
-  if (store.getState().xrActive) {
+  if (isXrPresentationActive()) {
     return;
   }
   pendingScreenSamples.push(createScreenSample("move", event.timeStamp, latestPointerNdc));
 });
 renderer.domElement.addEventListener("mouseleave", (event) => {
-  if (store.getState().xrActive) {
+  if (isXrPresentationActive()) {
     return;
   }
   pendingScreenSamples.push(createScreenSample("cancel", event.timeStamp, latestPointerNdc));
@@ -313,27 +318,36 @@ window.addEventListener("resize", () => {
 });
 
 renderer.setAnimationLoop(() => {
+  const xrActive = isXrPresentationActive();
+  syncXrPresentationState(xrActive);
   const now = performance.now();
   const deltaSeconds = Math.min((now - lastFrameTime) / 1000, 0.05);
   lastFrameTime = now;
   const state = store.getState();
+  syncRuntimeBindings(state);
 
-  if (!state.xrActive) {
-    updateDesktopCamera(deltaSeconds);
+  if (!xrActive) {
+    updateDesktopCamera(deltaSeconds, state);
+  } else {
+    // Keep the app-facing camera in step with the current XR pose before any
+    // HUD or mirror placement work that happens outside renderer.render().
+    renderer.xr.updateCamera(room.camera);
   }
 
-  const viewerCamera = state.xrActive
-    ? renderer.xr.getCamera()
-    : room.camera;
+  const viewerCamera = room.camera;
 
   room.syncRearViewCamera(viewerCamera);
+  const hudVisible = hudDriverBinding.driver.host.mesh.visible;
+  const armVisible = armDriverBinding.driver.host.mesh.visible;
+  hudDriverBinding.driver.host.mesh.visible = false;
+  armDriverBinding.driver.host.mesh.visible = false;
   mirrorRenderer.render(room.scene, room.rearViewCamera);
-  publishMirrorSurface(
-    mirrorRuntime.getServices().surfaces,
-    MIRROR_COMPONENT_ID,
-    mirrorCanvas,
-    now
-  );
+  hudDriverBinding.driver.host.mesh.visible = hudVisible;
+  armDriverBinding.driver.host.mesh.visible = armVisible;
+  publishMirrorSurface(sharedSurfaces, MIRROR_COMPONENT_ID, mirrorCanvas, now);
+  publishMirrorSurface(sharedSurfaces, WALL_MIRROR_COMPONENT_ID, mirrorCanvas, now);
+  hudBinding.refresh(state);
+  wallMirrorBinding.refresh();
 
   const baseFrame: THREEFrame = {
     scene: room.scene,
@@ -342,10 +356,16 @@ renderer.setAnimationLoop(() => {
 
   tvDriverBinding.enabled = true;
   tvDriverBinding.update(baseFrame);
+  wallMirrorDriverBinding.enabled = true;
+  wallMirrorDriverBinding.update(baseFrame);
 
-  if (state.xrActive) {
-    hudDriverBinding.enabled = false;
-    hudDriverBinding.hide();
+  hudDriverBinding.enabled = true;
+  if (xrActive) {
+    hudDriverBinding.update({
+      ...baseFrame,
+      surfaceMetrics: getViewportSurfaceMetrics()
+    });
+
     const armPose = resolveArmPose();
     armDriverBinding.enabled = Boolean(armPose);
     armDriverBinding.update(
@@ -357,18 +377,16 @@ renderer.setAnimationLoop(() => {
         : baseFrame
     );
   } else {
+    hudDriverBinding.update({
+      ...baseFrame,
+      surfaceMetrics: getViewportSurfaceMetrics()
+    });
+
     armDriverBinding.enabled = false;
     armDriverBinding.hide();
-    hudDriverBinding.enabled = true;
-    hudDriverBinding.update(baseFrame);
   }
 
-  mirrorHost.update({
-    scene: room.scene,
-    camera: viewerCamera
-  });
-
-  if (state.xrActive) {
+  if (xrActive) {
     const armPose = resolveArmPose();
     const xrFrame = armPose
       ? {
@@ -389,30 +407,51 @@ renderer.setAnimationLoop(() => {
     }
   }
 
-  tvDriverBinding.render();
-  if (hudDriverBinding.enabled) {
-    hudDriverBinding.render();
+  tickActiveRuntime(tvDriverBinding, now);
+  tickActiveRuntime(wallMirrorDriverBinding, now);
+  tickActiveRuntime(hudDriverBinding, now);
+  if (armDriverBinding.enabled) {
+    tickActiveRuntime(armDriverBinding, now);
   }
+
+  tvDriverBinding.render();
+  wallMirrorDriverBinding.render();
+  hudDriverBinding.render();
   if (armDriverBinding.enabled) {
     armDriverBinding.render();
   }
-  mirrorHost.render();
 
-  renderer.render(room.scene, room.camera);
+  renderer.render(room.scene, viewerCamera);
 });
 
 function createRuntimeBinding(
   variant: "hud" | "tv" | "arm"
 ): RuntimeBinding {
+  let lastRenderKey = "";
   const runtime = createRuntime({
     root: createRoomPanelRoot(variant, store.getState()),
     surface: getRoomPanelSurface(variant),
-    theme: getRoomPanelTheme(variant)
+    theme: getRoomPanelTheme(variant),
+    services: {
+      surfaces: sharedSurfaces
+    }
   });
 
   return {
     runtime,
     sync(state) {
+      const nextRenderKey = JSON.stringify({
+        variant,
+        state
+      });
+      if (nextRenderKey === lastRenderKey) {
+        return;
+      }
+
+      lastRenderKey = nextRenderKey;
+      runtime.setRoot(createRoomPanelRoot(variant, state));
+    },
+    refresh(state) {
       runtime.setRoot(createRoomPanelRoot(variant, state));
     }
   };
@@ -422,10 +461,8 @@ function createHudDriverBinding(runtime: DisplayRuntime): DriverBinding {
   const driver = createHudPanelDriver({
     runtime,
     surface: getRoomPanelSurface("hud"),
-    panelWidth: 0.62,
-    panelHeight: 0.38,
     distance: 0.68,
-    offset: { x: -0.38, y: 0.2 }
+    sizing: "viewport"
   });
 
   return createDriverBinding("hud", driver, runtime);
@@ -435,10 +472,41 @@ function createTvDriverBinding(runtime: DisplayRuntime): DriverBinding {
   const driver = createScenePanelDriver({
     runtime,
     surface: getRoomPanelSurface("tv"),
-    panelWidth: 1.52,
-    panelHeight: 0.95,
+    panelWidth: 1.44,
+    panelHeight: 0.92,
     position: room.tvAnchor.position,
     quaternion: room.tvAnchor.quaternion
+  });
+
+  return createDriverBinding("tv", driver, runtime);
+}
+
+function createWallMirrorRuntimeBinding(): StaticRuntimeBinding {
+  const runtime = createRuntime({
+    root: createWallMirrorRoot(),
+    surface: getWallMirrorSurface(),
+    theme: getWallMirrorTheme(),
+    services: {
+      surfaces: sharedSurfaces
+    }
+  });
+
+  return {
+    runtime,
+    refresh() {
+      runtime.setRoot(createWallMirrorRoot());
+    }
+  };
+}
+
+function createWallMirrorDriverBinding(runtime: DisplayRuntime): DriverBinding {
+  const driver = createScenePanelDriver({
+    runtime,
+    surface: getWallMirrorSurface(),
+    panelWidth: 0.86,
+    panelHeight: 0.54,
+    position: room.mirrorAnchor.position,
+    quaternion: room.mirrorAnchor.quaternion
   });
 
   return createDriverBinding("tv", driver, runtime);
@@ -448,8 +516,8 @@ function createArmDriverBinding(runtime: DisplayRuntime): DriverBinding {
   const driver = createHeldTabletDriver({
     runtime,
     surface: getRoomPanelSurface("arm"),
-    panelWidth: 0.52,
-    panelHeight: 0.36,
+    panelWidth: 0.48,
+    panelHeight: 0.34,
     tiltRadians: -Math.PI * 0.24,
     offset: { x: 0.04, y: 0.05, z: -0.03 }
   });
@@ -479,7 +547,8 @@ function createDriverBinding(
       driver.host.update({
         scene: frame.scene,
         camera: frame.camera,
-        ...(frame.xrPose ? { xrPose: frame.xrPose } : {})
+        ...(frame.xrPose ? { xrPose: frame.xrPose } : {}),
+        ...(frame.surfaceMetrics ? { surfaceMetrics: frame.surfaceMetrics } : {})
       });
     },
     render() {
@@ -508,7 +577,8 @@ function toCoordinatedPanel<TSample extends ThreePointerSample>(
       const result = binding.driver.interactor.process(sample, {
         scene: frame.scene,
         camera: frame.camera,
-        ...(frame.xrPose ? { xrPose: frame.xrPose } : {})
+        ...(frame.xrPose ? { xrPose: frame.xrPose } : {}),
+        ...(frame.surfaceMetrics ? { surfaceMetrics: frame.surfaceMetrics } : {})
       });
       flushRuntimeOutputs(binding.runtime);
       return {
@@ -540,12 +610,38 @@ function applyRuntimeOutput(output: RuntimeOutput, state: RoomDemoState): void {
     return;
   }
 
-  if (output.type === "action") {
-    const action = output as ActionEvent;
-    if (action.actionId === "light.toggle") {
+  if (output.type !== "action") {
+    return;
+  }
+
+  const action = output as ActionEvent;
+  if (action.actionId === "light.toggle") {
+    dispatchStoreAction({
+      type: "light.set",
+      value: !state.lightOn
+    });
+    return;
+  }
+
+  if (action.actionId === "movement.set") {
+    const intent = action.payload?.intent;
+    const active = action.payload?.active;
+    if (isMovementIntent(intent) && typeof active === "boolean") {
       dispatchStoreAction({
-        type: "light.set",
-        value: !state.lightOn
+        type: "movement.set",
+        intent,
+        active
+      });
+    }
+    return;
+  }
+
+  if (action.actionId === "moveSpeed.adjust") {
+    const delta = action.payload?.delta;
+    if (typeof delta === "number" && Number.isFinite(delta)) {
+      dispatchStoreAction({
+        type: "moveSpeed.adjust",
+        delta
       });
     }
   }
@@ -555,27 +651,27 @@ function dispatchStoreAction(action: RoomDemoAction): void {
   store.dispatch(action);
 }
 
-function updateDesktopCamera(deltaSeconds: number): void {
-  const speed = 1.9;
+function updateDesktopCamera(deltaSeconds: number, state: RoomDemoState): void {
+  const speed = state.moveSpeed;
   const turnSpeed = 1.6;
   const move = new THREE.Vector3();
-  if (keyboardState.has("KeyW") || keyboardState.has("ArrowUp")) {
+  if (state.movement.forward) {
     move.z += 1;
   }
-  if (keyboardState.has("KeyS") || keyboardState.has("ArrowDown")) {
+  if (state.movement.back) {
     move.z -= 1;
   }
-  if (keyboardState.has("KeyA")) {
+  if (state.movement.strafeLeft) {
     move.x -= 1;
   }
-  if (keyboardState.has("KeyD")) {
+  if (state.movement.strafeRight) {
     move.x += 1;
   }
 
-  if (keyboardState.has("ArrowLeft")) {
+  if (state.movement.turnLeft) {
     yaw += turnSpeed * deltaSeconds;
   }
-  if (keyboardState.has("ArrowRight")) {
+  if (state.movement.turnRight) {
     yaw -= turnSpeed * deltaSeconds;
   }
 
@@ -624,8 +720,14 @@ function getNdcFromMouseEvent(
 }
 
 function resolveArmPose(): THREEFrame["xrPose"] | undefined {
+  return resolveGripPose("left");
+}
+
+function resolveGripPose(
+  preferredHand: XRHandedness
+): THREEFrame["xrPose"] | undefined {
   const binding =
-    resolveXrBinding((entry) => entry.state.handedness === "left") ??
+    resolveXrBinding((entry) => entry.state.handedness === preferredHand) ??
     resolveXrBinding((entry) => entry.state.handedness === "none");
   if (!binding) {
     return undefined;
@@ -713,11 +815,92 @@ function resolveXrBinding(
   return xrBindings.find(predicate);
 }
 
+function tickActiveRuntime(binding: DriverBinding, timestamp: number): void {
+  binding.runtime.tick(timestamp);
+  flushRuntimeOutputs(binding.runtime);
+}
+
+function syncRuntimeBindings(
+  state: RoomDemoState
+): void {
+  hudBinding.sync(state);
+  tvBinding.sync(state);
+  armBinding.sync(state);
+}
+
+function isXrPresentationActive(): boolean {
+  return renderer.xr.isPresenting || renderer.xr.getSession() !== null;
+}
+
+function syncXrPresentationState(xrActive: boolean): void {
+  if (store.getState().xrActive === xrActive) {
+    return;
+  }
+
+  dispatchStoreAction({
+    type: "xr.set",
+    value: xrActive
+  });
+}
+
+function getViewportSurfaceMetrics(): Partial<SurfaceMetrics> {
+  const size = new THREE.Vector2();
+  renderer.getSize(size);
+  return {
+    width: size.x,
+    height: size.y,
+    pixelDensity: renderer.getPixelRatio()
+  };
+}
+
+function isMovementIntent(value: unknown): value is MovementIntent {
+  return (
+    value === "forward" ||
+    value === "back" ||
+    value === "strafeLeft" ||
+    value === "strafeRight" ||
+    value === "turnLeft" ||
+    value === "turnRight"
+  );
+}
+
+function syncMovementFromKeyboard(code: string): void {
+  for (const intent of KEY_TO_INTENT.get(code) ?? []) {
+    dispatchStoreAction({
+      type: "movement.set",
+      intent,
+      active: KEY_BINDINGS[intent].some((entry) => pressedKeys.has(entry))
+    });
+  }
+}
+
+const KEY_BINDINGS: Record<MovementIntent, readonly string[]> = {
+  forward: ["KeyW", "ArrowUp"],
+  back: ["KeyS", "ArrowDown"],
+  strafeLeft: ["KeyA"],
+  strafeRight: ["KeyD"],
+  turnLeft: ["ArrowLeft"],
+  turnRight: ["ArrowRight"]
+};
+
+const KEY_TO_INTENT = new Map<string, MovementIntent[]>();
+for (const [intent, keys] of Object.entries(KEY_BINDINGS) as Array<[MovementIntent, readonly string[]]>) {
+  for (const key of keys) {
+    const existing = KEY_TO_INTENT.get(key);
+    if (existing) {
+      existing.push(intent);
+      continue;
+    }
+    KEY_TO_INTENT.set(key, [intent]);
+  }
+}
+
 window.addEventListener("beforeunload", () => {
   hudDriverBinding.driver.detach();
   tvDriverBinding.driver.detach();
   armDriverBinding.driver.detach();
-  mirrorHost.detach();
+  wallMirrorDriverBinding.driver.detach();
   mirrorRenderer.dispose();
-  clearMirrorSurface(mirrorRuntime.getServices().surfaces, MIRROR_COMPONENT_ID);
+  clearMirrorSurface(sharedSurfaces, MIRROR_COMPONENT_ID);
+  clearMirrorSurface(sharedSurfaces, WALL_MIRROR_COMPONENT_ID);
 });

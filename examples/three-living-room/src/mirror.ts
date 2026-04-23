@@ -6,6 +6,7 @@ export interface MirrorCanvasSource {
 }
 
 export const MIRROR_COMPONENT_ID = "mirror-surface";
+export const WALL_MIRROR_COMPONENT_ID = "wall-mirror-surface";
 
 export function publishMirrorSurface(
   surfaces: EmbeddedSurfaceService,

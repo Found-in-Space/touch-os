@@ -1,5 +1,7 @@
 export type { ColumnProps } from "./column.js";
 export { createColumn } from "./column.js";
+export type { DockLayoutProps, DockSlotSpec } from "./dock-layout.js";
+export { createDockLayout } from "./dock-layout.js";
 export type { OverlayProps } from "./overlay.js";
 export { createOverlay } from "./overlay.js";
 export type { PageContainerProps } from "./page-container.js";

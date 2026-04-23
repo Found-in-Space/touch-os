@@ -423,12 +423,20 @@ Recommended minimum set:
 - stack container
 - row container
 - column container
+- dock layout container for edge-attached HUD regions
 - scroll container
 - page container
 - section container
 - overlay container
 
 These are more important than a large library of leaf widgets. Without containers, every application ends up reinventing composition rules.
+
+For docked HUD layout:
+
+- slots should anchor measured children to safe-area-adjusted edges rather than stretching them by default
+- each slot should accept one child unless the API explicitly says otherwise
+- callers that need multiple widgets in one slot should compose them through row, column, or stack containers
+- docked regions should not automatically avoid overlapping each other
 
 ## Control Types
 
@@ -437,6 +445,9 @@ The framework should ship with a minimal generic control set.
 Recommended base controls:
 
 - button
+- hold-button for start/stop style continuous input
+- repeat-button driven by runtime ticks rather than host timers
+- discrete four-direction d-pad
 - toggle
 - slider
 - text label
@@ -446,6 +457,14 @@ Recommended base controls:
 - segmented control or tab switcher
 
 These controls should remain generic. Richer or domain-specific controls can be built on top of the same component contract.
+
+For continuous controls:
+
+- a hold-button should emit its start action exactly once on pointer-down
+- a hold-button should emit its stop action exactly once on pointer-up, cancel, disable, unmount, or forced pointer clear
+- a repeat-button should repeat from runtime time and tick delivery rather than browser timers
+- a repeat-button should stop immediately on pointer-up, cancel, disable, unmount, or forced pointer clear
+- the initial d-pad should be discrete four-direction hold input rather than an analog thumbstick
 
 ## Rich Custom Components
 
@@ -550,6 +569,10 @@ The backing service should return:
 - availability state
 - optional metadata such as source size, aspect ratio, latency, refresh state, or last frame time
 
+When `preserveAspectRatio` is enabled, the default interpretation should be centered `contain`
+behavior inside the component viewport. That means letterboxing or pillarboxing is preferred over
+stretching or cropping.
+
 ### Composition Rules
 
 The architecture should allow two composition strategies:
@@ -576,6 +599,9 @@ Examples:
 - a monitor frame may have close or pin buttons handled by the shell
 - the live viewport area may accept pan, press, or drag input forwarded to the embedded source
 - a mirror may be view-only and reject forwarded input entirely
+
+If an embedded surface is marked non-interactive, it should not claim input for its viewport area
+and should not forward events into the backing source even while it remains visually present.
 
 The routing decision should be explicit in the component contract rather than hidden in host-specific behavior.
 
@@ -654,6 +680,20 @@ Host responsibilities:
 
 - keep the display stable relative to the view
 - support pointer or gaze interaction without world anchoring
+
+In viewport-sized overlay mode, the HUD surface width, height, and pixel density should track the
+active viewport. This is not a fixed-size card placed in front of the camera; it is a full-surface
+overlay mapped to the current view.
+
+The HUD root may render no background of its own. In that configuration, only child components that
+explicitly draw chrome should be visible, and empty HUD pixels should remain visually transparent.
+
+Empty HUD pixels must not claim or block input. A pointer miss on the HUD should fall through to
+lower-priority world or panel interactions in the same frame.
+
+Once a HUD control successfully receives a press, the HUD keeps pointer ownership until pointer-up,
+cancel, or forced pointer clear, even if the pointer later moves outside the original control
+bounds.
 
 The architecture should allow more hosts later, but these patterns are enough to shape the initial design.
 

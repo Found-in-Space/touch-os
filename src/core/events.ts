@@ -99,6 +99,10 @@ export interface BlurEvent extends EventBase {
   targetId: string;
 }
 
+export interface TickEvent extends EventBase {
+  type: "tick";
+}
+
 export type DisplayEvent =
   | PointerEnterEvent
   | PointerMoveEvent
@@ -113,7 +117,8 @@ export type DisplayEvent =
   | CancelEvent
   | ScrollEvent
   | FocusEvent
-  | BlurEvent;
+  | BlurEvent
+  | TickEvent;
 
 export interface InputPointerEvent extends EventBase {
   type: "pointer-move" | "pointer-down" | "pointer-up" | "cancel";
