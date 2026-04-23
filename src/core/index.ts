@@ -5,6 +5,7 @@ export type {
   RuntimeOutput
 } from "./actions.js";
 export type {
+  ComponentEvent,
   ComponentChildrenContext,
   ComponentContextBase,
   ComponentDisposeContext,
@@ -21,7 +22,7 @@ export type {
   RuntimeInteractionSnapshot,
   RuntimeChildDescriptor
 } from "./component.js";
-export { createNode } from "./component.js";
+export { createNode, isDisplayEvent, isRuntimeOutputEvent } from "./component.js";
 export type {
   CircleDrawCommand,
   DrawCommand,

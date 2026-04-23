@@ -1,13 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createRuntime } from "../src/index.js";
 import { createSettingsPageFixture } from "../src/examples/reference-fixtures.js";
-
-function getTexts(commands: readonly { type: string; text?: string }[]): string[] {
-  return commands
-    .filter((command) => command.type === "text")
-    .map((command) => command.text)
-    .filter((text): text is string => typeof text === "string");
-}
+import {
+  applyNavigationOutputs,
+  clickComponentCenter,
+  getTexts
+} from "./helpers/runtime-helpers.js";
 
 describe("settings page fixture", () => {
   it("renders the reference composition and supports page-local navigation", () => {
@@ -25,10 +23,47 @@ describe("settings page fixture", () => {
     expect(texts.some((text) => text.includes("Brightness"))).toBe(true);
     expect(texts).not.toContain("Enabled");
 
-    runtime.getServices().navigation.push("settings-pages", "audio-page");
+    const openAudioResult = clickComponentCenter(runtime, "settings-open-audio");
+    expect(openAudioResult.outputs).toContainEqual({
+      type: "action",
+      actionId: "nav.open-audio",
+      componentId: "settings-open-audio"
+    });
+    expect(openAudioResult.outputs).toContainEqual({
+      type: "navigation-request",
+      componentId: "settings-shell",
+      containerId: "settings-pages",
+      intent: "push",
+      pageId: "audio-page"
+    });
+
+    texts = getTexts(runtime.render().commands);
+    expect(texts).toContain("Settings");
+    expect(texts.some((text) => text.includes("Brightness"))).toBe(true);
+    expect(texts).not.toContain("Enabled");
+
+    applyNavigationOutputs(runtime, openAudioResult.outputs);
     texts = getTexts(runtime.render().commands);
     expect(texts).toContain("Audio");
     expect(texts).toContain("Enabled");
+
+    const backResult = clickComponentCenter(runtime, "audio-page-back", 10);
+    expect(backResult.outputs).toContainEqual({
+      type: "action",
+      actionId: "nav.back",
+      componentId: "audio-page-back"
+    });
+    expect(backResult.outputs).toContainEqual({
+      type: "navigation-request",
+      componentId: "settings-shell",
+      containerId: "settings-pages",
+      intent: "back"
+    });
+
+    applyNavigationOutputs(runtime, backResult.outputs);
+    texts = getTexts(runtime.render().commands);
+    expect(texts).toContain("Settings");
+    expect(texts).not.toContain("Enabled");
   });
 
   it("tracks scroll state inside the runtime", () => {

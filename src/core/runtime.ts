@@ -1,6 +1,7 @@
 import type { RuntimeOutput } from "./actions.js";
 import type {
   ComponentChildrenContext,
+  ComponentEvent,
   ComponentDisposeContext,
   ComponentEventContext,
   ComponentHitTestContext,
@@ -93,6 +94,11 @@ interface ActivePointerState {
   downTimestamp: number;
 }
 
+interface PendingEmission {
+  emitterNode: RuntimeNodeState;
+  output: RuntimeOutput;
+}
+
 export interface RuntimeServiceOverrides extends Partial<Omit<RuntimeServices, "layout">> {
   layout?: MutableLayoutService;
 }
@@ -135,8 +141,11 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
   let renderDirty = true;
   let renderRevision = 0;
   let outputs: RuntimeOutput[] = [];
+  const pendingEmissions: PendingEmission[] = [];
   let commands: DrawCommand[] = [];
   const dragThreshold = options.dragThreshold ?? 6;
+  let eventDispatchDepth = 0;
+  let isFlushingEmissions = false;
 
   const services: RuntimeServices = {
     layout,
@@ -174,6 +183,65 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
     renderDirty = true;
   }
 
+  function runComponentDispatch<TValue>(fn: () => TValue): TValue {
+    eventDispatchDepth += 1;
+    try {
+      return fn();
+    } finally {
+      eventDispatchDepth -= 1;
+      if (eventDispatchDepth === 0 && !isFlushingEmissions) {
+        flushEmissions();
+      }
+    }
+  }
+
+  function enqueueEmission(emitterNode: RuntimeNodeState, output: RuntimeOutput): void {
+    pendingEmissions.push({ emitterNode, output });
+    if (eventDispatchDepth === 0 && !isFlushingEmissions) {
+      flushEmissions();
+    }
+  }
+
+  function flushEmissions(): void {
+    if (isFlushingEmissions) {
+      return;
+    }
+
+    isFlushingEmissions = true;
+    try {
+      while (pendingEmissions.length > 0) {
+        const emission = pendingEmissions.shift();
+        if (!emission) {
+          continue;
+        }
+
+        outputs.push(emission.output);
+        dispatchOutputToAncestors(emission.emitterNode, emission.output);
+      }
+    } finally {
+      isFlushingEmissions = false;
+      if (eventDispatchDepth === 0 && pendingEmissions.length > 0) {
+        flushEmissions();
+      }
+    }
+  }
+
+  function dispatchOutputToAncestors(emitterNode: RuntimeNodeState, output: RuntimeOutput): void {
+    const path = resolvePathNodes(buildPathToRoot(emitterNode));
+    if (path.length <= 1) {
+      return;
+    }
+
+    runComponentDispatch(() => {
+      const ancestors = path.slice(0, -1);
+      for (const node of [...ancestors].reverse()) {
+        node.component.handleEvent?.(createEventContext(node, output));
+      }
+    });
+
+    invalidateRender();
+  }
+
   function createInteractionSnapshot(): RuntimeInteractionSnapshot {
     return {
       hoveredTargetId: hoveredMatch?.targetId,
@@ -195,7 +263,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
       services,
       interaction: createInteractionSnapshot(),
       emit(output: RuntimeOutput) {
-        outputs.push(output);
+        enqueueEmission(node, output);
       },
       invalidateLayout,
       invalidateRender,
@@ -288,7 +356,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
 
   function createEventContext(
     node: RuntimeNodeState,
-    event: DisplayEvent
+    event: ComponentEvent
   ): ComponentEventContext<unknown, unknown> {
     return {
       ...createBaseContext(node),
@@ -537,23 +605,25 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
     }
 
     const path = resolvePathNodes(buildPathToRoot(node));
-    for (const pathNode of [...path].reverse()) {
-      const event: DisplayEvent =
-        type === "focus"
-          ? {
-              type,
-              timestamp: timingService.now(),
-              componentId: pathNode.id,
-              targetId: componentId
-            }
-          : {
-              type,
-              timestamp: timingService.now(),
-              componentId: pathNode.id,
-              targetId: componentId
-            };
-      pathNode.component.handleEvent?.(createEventContext(pathNode, event));
-    }
+    runComponentDispatch(() => {
+      for (const pathNode of [...path].reverse()) {
+        const event: DisplayEvent =
+          type === "focus"
+            ? {
+                type,
+                timestamp: timingService.now(),
+                componentId: pathNode.id,
+                targetId: componentId
+              }
+            : {
+                type,
+                timestamp: timingService.now(),
+                componentId: pathNode.id,
+                targetId: componentId
+              };
+        pathNode.component.handleEvent?.(createEventContext(pathNode, event));
+      }
+    });
     invalidateRender();
   }
 
@@ -583,10 +653,12 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
       return false;
     }
 
-    for (const node of [...path].reverse()) {
-      const event = buildEvent(node);
-      node.component.handleEvent?.(createEventContext(node, event));
-    }
+    runComponentDispatch(() => {
+      for (const node of [...path].reverse()) {
+        const event = buildEvent(node);
+        node.component.handleEvent?.(createEventContext(node, event));
+      }
+    });
 
     invalidateRender();
     return Boolean(targetId);
@@ -952,6 +1024,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
   }
 
   function takeOutputs(): readonly RuntimeOutput[] {
+    flushEmissions();
     const nextOutputs = [...outputs];
     outputs = [];
     return nextOutputs;
@@ -965,6 +1038,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
     hoveredMatch = undefined;
     activePointer = undefined;
     outputs = [];
+    pendingEmissions.length = 0;
     commands = [];
   }
 

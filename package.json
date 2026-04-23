@@ -42,7 +42,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
+  "peerDependencies": {
+    "three": "^0.180.0"
+  },
   "devDependencies": {
+    "@types/three": "^0.180.0",
+    "three": "^0.180.0",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   }

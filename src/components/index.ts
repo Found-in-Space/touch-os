@@ -1,5 +1,11 @@
+export type { ActionCardProps } from "./action-card.js";
+export { createActionCard } from "./action-card.js";
 export type { ButtonProps } from "./button.js";
 export { createButton } from "./button.js";
+export type { CustomGraphProps } from "./custom-graph.js";
+export { createCustomGraph } from "./custom-graph.js";
+export type { EmbeddedSurfaceProps } from "./embedded-surface.js";
+export { createEmbeddedSurface } from "./embedded-surface.js";
 export type { SliderProps } from "./slider.js";
 export { createSlider } from "./slider.js";
 export type { TextLabelProps } from "./text-label.js";

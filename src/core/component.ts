@@ -21,6 +21,8 @@ export interface RuntimeInteractionSnapshot {
   focusedComponentId: string | undefined;
 }
 
+export type ComponentEvent = DisplayEvent | RuntimeOutput;
+
 export interface DisplayNode<Props = unknown, State = unknown> {
   id: string;
   component: DisplayComponent<Props, State>;
@@ -81,7 +83,7 @@ export interface ComponentHitTestContext<Props, State>
 export interface ComponentEventContext<Props, State>
   extends ComponentContextBase<Props, State> {
   bounds: Rect;
-  event: DisplayEvent;
+  event: ComponentEvent;
 }
 
 export interface ComponentDisposeContext<Props, State>
@@ -110,4 +112,30 @@ export function createNode<Props, State = unknown>(
   props: Props
 ): DisplayNode<Props, State> {
   return { id, component, props };
+}
+
+export function isDisplayEvent(event: ComponentEvent): event is DisplayEvent {
+  switch (event.type) {
+    case "pointer-enter":
+    case "pointer-move":
+    case "pointer-leave":
+    case "pointer-down":
+    case "pointer-up":
+    case "press":
+    case "long-press":
+    case "drag-start":
+    case "drag-move":
+    case "drag-end":
+    case "cancel":
+    case "scroll":
+    case "focus":
+    case "blur":
+      return true;
+    default:
+      return false;
+  }
+}
+
+export function isRuntimeOutputEvent(event: ComponentEvent): event is RuntimeOutput {
+  return !isDisplayEvent(event);
 }

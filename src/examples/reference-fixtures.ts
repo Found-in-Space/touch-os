@@ -1,6 +1,21 @@
-import { createButton, createSlider, createTextLabel, createToggle, createValueReadout } from "../components/index.js";
-import { createColumn, createPageContainer, createRow, createScrollContainer, createSection } from "../containers/index.js";
-import type { DisplayNode } from "../core/component.js";
+import {
+  createActionCard,
+  createButton,
+  createCustomGraph,
+  createEmbeddedSurface,
+  createSlider,
+  createTextLabel,
+  createToggle,
+  createValueReadout
+} from "../components/index.js";
+import {
+  createColumn,
+  createPageContainer,
+  createRow,
+  createScrollContainer,
+  createSection
+} from "../containers/index.js";
+import { type DisplayComponent, type DisplayNode, createNode } from "../core/component.js";
 
 export interface SettingsFixtureValues {
   showLabels: boolean;
@@ -27,71 +42,158 @@ export function createSliderFixture(value = 50): DisplayNode {
 }
 
 export function createSettingsPageFixture(values: SettingsFixtureValues): DisplayNode {
-  return createPageContainer("settings-pages", {
-    initialPageId: values.activePageId ?? "settings-page",
-    padding: 0,
-    children: [
-      createColumn("settings-page", {
+  return createNode("settings-shell", SettingsShellComponent, {
+    values
+  });
+}
+
+export function createActionCardFixture(): DisplayNode {
+  return createActionCard("fixture-action-card", {
+    title: "Selected Target",
+    lines: ["Proxima Centauri", "Distance: 4.24 ly"],
+    dismissible: true,
+    dismissActionId: "selection.dismiss",
+    primaryActionLabel: "Go to Target",
+    primaryActionId: "selection.go"
+  });
+}
+
+export function createCustomGraphFixture(): DisplayNode {
+  return createCustomGraph("fixture-custom-graph", {
+    points: [12, 18, 16, 24, 28, 21, 30],
+    actionId: "graph.select-point"
+  });
+}
+
+export function createEmbeddedSurfaceFixture(): DisplayNode {
+  return createEmbeddedSurface("fixture-embedded-surface", {
+    sourceId: "camera.rear",
+    title: "Rear Camera",
+    interactive: true,
+    acceptsForwardedInput: true,
+    dismissible: true,
+    dismissActionId: "surface.close"
+  });
+}
+
+interface SettingsShellProps {
+  values: SettingsFixtureValues;
+}
+
+const SettingsShellComponent: DisplayComponent<SettingsShellProps> = {
+  kind: "settings-shell",
+  getChildren(ctx) {
+    const values = ctx.props.values;
+    return [
+      createPageContainer("settings-pages", {
+        initialPageId: values.activePageId ?? "settings-page",
+        padding: 0,
         children: [
-          createRow("settings-header", {
-            gap: 8,
+          createColumn("settings-page", {
             children: [
-              createTextLabel("settings-title", {
-                text: "Settings"
+              createRow("settings-header", {
+                gap: 8,
+                children: [
+                  createTextLabel("settings-title", {
+                    text: "Settings"
+                  }),
+                  createButton("settings-open-audio", {
+                    label: "Audio",
+                    actionId: "nav.open-audio"
+                  })
+                ]
               }),
-              createButton("settings-back", {
-                label: "Back",
-                actionId: "nav.back"
+              createScrollContainer("settings-scroll", {
+                gap: 12,
+                children: [
+                  createSection("settings-display-section", {
+                    title: "Display",
+                    children: [
+                      createToggle("show-labels-toggle", {
+                        label: "Show Labels",
+                        value: values.showLabels,
+                        field: "showLabels"
+                      }),
+                      createSlider("brightness-slider", {
+                        label: "Brightness",
+                        value: values.brightness,
+                        min: 0,
+                        max: 100,
+                        step: 5,
+                        field: "brightness"
+                      })
+                    ]
+                  }),
+                  createSection("settings-audio-section", {
+                    title: "Audio",
+                    children: [
+                      createToggle("alerts-toggle", {
+                        label: "Alerts",
+                        value: values.alertsEnabled,
+                        field: "alertsEnabled"
+                      })
+                    ]
+                  })
+                ]
               })
             ]
           }),
-          createScrollContainer("settings-scroll", {
+          createColumn("audio-page", {
             gap: 12,
             children: [
-              createSection("settings-display-section", {
-                title: "Display",
+              createRow("audio-page-header", {
+                gap: 8,
                 children: [
-                  createToggle("show-labels-toggle", {
-                    label: "Show Labels",
-                    value: values.showLabels,
-                    field: "showLabels"
+                  createTextLabel("audio-page-title", {
+                    text: "Audio"
                   }),
-                  createSlider("brightness-slider", {
-                    label: "Brightness",
-                    value: values.brightness,
-                    min: 0,
-                    max: 100,
-                    step: 5,
-                    field: "brightness"
+                  createButton("audio-page-back", {
+                    label: "Back",
+                    actionId: "nav.back"
                   })
                 ]
               }),
-              createSection("settings-audio-section", {
-                title: "Audio",
-                children: [
-                  createToggle("alerts-toggle", {
-                    label: "Alerts",
-                    value: values.alertsEnabled,
-                    field: "alertsEnabled"
-                  })
-                ]
+              createValueReadout("audio-alerts-readout", {
+                label: "Alerts",
+                value: values.alertsEnabled ? "Enabled" : "Disabled"
               })
             ]
-          })
-        ]
-      }),
-      createColumn("audio-page", {
-        gap: 12,
-        children: [
-          createTextLabel("audio-page-title", {
-            text: "Audio"
-          }),
-          createValueReadout("audio-alerts-readout", {
-            label: "Alerts",
-            value: values.alertsEnabled ? "Enabled" : "Disabled"
           })
         ]
       })
-    ]
-  });
-}
+    ];
+  },
+  measure(ctx) {
+    return ctx.measureChild("settings-pages");
+  },
+  layout(ctx) {
+    ctx.setChildBounds("settings-pages", ctx.bounds);
+    ctx.setContentBounds(ctx.bounds);
+  },
+  render() {
+    return [];
+  },
+  hitTest() {
+    return null;
+  },
+  handleEvent(ctx) {
+    if (ctx.event.type === "action" && ctx.event.actionId === "nav.open-audio") {
+      ctx.emit({
+        type: "navigation-request",
+        componentId: ctx.id,
+        containerId: "settings-pages",
+        intent: "push",
+        pageId: "audio-page"
+      });
+    }
+
+    if (ctx.event.type === "action" && ctx.event.actionId === "nav.back") {
+      ctx.emit({
+        type: "navigation-request",
+        componentId: ctx.id,
+        containerId: "settings-pages",
+        intent: "back"
+      });
+    }
+  }
+};

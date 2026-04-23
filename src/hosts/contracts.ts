@@ -6,8 +6,8 @@ export interface HostFrame {
   events?: readonly InputEvent[];
 }
 
-export interface HostAdapter {
+export interface HostAdapter<TFrame = HostFrame> {
   attach(): void;
-  update(frame: HostFrame): void;
+  update(frame: TFrame): void;
   detach(): void;
 }
