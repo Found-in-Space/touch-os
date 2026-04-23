@@ -1,0 +1,49 @@
+{
+  "name": "@foundinspace/touch-os",
+  "version": "0.1.0",
+  "description": "A headless virtual-device UI runtime for reusable touch-like surfaces.",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
+    "./components": {
+      "types": "./dist/components/index.d.ts",
+      "import": "./dist/components/index.js"
+    },
+    "./containers": {
+      "types": "./dist/containers/index.d.ts",
+      "import": "./dist/containers/index.js"
+    },
+    "./services": {
+      "types": "./dist/services/index.d.ts",
+      "import": "./dist/services/index.js"
+    },
+    "./hosts": {
+      "types": "./dist/hosts/index.d.ts",
+      "import": "./dist/hosts/index.js"
+    },
+    "./hosts/*": {
+      "types": "./dist/hosts/*.d.ts",
+      "import": "./dist/hosts/*.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}
