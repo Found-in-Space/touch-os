@@ -108,4 +108,72 @@ describe("runtime core", () => {
     expect(thirdRender.revision).toBeGreaterThan(firstRender.revision);
     expect(runtime.getInteraction().focusedComponentId).toBe("spy");
   });
+
+  it("ignores pointer-up and cancel events for a different pointer id", () => {
+    const events: string[] = [];
+
+    const component: DisplayComponent<Record<string, never>> = {
+      kind: "interactive-spy",
+      measure() {
+        return { width: 80, height: 40 };
+      },
+      render() {
+        return [];
+      },
+      hitTest(ctx) {
+        return { targetId: `${ctx.id}:face` };
+      },
+      handleEvent(ctx) {
+        events.push(`${ctx.id}:${ctx.event.type}`);
+      }
+    };
+
+    const runtime = createRuntime({
+      root: createNode("spy", component, {}),
+      surface: { width: 160, height: 120 }
+    });
+
+    runtime.render();
+    const bounds = runtime.getBounds("spy");
+    const surfaceX = (bounds?.x ?? 0) + 10;
+    const surfaceY = (bounds?.y ?? 0) + 10;
+
+    runtime.dispatchInput({
+      type: "pointer-down",
+      surfaceX,
+      surfaceY,
+      timestamp: 1,
+      pointerId: "pointer-a"
+    });
+    runtime.dispatchInput({
+      type: "pointer-up",
+      surfaceX,
+      surfaceY,
+      timestamp: 2,
+      pointerId: "pointer-b"
+    });
+    runtime.dispatchInput({
+      type: "cancel",
+      surfaceX,
+      surfaceY,
+      timestamp: 3,
+      pointerId: "pointer-b"
+    });
+
+    expect(events).toContain("spy:pointer-down");
+    expect(events).not.toContain("spy:pointer-up");
+    expect(events).not.toContain("spy:cancel");
+    expect(runtime.getInteraction().pressedTargetId).toBe("spy:face");
+
+    runtime.dispatchInput({
+      type: "cancel",
+      surfaceX,
+      surfaceY,
+      timestamp: 4,
+      pointerId: "pointer-a"
+    });
+
+    expect(events).toContain("spy:cancel");
+    expect(runtime.getInteraction().pressedTargetId).toBeUndefined();
+  });
 });

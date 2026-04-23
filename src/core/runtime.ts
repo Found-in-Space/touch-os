@@ -803,6 +803,10 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
     syncFocusEvents();
   }
 
+  function matchesActivePointer(pointer: ActivePointerState, pointerId?: string): boolean {
+    return pointerId === undefined || pointer.pointerId === pointerId;
+  }
+
   function dispatchInput(event: InputEvent): DispatchResult {
     timingService.advanceTo(event.timestamp);
     syncFocusEvents();
@@ -911,6 +915,9 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
       case "pointer-up": {
         const point = createPoint(event.surfaceX, event.surfaceY);
         const releaseMatch = activePointer;
+        if (releaseMatch && !matchesActivePointer(releaseMatch, event.pointerId)) {
+          break;
+        }
         updateHover(point, event.timestamp, activePointer);
         if (releaseMatch) {
           const deltaX = point.x - releaseMatch.startPoint.x;
@@ -952,7 +959,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
       case "cancel": {
         const point = createPoint(event.surfaceX, event.surfaceY);
         const pointer = activePointer;
-        if (pointer) {
+        if (pointer && matchesActivePointer(pointer, event.pointerId)) {
           handled = dispatchToPath(pointer.pathIds, pointer.targetId, (node) =>
             createPointerDisplayEvent("cancel", node, point, event.timestamp, pointer.targetId, pointer)
           );

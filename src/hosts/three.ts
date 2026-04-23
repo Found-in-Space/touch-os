@@ -287,7 +287,16 @@ export type ThreePanelMesh = THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMate
 interface InteractorPointerState extends PointerPresentationState {
   pressed: boolean;
   dispatched: boolean;
+  pointerType: PointerType;
+  pressure: number | undefined;
+  modifiers: ModifierState;
+  timestamp: number;
 }
+
+const CONTACT_PLANE_TOLERANCE_RATIO = 0.02;
+const CONTACT_PLANE_TOLERANCE_MIN = 0.0025;
+const CONTACT_PLANE_TOLERANCE_MAX = 0.01;
+const CONTACT_NORMAL_ALIGNMENT_MIN = 0.25;
 
 export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanelHost {
   const runtime = options.runtime;
@@ -578,15 +587,40 @@ export function createPanelInteractor(options: {
       hit: null,
       active: false,
       pressed: false,
-      dispatched: false
+      dispatched: false,
+      pointerType: "unknown",
+      pressure: undefined,
+      modifiers: DEFAULT_MODIFIERS,
+      timestamp: 0
     };
     states.set(pointerId, created);
     return created;
   }
 
+  function cancelState(state: InteractorPointerState): void {
+    if (!state.dispatched) {
+      return;
+    }
+
+    options.runtime.dispatchInput({
+      type: "cancel",
+      timestamp: state.timestamp,
+      pointerId: state.pointerId,
+      pointerType: state.pointerType,
+      modifiers: state.modifiers,
+      surfaceX: state.hit?.surfaceX ?? -1,
+      surfaceY: state.hit?.surfaceY ?? -1,
+      ...(state.pressure === undefined ? {} : { pressure: state.pressure })
+    });
+  }
+
   return {
     process(sample, frame) {
       const state = resolveState(sample.pointerId);
+      state.pointerType = sample.pointerType;
+      state.pressure = sample.pressure;
+      state.modifiers = sample.modifiers ?? DEFAULT_MODIFIERS;
+      state.timestamp = sample.timestamp;
       const metrics = options.getSurfaceMetrics();
       const hit = resolvePointerSampleHit(frame, sample, options.mesh, metrics, raycaster);
 
@@ -678,8 +712,15 @@ export function createPanelInteractor(options: {
     },
     clear(pointerId) {
       if (pointerId) {
+        const state = states.get(pointerId);
+        if (state) {
+          cancelState(state);
+        }
         states.delete(pointerId);
         return;
+      }
+      for (const state of states.values()) {
+        cancelState(state);
       }
       states.clear();
     }
@@ -1017,6 +1058,12 @@ function createPanelDriver(
       host.attach();
     },
     update(frame) {
+      if (sources.length > 0 && (frame.events?.length ?? 0) > 0) {
+        throw new Error(
+          "Panel drivers accept either frame.events or pointerSources in a given frame, not both."
+        );
+      }
+
       host.update(frame);
       latestHit = host.getHit();
 
@@ -1184,14 +1231,17 @@ function resolvePointerSampleHit(
       return hit ? toSurfaceHit(hit, metrics) : null;
     }
     case "contact":
-      return sample.contactPoint ? toContactSurfaceHit(mesh, metrics, sample.contactPoint) : null;
+      return sample.contactPoint
+        ? toContactSurfaceHit(mesh, metrics, sample.contactPoint, sample.contactNormal)
+        : null;
   }
 }
 
 function toContactSurfaceHit(
   mesh: ThreePanelMesh,
   metrics: SurfaceMetrics,
-  contactPoint: Vector3Like
+  contactPoint: Vector3Like,
+  contactNormal?: Vector3Like
 ): { surfaceX: number; surfaceY: number; distance: number } | null {
   const localPoint = mesh.worldToLocal(new THREE.Vector3(contactPoint.x, contactPoint.y, contactPoint.z));
   const geometry = mesh.geometry.parameters;
@@ -1199,12 +1249,18 @@ function toContactSurfaceHit(
   const panelHeight = geometry.height ?? 1;
   const halfWidth = panelWidth / 2;
   const halfHeight = panelHeight / 2;
+  const contactPlaneTolerance = clampContactPlaneTolerance(panelWidth, panelHeight);
   if (
     localPoint.x < -halfWidth ||
     localPoint.x > halfWidth ||
     localPoint.y < -halfHeight ||
-    localPoint.y > halfHeight
+    localPoint.y > halfHeight ||
+    Math.abs(localPoint.z) > contactPlaneTolerance
   ) {
+    return null;
+  }
+
+  if (!isContactNormalAligned(mesh, contactNormal)) {
     return null;
   }
 
@@ -1213,6 +1269,28 @@ function toContactSurfaceHit(
     surfaceY: ((halfHeight - localPoint.y) / panelHeight) * metrics.height,
     distance: 0
   };
+}
+
+function clampContactPlaneTolerance(panelWidth: number, panelHeight: number): number {
+  return Math.min(
+    Math.max(Math.min(panelWidth, panelHeight) * CONTACT_PLANE_TOLERANCE_RATIO, CONTACT_PLANE_TOLERANCE_MIN),
+    CONTACT_PLANE_TOLERANCE_MAX
+  );
+}
+
+function isContactNormalAligned(mesh: ThreePanelMesh, contactNormal?: Vector3Like): boolean {
+  if (!contactNormal) {
+    return true;
+  }
+
+  const worldContactNormal = new THREE.Vector3(contactNormal.x, contactNormal.y, contactNormal.z);
+  if (worldContactNormal.lengthSq() === 0) {
+    return true;
+  }
+
+  worldContactNormal.normalize();
+  const panelNormal = new THREE.Vector3(0, 0, 1).applyQuaternion(mesh.getWorldQuaternion(new THREE.Quaternion()));
+  return Math.abs(panelNormal.dot(worldContactNormal)) >= CONTACT_NORMAL_ALIGNMENT_MIN;
 }
 
 function createHostEventFromSample(

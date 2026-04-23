@@ -157,6 +157,62 @@ describe("three interactor", () => {
     host.detach();
   });
 
+  it("rejects direct touch points that are off the panel plane or tangential to it", () => {
+    const runtime = createRuntime({
+      root: createButtonFixture(),
+      surface: { width: 160, height: 100 }
+    });
+
+    const scene = new THREE.Scene();
+    const host = createScenePanelHost({
+      runtime,
+      surface: { width: 160, height: 100 },
+      panelWidth: 1,
+      panelHeight: 0.625,
+      createCanvas: createFakeCanvas
+    });
+    host.attach();
+    host.update({ scene });
+
+    const interactor = createPanelInteractor({
+      runtime,
+      mesh: host.mesh,
+      getSurfaceMetrics: () => host.getSurfaceMetrics()
+    });
+
+    const worldCenter = host.mesh.getWorldPosition(new THREE.Vector3());
+    const offPlaneResult = interactor.process(
+      {
+        pointerId: "contact-off-plane",
+        pointerType: "touch",
+        transport: "contact",
+        phase: "down",
+        timestamp: 1,
+        contactPoint: { x: worldCenter.x, y: worldCenter.y, z: worldCenter.z + 0.05 }
+      },
+      { scene }
+    );
+    const tangentialNormalResult = interactor.process(
+      {
+        pointerId: "contact-tangent",
+        pointerType: "touch",
+        transport: "contact",
+        phase: "down",
+        timestamp: 2,
+        contactPoint: { x: worldCenter.x, y: worldCenter.y, z: worldCenter.z },
+        contactNormal: { x: 1, y: 0, z: 0 }
+      },
+      { scene }
+    );
+
+    expect(offPlaneResult.hit).toBeNull();
+    expect(offPlaneResult.dispatched).toBe(false);
+    expect(tangentialNormalResult.hit).toBeNull();
+    expect(tangentialNormalResult.dispatched).toBe(false);
+
+    host.detach();
+  });
+
   it("drives panel interaction from pointer sources and exposes state", () => {
     const runtime = createRuntime({
       root: createButtonFixture(),
@@ -213,6 +269,118 @@ describe("three interactor", () => {
       componentId: "fixture-button"
     });
     expect(driver.getPointerState("screen-pointer")).toBeUndefined();
+
+    driver.detach();
+  });
+
+  it("cancels runtime state when clearing or detaching an external pointer", () => {
+    const runtime = createRuntime({
+      root: createButtonFixture(),
+      surface: { width: 160, height: 100 }
+    });
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1.6, 0.1, 10);
+    camera.position.set(0, 0, 1);
+    camera.lookAt(0, 0, 0);
+    scene.add(camera);
+
+    let stage = 0;
+    const screenSource = createScreenPointerSource(() => {
+      if (stage === 0) {
+        return [
+          {
+            pointerId: "screen-pointer",
+            pointerType: "mouse",
+            phase: "down",
+            timestamp: 1,
+            ndcX: 0,
+            ndcY: 0
+          }
+        ];
+      }
+
+      if (stage === 1) {
+        return [
+          {
+            pointerId: "screen-pointer",
+            pointerType: "mouse",
+            phase: "down",
+            timestamp: 2,
+            ndcX: 0,
+            ndcY: 0
+          }
+        ];
+      }
+
+      return [];
+    });
+
+    const driver = createScenePanelDriver({
+      runtime,
+      surface: { width: 160, height: 100 },
+      panelWidth: 1,
+      panelHeight: 0.625,
+      createCanvas: createFakeCanvas,
+      pointerSources: [screenSource]
+    });
+
+    driver.attach();
+    driver.update({ scene, camera });
+    stage = 1;
+
+    expect(runtime.getInteraction().pressedTargetId).toBe("fixture-button:face");
+
+    driver.clearPointer("screen-pointer");
+    expect(runtime.getInteraction().pressedTargetId).toBeUndefined();
+
+    driver.update({ scene, camera });
+    expect(runtime.getInteraction().pressedTargetId).toBe("fixture-button:face");
+
+    stage = 2;
+    driver.detach();
+    expect(runtime.getInteraction().pressedTargetId).toBeUndefined();
+  });
+
+  it("rejects frames that mix host events and pointer sources", () => {
+    const runtime = createRuntime({
+      root: createButtonFixture(),
+      surface: { width: 160, height: 100 }
+    });
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1.6, 0.1, 10);
+    camera.position.set(0, 0, 1);
+    camera.lookAt(0, 0, 0);
+    scene.add(camera);
+
+    const screenSource = createScreenPointerSource(() => []);
+    const driver = createScenePanelDriver({
+      runtime,
+      surface: { width: 160, height: 100 },
+      panelWidth: 1,
+      panelHeight: 0.625,
+      createCanvas: createFakeCanvas,
+      pointerSources: [screenSource]
+    });
+
+    driver.attach();
+
+    expect(() =>
+      driver.update({
+        scene,
+        camera,
+        events: [
+          {
+            source: "screen",
+            type: "pointer-down",
+            ndcX: 0,
+            ndcY: 0,
+            timestamp: 1
+          }
+        ]
+      })
+    ).toThrow(/either frame\.events or pointerSources/i);
 
     driver.detach();
   });
