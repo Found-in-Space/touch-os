@@ -96,4 +96,64 @@ describe("settings page fixture", () => {
     expect(nextScrollState.offsetY).toBeGreaterThan(0);
     expect(runtime.render().revision).toBeGreaterThan(0);
   });
+
+  it("supports drag-to-scroll inside the runtime", () => {
+    const runtime = createRuntime({
+      root: createSettingsPageFixture({
+        showLabels: true,
+        brightness: 45,
+        alertsEnabled: true
+      }),
+      surface: { width: 320, height: 120 }
+    });
+
+    runtime.render();
+    const scrollBounds = runtime.getBounds("settings-scroll");
+    expect(scrollBounds).toBeDefined();
+
+    const startX = (scrollBounds?.x ?? 0) + 24;
+    const startY = (scrollBounds?.y ?? 0) + 60;
+
+    runtime.dispatchInput({
+      type: "pointer-down",
+      surfaceX: startX,
+      surfaceY: startY,
+      timestamp: 1
+    });
+    runtime.dispatchInput({
+      type: "pointer-move",
+      surfaceX: startX,
+      surfaceY: startY - 50,
+      timestamp: 2
+    });
+    runtime.dispatchInput({
+      type: "pointer-up",
+      surfaceX: startX,
+      surfaceY: startY - 50,
+      timestamp: 3
+    });
+
+    expect(runtime.getServices().scroll.getState("settings-scroll").offsetY).toBeGreaterThan(0);
+  });
+
+  it("clears focus when navigation hides the focused control", () => {
+    const runtime = createRuntime({
+      root: createSettingsPageFixture({
+        showLabels: true,
+        brightness: 45,
+        alertsEnabled: true
+      }),
+      surface: { width: 320, height: 180 }
+    });
+
+    runtime.render();
+    clickComponentCenter(runtime, "brightness-slider");
+    expect(runtime.getInteraction().focusedComponentId).toBe("brightness-slider");
+
+    const result = clickComponentCenter(runtime, "settings-open-audio", 10);
+    applyNavigationOutputs(runtime, result.outputs);
+    runtime.render();
+
+    expect(runtime.getInteraction().focusedComponentId).toBeUndefined();
+  });
 });

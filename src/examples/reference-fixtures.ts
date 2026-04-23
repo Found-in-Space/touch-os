@@ -1,5 +1,6 @@
 import {
   createActionCard,
+  createBitmapPlot,
   createButton,
   createCustomGraph,
   createEmbeddedSurface,
@@ -62,6 +63,13 @@ export function createCustomGraphFixture(): DisplayNode {
   return createCustomGraph("fixture-custom-graph", {
     points: [12, 18, 16, 24, 28, 21, 30],
     actionId: "graph.select-point"
+  });
+}
+
+export function createBitmapPlotFixture(): DisplayNode {
+  return createBitmapPlot("fixture-bitmap-plot", {
+    points: [12, 18, 16, 24, 28, 21, 30],
+    actionId: "bitmap-plot.select-point"
   });
 }
 

@@ -15,6 +15,7 @@ export interface EmbeddedSurfaceProps {
   acceptsForwardedInput?: boolean;
   desiredSourceType?: string;
   refreshPolicy?: "manual" | "always";
+  compositionMode?: "copy" | "composite";
   fallbackLabel?: string;
   dismissible?: boolean;
   dismissActionId?: string;
@@ -119,7 +120,8 @@ const EmbeddedSurfaceComponent: DisplayComponent<EmbeddedSurfaceProps, EmbeddedS
         componentId: ctx.id,
         role: "embedded-surface-viewport",
         rect: viewportRect,
-        handle: ctx.services.surfaces.getHandle(ctx.id)
+        handle: ctx.services.surfaces.getHandle(ctx.id),
+        compositionMode: ctx.props.compositionMode ?? "copy"
       });
     } else {
       commands.push({
@@ -263,6 +265,7 @@ function createEmbeddedSurfaceConfig(props: EmbeddedSurfaceProps) {
       ? {}
       : { desiredSourceType: props.desiredSourceType }),
     ...(props.refreshPolicy === undefined ? {} : { refreshPolicy: props.refreshPolicy }),
+    ...(props.compositionMode === undefined ? {} : { compositionMode: props.compositionMode }),
     ...(props.fallbackLabel === undefined ? {} : { fallbackLabel: props.fallbackLabel })
   };
 }

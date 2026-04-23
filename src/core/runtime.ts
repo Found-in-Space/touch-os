@@ -38,6 +38,7 @@ import {
   type Size
 } from "./geometry.js";
 import type {
+  BitmapService,
   FocusService,
   MutableLayoutService,
   RuntimeServices,
@@ -47,6 +48,7 @@ import type {
   TimingService
 } from "../services/contracts.js";
 import {
+  createBitmapService,
   createEmbeddedSurfaceService,
   createMemoryFocusService,
   createMemoryLayoutService,
@@ -139,6 +141,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
   const layout = options.services?.layout ?? createMemoryLayoutService();
   let layoutDirty = true;
   let renderDirty = true;
+  let treeDirty = false;
   let renderRevision = 0;
   let outputs: RuntimeOutput[] = [];
   const pendingEmissions: PendingEmission[] = [];
@@ -158,6 +161,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
       options.services?.timing ??
       createTimingService(options.now ?? 0, options.longPressDelay ?? 450),
     surface: options.services?.surface ?? createSurfaceService(options.surface, () => invalidateLayout()),
+    bitmaps: options.services?.bitmaps ?? createBitmapService(() => invalidateRender()),
     surfaces:
       options.services?.surfaces ?? createEmbeddedSurfaceService(() => invalidateRender())
   };
@@ -175,6 +179,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
   rootNode = mountNode(rootDescriptor, undefined);
 
   function invalidateLayout(): void {
+    treeDirty = true;
     layoutDirty = true;
     renderDirty = true;
   }
@@ -499,11 +504,17 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
       return;
     }
 
+    if (treeDirty) {
+      rootNode = reconcileNode(rootNode, rootDescriptor, undefined);
+      clearRemovedInteractionReferences();
+      treeDirty = false;
+    }
     layout.clear();
     const surface = services.surface.getMetrics();
     const availableBounds = insetRect(createRect(0, 0, surface.width, surface.height), surface.safeArea);
     measureNode(rootNode, unconstrained(availableBounds.width, availableBounds.height));
     layoutNode(rootNode, availableBounds);
+    syncFocusVisibility();
     layoutDirty = false;
     renderDirty = true;
   }
@@ -596,6 +607,21 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
     if (currentFocus) {
       dispatchFocusLikeEvent("focus", currentFocus);
     }
+  }
+
+  function syncFocusVisibility(): void {
+    const currentFocus = focusService.getFocusedComponentId();
+    if (!currentFocus) {
+      return;
+    }
+
+    const bounds = layout.getBounds(currentFocus);
+    if (bounds && bounds.width > 0 && bounds.height > 0) {
+      return;
+    }
+
+    focusService.clearFocus();
+    syncFocusEvents();
   }
 
   function dispatchFocusLikeEvent(type: "focus" | "blur", componentId: string): void {
@@ -1014,9 +1040,12 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
 
   function setRoot(root: DisplayNode<unknown>): void {
     rootDescriptor = root;
+    treeDirty = true;
     rootNode = reconcileNode(rootNode, rootDescriptor, undefined);
     clearRemovedInteractionReferences();
-    invalidateLayout();
+    treeDirty = false;
+    layoutDirty = true;
+    renderDirty = true;
   }
 
   function resize(metrics: Partial<SurfaceMetrics>): void {

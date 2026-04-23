@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { DisplayRuntime } from "../core/runtime.js";
 import type {
+  BitmapDrawCommand,
   CircleDrawCommand,
   DrawCommand,
   LineDrawCommand,
@@ -28,8 +29,10 @@ export interface CanvasContextLike {
   strokeStyle: string | CanvasGradient | CanvasPattern;
   lineWidth: number;
   font: string;
+  globalAlpha: number;
   textAlign: "left" | "center" | "right";
   textBaseline: "top" | "middle" | "bottom" | "alphabetic";
+  imageSmoothingEnabled?: boolean;
   save(): void;
   restore(): void;
   setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void;
@@ -68,6 +71,65 @@ export interface QuaternionLike {
   y: number;
   z: number;
   w: number;
+}
+
+export type ThreePointerTransport = "screen" | "ray" | "surface" | "contact";
+
+export type ThreePointerPhase = "move" | "down" | "up" | "cancel" | "scroll";
+
+export interface ThreePointerSample {
+  pointerId: string;
+  pointerType: PointerType;
+  transport: ThreePointerTransport;
+  phase: ThreePointerPhase;
+  timestamp: number;
+  sourceId?: string;
+  handedness?: "left" | "right" | "none";
+  pressure?: number;
+  modifiers?: ModifierState;
+  ndcX?: number;
+  ndcY?: number;
+  origin?: Vector3Like;
+  direction?: Vector3Like;
+  surfaceX?: number;
+  surfaceY?: number;
+  contactPoint?: Vector3Like;
+  contactNormal?: Vector3Like;
+  deltaX?: number;
+  deltaY?: number;
+}
+
+export type PointerClaimPolicy =
+  | "block-on-hit"
+  | "block-on-press"
+  | "passthrough"
+  | "manual";
+
+export interface PointerPresentationState {
+  pointerId: string;
+  claimed: boolean;
+  blocked: boolean;
+  hit: ThreePanelHit | null;
+  active: boolean;
+}
+
+export interface PointerPresenter {
+  update(state: PointerPresentationState): void;
+  dispose(): void;
+}
+
+export interface PanelInteractionResult {
+  hit: ThreePanelHit | null;
+  claimed: boolean;
+  blocked: boolean;
+  dispatched: boolean;
+  hostEvent?: ThreePanelHostInputEvent;
+}
+
+export interface PanelInteractor {
+  process(sample: ThreePointerSample, frame: ThreePanelHostFrame): PanelInteractionResult;
+  getPointerState(pointerId: string): PointerPresentationState | undefined;
+  clear(pointerId?: string): void;
 }
 
 interface ThreePanelInputEventBase {
@@ -126,7 +188,7 @@ export interface ThreePanelHit {
   componentId: string | undefined;
   targetId: string | undefined;
   pointerId: string;
-  source: ThreePanelHostInputEvent["source"];
+  source: ThreePanelHostInputEvent["source"] | "contact";
 }
 
 export interface ThreeSurfaceRenderHandle {
@@ -156,6 +218,7 @@ export interface ThreePanelHostOptions extends ThreeStaticTransform {
   depthTest?: boolean;
   transparent?: boolean;
   parent?: ThreeParentResolver;
+  pointerClaimPolicy?: PointerClaimPolicy;
   createCanvas?: (metrics: SurfaceMetrics) => CanvasLike;
   updatePlacement?: (
     mesh: ThreePanelMesh,
@@ -171,6 +234,8 @@ export interface ThreePanelHost extends HostAdapter<ThreePanelHostFrame> {
   readonly canvas: CanvasLike;
   render(): RenderSnapshot;
   getHit(): ThreePanelHit | null;
+  getSurfaceMetrics(): SurfaceMetrics;
+  getCompositeSurfaces(): readonly SurfaceDrawCommand[];
 }
 
 export interface XrTabletHostOptions extends ThreePanelHostOptions {
@@ -183,7 +248,46 @@ export interface HudHostOptions extends ThreePanelHostOptions {
   offset?: { x?: number; y?: number };
 }
 
-type ThreePanelMesh = THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+type ThreePointerSourceResolver = (
+  frame: ThreePanelHostFrame
+) =>
+  | Omit<ThreePointerSample, "transport">
+  | readonly Omit<ThreePointerSample, "transport">[]
+  | undefined;
+
+export interface ThreePointerSource {
+  sample(frame: ThreePanelHostFrame): readonly ThreePointerSample[];
+  clear?(): void;
+}
+
+export interface ThreePanelDriverOptions {
+  pointerClaimPolicy?: PointerClaimPolicy;
+  pointerSources?: readonly ThreePointerSource[];
+  pointerPresenter?: PointerPresenter | readonly PointerPresenter[];
+}
+
+export interface ScenePanelDriverOptions extends ThreePanelHostOptions, ThreePanelDriverOptions {}
+
+export interface HeldTabletDriverOptions extends XrTabletHostOptions, ThreePanelDriverOptions {}
+
+export interface HudPanelDriverOptions extends HudHostOptions, ThreePanelDriverOptions {}
+
+export interface ThreePanelDriver extends HostAdapter<ThreePanelHostFrame> {
+  readonly host: ThreePanelHost;
+  readonly interactor: PanelInteractor;
+  render(): RenderSnapshot;
+  getHit(): ThreePanelHit | null;
+  getCompositeSurfaces(): readonly SurfaceDrawCommand[];
+  getPointerState(pointerId: string): PointerPresentationState | undefined;
+  clearPointer(pointerId?: string): void;
+}
+
+export type ThreePanelMesh = THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+
+interface InteractorPointerState extends PointerPresentationState {
+  pressed: boolean;
+  dispatched: boolean;
+}
 
 export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanelHost {
   const runtime = options.runtime;
@@ -209,6 +313,8 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
   let currentParent: THREE.Object3D | undefined;
   let lastRenderedRevision = -1;
   let latestHit: ThreePanelHit | null = null;
+  let compositeSurfaces: SurfaceDrawCommand[] = [];
+  const pressedPointers = new Set<string>();
 
   function attach(): void {
     runtime.resize(surfaceMetrics);
@@ -253,6 +359,10 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
 
   function render(): RenderSnapshot {
     const snapshot = runtime.render();
+    compositeSurfaces = snapshot.commands.filter(
+      (command): command is SurfaceDrawCommand =>
+        command.type === "surface" && (command.compositionMode ?? "copy") === "composite"
+    );
     if (snapshot.revision !== lastRenderedRevision) {
       renderer.draw(snapshot);
       texture.needsUpdate = true;
@@ -312,9 +422,14 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
     }
 
     const result = runtime.dispatchInput(createRuntimeInputEvent(event, pointerId, hit.surfaceX, hit.surfaceY));
+    updatePressedPointers(pressedPointers, pointerId, event.type);
 
     latestHit = {
-      blocked: true,
+      blocked: resolvePointerBlocking(
+        options.pointerClaimPolicy ?? "block-on-hit",
+        true,
+        pressedPointers.has(pointerId)
+      ),
       length: hit.distance,
       surfaceX: hit.surfaceX,
       surfaceY: hit.surfaceY,
@@ -326,6 +441,7 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
   }
 
   function dispatchMissedEvent(event: ThreePanelHostInputEvent, pointerId: string): void {
+    updatePressedPointers(pressedPointers, pointerId, event.type);
     if (!latestHit || latestHit.pointerId !== pointerId) {
       return;
     }
@@ -378,13 +494,19 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
     get canvas() {
       return canvas;
     },
+    getSurfaceMetrics() {
+      return resolveSurfaceMetrics(surfaceMetrics);
+    },
     attach,
     update(frame) {
       update(frame);
     },
     detach,
     render,
-    getHit
+    getHit,
+    getCompositeSurfaces() {
+      return compositeSurfaces.map((command) => ({ ...command }));
+    }
   };
 }
 
@@ -432,6 +554,184 @@ export function createHudHost(options: HudHostOptions): ThreePanelHost {
       return true;
     }
   });
+}
+
+export function createPanelInteractor(options: {
+  runtime: DisplayRuntime;
+  mesh: ThreePanelMesh;
+  getSurfaceMetrics(): SurfaceMetrics;
+  pointerClaimPolicy?: PointerClaimPolicy;
+}): PanelInteractor {
+  const raycaster = new THREE.Raycaster();
+  const states = new Map<string, InteractorPointerState>();
+
+  function resolveState(pointerId: string): InteractorPointerState {
+    const existing = states.get(pointerId);
+    if (existing) {
+      return existing;
+    }
+
+    const created: InteractorPointerState = {
+      pointerId,
+      claimed: false,
+      blocked: false,
+      hit: null,
+      active: false,
+      pressed: false,
+      dispatched: false
+    };
+    states.set(pointerId, created);
+    return created;
+  }
+
+  return {
+    process(sample, frame) {
+      const state = resolveState(sample.pointerId);
+      const metrics = options.getSurfaceMetrics();
+      const hit = resolvePointerSampleHit(frame, sample, options.mesh, metrics, raycaster);
+
+      let dispatched = false;
+      let hostEvent: ThreePanelHostInputEvent | undefined;
+      let currentHit: ThreePanelHit | null = null;
+
+      if (hit) {
+        hostEvent = createHostEventFromSample(sample, hit);
+        const dispatchResult = options.runtime.dispatchInput(
+          createRuntimeInputEvent(hostEvent, sample.pointerId, hit.surfaceX, hit.surfaceY)
+        );
+        state.dispatched = true;
+        dispatched = true;
+        currentHit = {
+          length: hit.distance,
+          surfaceX: hit.surfaceX,
+          surfaceY: hit.surfaceY,
+          componentId: dispatchResult.componentId,
+          targetId: dispatchResult.targetId,
+          pointerId: sample.pointerId,
+          source: sample.transport === "contact" ? "contact" : hostEvent.source,
+          blocked: false
+        };
+      } else if (state.dispatched) {
+        hostEvent =
+          sample.phase === "move" ? createMissMoveHostEvent(sample) : createCancelHostEvent(sample);
+        options.runtime.dispatchInput(
+          sample.phase === "move"
+            ? createRuntimeInputEvent(hostEvent, sample.pointerId, -1, -1)
+            : createCancelInputEvent(hostEvent, sample.pointerId)
+        );
+        dispatched = true;
+        if (sample.phase !== "move") {
+          state.dispatched = false;
+        }
+      }
+
+      state.active = sample.phase !== "up" && sample.phase !== "cancel";
+      if (sample.phase === "down") {
+        state.pressed = true;
+      }
+      if (sample.phase === "up" || sample.phase === "cancel") {
+        state.pressed = false;
+      }
+
+      const claimed = resolvePointerClaim(
+        options.pointerClaimPolicy ?? "block-on-hit",
+        Boolean(hit),
+        state.pressed
+      );
+      const blocked = resolvePointerBlocking(
+        options.pointerClaimPolicy ?? "block-on-hit",
+        Boolean(hit),
+        state.pressed
+      );
+
+      state.claimed = claimed;
+      state.blocked = blocked;
+      state.hit = currentHit ? { ...currentHit, blocked } : null;
+
+      if (sample.phase === "up" || sample.phase === "cancel") {
+        states.delete(sample.pointerId);
+      } else if (!state.active && !state.pressed && !state.dispatched && !state.hit) {
+        states.delete(sample.pointerId);
+      } else {
+        states.set(sample.pointerId, state);
+      }
+
+      return {
+        hit: state.hit ? { ...state.hit } : null,
+        claimed,
+        blocked,
+        dispatched,
+        ...(hostEvent ? { hostEvent } : {})
+      };
+    },
+    getPointerState(pointerId) {
+      const state = states.get(pointerId);
+      return state
+        ? {
+            pointerId: state.pointerId,
+            claimed: state.claimed,
+            blocked: state.blocked,
+            hit: state.hit ? { ...state.hit } : null,
+            active: state.active
+          }
+        : undefined;
+    },
+    clear(pointerId) {
+      if (pointerId) {
+        states.delete(pointerId);
+        return;
+      }
+      states.clear();
+    }
+  };
+}
+
+export function createScreenPointerSource(
+  resolve: ThreePointerSourceResolver
+): ThreePointerSource {
+  return createTransportPointerSource("screen", resolve);
+}
+
+export function createXrRayPointerSource(
+  resolve: ThreePointerSourceResolver
+): ThreePointerSource {
+  return createTransportPointerSource("ray", resolve);
+}
+
+export function createDirectTouchPointerSource(
+  resolve: ThreePointerSourceResolver
+): ThreePointerSource {
+  return createTransportPointerSource("contact", resolve);
+}
+
+export function createScenePanelDriver(options: ScenePanelDriverOptions): ThreePanelDriver {
+  return createPanelDriver(
+    createScenePanelHost(options),
+    options.runtime,
+    options.pointerClaimPolicy,
+    options.pointerSources,
+    options.pointerPresenter
+  );
+}
+
+export function createHeldTabletDriver(options: HeldTabletDriverOptions): ThreePanelDriver {
+  return createPanelDriver(
+    createXrTabletHost(options),
+    options.runtime,
+    options.pointerClaimPolicy,
+    options.pointerSources,
+    options.pointerPresenter
+  );
+}
+
+export function createHudPanelDriver(options: HudPanelDriverOptions): ThreePanelDriver {
+  return createPanelDriver(
+    createHudHost(options),
+    options.runtime,
+    options.pointerClaimPolicy,
+    options.pointerSources,
+    options.pointerPresenter
+  );
 }
 
 function resolveSurfaceMetrics(
@@ -522,6 +822,9 @@ function drawCommand(context: CanvasContextLike, command: DrawCommand): void {
     case "circle":
       drawCircleCommand(context, command);
       break;
+    case "bitmap":
+      drawBitmapCommand(context, command);
+      break;
     case "surface":
       drawSurfaceCommand(context, command);
       break;
@@ -606,7 +909,64 @@ function drawCircleCommand(context: CanvasContextLike, command: CircleDrawComman
   }
 }
 
+function drawBitmapCommand(context: CanvasContextLike, command: BitmapDrawCommand): void {
+  if (typeof context.drawImage !== "function") {
+    context.fillStyle = "#111827";
+    context.fillRect(command.rect.x, command.rect.y, command.rect.width, command.rect.height);
+    return;
+  }
+
+  const fit = command.fit ?? "stretch";
+  const opacity = command.opacity ?? 1;
+  const sampling = command.sampling ?? "linear";
+  const previousAlpha = context.globalAlpha;
+  const previousSmoothing = context.imageSmoothingEnabled;
+  context.globalAlpha = previousAlpha * opacity;
+
+  if (typeof context.imageSmoothingEnabled === "boolean") {
+    context.imageSmoothingEnabled = sampling === "linear";
+  }
+
+  const imageWidth = command.handle.width;
+  const imageHeight = command.handle.height;
+  if (imageWidth <= 0 || imageHeight <= 0 || fit === "stretch") {
+    context.drawImage(
+      command.handle.image,
+      command.rect.x,
+      command.rect.y,
+      command.rect.width,
+      command.rect.height
+    );
+  } else {
+    const scale =
+      fit === "contain"
+        ? Math.min(command.rect.width / imageWidth, command.rect.height / imageHeight)
+        : Math.max(command.rect.width / imageWidth, command.rect.height / imageHeight);
+    const drawWidth = imageWidth * scale;
+    const drawHeight = imageHeight * scale;
+    const drawX = command.rect.x + (command.rect.width - drawWidth) / 2;
+    const drawY = command.rect.y + (command.rect.height - drawHeight) / 2;
+
+    if (fit === "cover") {
+      context.beginPath();
+      context.rect(command.rect.x, command.rect.y, command.rect.width, command.rect.height);
+      context.clip();
+    }
+
+    context.drawImage(command.handle.image, drawX, drawY, drawWidth, drawHeight);
+  }
+
+  context.globalAlpha = previousAlpha;
+  if (typeof previousSmoothing === "boolean") {
+    context.imageSmoothingEnabled = previousSmoothing;
+  }
+}
+
 function drawSurfaceCommand(context: CanvasContextLike, command: SurfaceDrawCommand): void {
+  if ((command.compositionMode ?? "copy") === "composite") {
+    return;
+  }
+
   if (isThreeSurfaceRenderHandle(command.handle)) {
     command.handle.draw(context, command.rect);
     return;
@@ -627,6 +987,342 @@ function isThreeSurfaceRenderHandle(handle: unknown): handle is ThreeSurfaceRend
 
 function isDrawImageHandle(handle: unknown): handle is { image: unknown } {
   return typeof handle === "object" && handle !== null && "image" in handle;
+}
+
+function createPanelDriver(
+  host: ThreePanelHost,
+  runtime: DisplayRuntime,
+  pointerClaimPolicy: PointerClaimPolicy | undefined,
+  pointerSources: readonly ThreePointerSource[] | undefined,
+  pointerPresenter: PointerPresenter | readonly PointerPresenter[] | undefined
+): ThreePanelDriver {
+  const interactor = createPanelInteractor({
+    runtime,
+    mesh: host.mesh,
+    getSurfaceMetrics: () => host.getSurfaceMetrics(),
+    ...(pointerClaimPolicy === undefined ? {} : { pointerClaimPolicy })
+  });
+  const sources = pointerSources ?? [];
+  const presenters = Array.isArray(pointerPresenter)
+    ? [...pointerPresenter]
+    : pointerPresenter
+      ? [pointerPresenter]
+      : [];
+  let latestHit: ThreePanelHit | null = null;
+
+  return {
+    host,
+    interactor,
+    attach() {
+      host.attach();
+    },
+    update(frame) {
+      host.update(frame);
+      latestHit = host.getHit();
+
+      for (const source of sources) {
+        for (const sample of source.sample(frame)) {
+          const result = interactor.process(sample, frame);
+          latestHit = result.hit;
+          const state = interactor.getPointerState(sample.pointerId) ?? {
+            pointerId: sample.pointerId,
+            claimed: false,
+            blocked: false,
+            hit: null,
+            active: false
+          };
+          for (const presenter of presenters) {
+            presenter.update(state);
+          }
+        }
+      }
+
+      host.render();
+    },
+    detach() {
+      interactor.clear();
+      for (const source of sources) {
+        source.clear?.();
+      }
+      for (const presenter of presenters) {
+        presenter.dispose();
+      }
+      host.detach();
+    },
+    render() {
+      return host.render();
+    },
+    getHit() {
+      return latestHit ? { ...latestHit } : null;
+    },
+    getCompositeSurfaces() {
+      return host.getCompositeSurfaces();
+    },
+    getPointerState(pointerId) {
+      return interactor.getPointerState(pointerId);
+    },
+    clearPointer(pointerId) {
+      interactor.clear(pointerId);
+    }
+  };
+}
+
+function createTransportPointerSource(
+  transport: ThreePointerTransport,
+  resolve: ThreePointerSourceResolver
+): ThreePointerSource {
+  return {
+    sample(frame) {
+      const next = resolve(frame);
+      if (!next) {
+        return [];
+      }
+
+      const entries = Array.isArray(next) ? next : [next];
+      return entries.map((entry) => ({
+        ...entry,
+        transport
+      }));
+    }
+  };
+}
+
+function updatePressedPointers(
+  pressedPointers: Set<string>,
+  pointerId: string,
+  type: ThreePanelHostInputEvent["type"]
+): void {
+  if (type === "pointer-down") {
+    pressedPointers.add(pointerId);
+    return;
+  }
+
+  if (type === "pointer-up" || type === "cancel") {
+    pressedPointers.delete(pointerId);
+  }
+}
+
+function resolvePointerClaim(
+  policy: PointerClaimPolicy,
+  hasHit: boolean,
+  isPressed: boolean
+): boolean {
+  switch (policy) {
+    case "block-on-press":
+      return isPressed;
+    case "passthrough":
+    case "manual":
+      return hasHit;
+    case "block-on-hit":
+    default:
+      return hasHit;
+  }
+}
+
+function resolvePointerBlocking(
+  policy: PointerClaimPolicy,
+  hasHit: boolean,
+  isPressed: boolean
+): boolean {
+  switch (policy) {
+    case "passthrough":
+    case "manual":
+      return false;
+    case "block-on-press":
+      return isPressed;
+    case "block-on-hit":
+    default:
+      return hasHit;
+  }
+}
+
+function resolvePointerSampleHit(
+  frame: ThreePanelHostFrame,
+  sample: ThreePointerSample,
+  mesh: ThreePanelMesh,
+  metrics: SurfaceMetrics,
+  raycaster: THREE.Raycaster
+): { surfaceX: number; surfaceY: number; distance: number } | null {
+  if (!mesh.visible) {
+    return null;
+  }
+
+  switch (sample.transport) {
+    case "surface":
+      if (
+        sample.surfaceX === undefined ||
+        sample.surfaceY === undefined ||
+        !isSurfacePointInBounds(sample.surfaceX, sample.surfaceY, metrics)
+      ) {
+        return null;
+      }
+
+      return {
+        surfaceX: sample.surfaceX,
+        surfaceY: sample.surfaceY,
+        distance: 0
+      };
+    case "screen": {
+      if (!frame.camera || sample.ndcX === undefined || sample.ndcY === undefined) {
+        return null;
+      }
+
+      raycaster.setFromCamera(new THREE.Vector2(sample.ndcX, sample.ndcY), frame.camera);
+      const hit = raycaster.intersectObject(mesh, false)[0];
+      return hit ? toSurfaceHit(hit, metrics) : null;
+    }
+    case "ray": {
+      if (!sample.origin || !sample.direction) {
+        return null;
+      }
+
+      raycaster.ray.origin.set(sample.origin.x, sample.origin.y, sample.origin.z);
+      raycaster.ray.direction
+        .set(sample.direction.x, sample.direction.y, sample.direction.z)
+        .normalize();
+      const hit = raycaster.intersectObject(mesh, false)[0];
+      return hit ? toSurfaceHit(hit, metrics) : null;
+    }
+    case "contact":
+      return sample.contactPoint ? toContactSurfaceHit(mesh, metrics, sample.contactPoint) : null;
+  }
+}
+
+function toContactSurfaceHit(
+  mesh: ThreePanelMesh,
+  metrics: SurfaceMetrics,
+  contactPoint: Vector3Like
+): { surfaceX: number; surfaceY: number; distance: number } | null {
+  const localPoint = mesh.worldToLocal(new THREE.Vector3(contactPoint.x, contactPoint.y, contactPoint.z));
+  const geometry = mesh.geometry.parameters;
+  const panelWidth = geometry.width ?? 1;
+  const panelHeight = geometry.height ?? 1;
+  const halfWidth = panelWidth / 2;
+  const halfHeight = panelHeight / 2;
+  if (
+    localPoint.x < -halfWidth ||
+    localPoint.x > halfWidth ||
+    localPoint.y < -halfHeight ||
+    localPoint.y > halfHeight
+  ) {
+    return null;
+  }
+
+  return {
+    surfaceX: ((localPoint.x + halfWidth) / panelWidth) * metrics.width,
+    surfaceY: ((halfHeight - localPoint.y) / panelHeight) * metrics.height,
+    distance: 0
+  };
+}
+
+function createHostEventFromSample(
+  sample: ThreePointerSample,
+  hit: { surfaceX: number; surfaceY: number }
+): ThreePanelHostInputEvent {
+  const type = mapSamplePhaseToEventType(sample.phase);
+  const base = {
+    type,
+    timestamp: sample.timestamp,
+    pointerId: sample.pointerId,
+    pointerType: sample.pointerType,
+    ...(sample.pressure === undefined ? {} : { pressure: sample.pressure }),
+    ...(sample.modifiers === undefined ? {} : { modifiers: sample.modifiers }),
+    ...(sample.phase === "scroll"
+      ? {
+          deltaX: sample.deltaX ?? 0,
+          deltaY: sample.deltaY ?? 0
+        }
+      : {})
+  };
+
+  switch (sample.transport) {
+    case "screen":
+      return {
+        ...base,
+        source: "screen",
+        ndcX: sample.ndcX ?? 0,
+        ndcY: sample.ndcY ?? 0
+      };
+    case "ray":
+      return {
+        ...base,
+        source: "ray",
+        origin: sample.origin ?? { x: 0, y: 0, z: 0 },
+        direction: sample.direction ?? { x: 0, y: 0, z: -1 }
+      };
+    case "surface":
+    case "contact":
+      return {
+        ...base,
+        source: "surface",
+        surfaceX: hit.surfaceX,
+        surfaceY: hit.surfaceY
+      };
+  }
+}
+
+function createMissMoveHostEvent(sample: ThreePointerSample): ThreePanelHostInputEvent {
+  return createFallbackHostEvent(sample, "pointer-move");
+}
+
+function createCancelHostEvent(sample: ThreePointerSample): ThreePanelHostInputEvent {
+  return createFallbackHostEvent(sample, "cancel");
+}
+
+function createFallbackHostEvent(
+  sample: ThreePointerSample,
+  type: "pointer-move" | "cancel"
+): ThreePanelHostInputEvent {
+  const base = {
+    type,
+    timestamp: sample.timestamp,
+    pointerId: sample.pointerId,
+    pointerType: sample.pointerType,
+    ...(sample.pressure === undefined ? {} : { pressure: sample.pressure }),
+    ...(sample.modifiers === undefined ? {} : { modifiers: sample.modifiers })
+  };
+
+  switch (sample.transport) {
+    case "screen":
+      return {
+        ...base,
+        source: "screen",
+        ndcX: sample.ndcX ?? 0,
+        ndcY: sample.ndcY ?? 0
+      };
+    case "ray":
+      return {
+        ...base,
+        source: "ray",
+        origin: sample.origin ?? { x: 0, y: 0, z: 0 },
+        direction: sample.direction ?? { x: 0, y: 0, z: -1 }
+      };
+    case "surface":
+    case "contact":
+      return {
+        ...base,
+        source: "surface",
+        surfaceX: sample.surfaceX ?? -1,
+        surfaceY: sample.surfaceY ?? -1
+      };
+  }
+}
+
+function mapSamplePhaseToEventType(
+  phase: ThreePointerPhase
+): ThreePanelHostInputEvent["type"] {
+  switch (phase) {
+    case "move":
+      return "pointer-move";
+    case "down":
+      return "pointer-down";
+    case "up":
+      return "pointer-up";
+    case "cancel":
+      return "cancel";
+    case "scroll":
+      return "scroll";
+  }
 }
 
 function toSurfaceHit(

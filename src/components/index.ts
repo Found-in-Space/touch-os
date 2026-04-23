@@ -2,6 +2,8 @@ export type { ActionCardProps } from "./action-card.js";
 export { createActionCard } from "./action-card.js";
 export type { ButtonProps } from "./button.js";
 export { createButton } from "./button.js";
+export type { BitmapPlotProps } from "./bitmap-plot.js";
+export { createBitmapPlot } from "./bitmap-plot.js";
 export type { CustomGraphProps } from "./custom-graph.js";
 export { createCustomGraph } from "./custom-graph.js";
 export type { EmbeddedSurfaceProps } from "./embedded-surface.js";

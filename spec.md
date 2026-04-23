@@ -466,6 +466,31 @@ These should still behave like normal components:
 - hit-tested through the same target model
 - driven by plain props and emitted actions
 
+### Shared-Surface Bitmap Path
+
+Some richer custom components need a raster body while still belonging to the shared display surface.
+
+Examples:
+
+- dense plots
+- heatmaps
+- waveform previews
+- cached mini maps
+
+These should use a runtime-managed bitmap path rather than a foreign or embedded surface.
+
+Recommended contract:
+
+- components allocate and update raster assets through a bitmap service
+- components draw those assets through a public `bitmap` draw primitive
+- components may layer normal vector or text overlays on top of the bitmap
+- hit testing and emitted actions stay in the normal component contract
+
+Decision rule:
+
+- `bitmap` = runtime-generated raster content that is still part of the shared UI surface
+- `embedded surface` = externally owned viewport, stream, camera, or secondary render target
+
 ## Embedded Surface Components
 
 Some common virtual-device elements are not best modeled as ordinary controls drawn entirely by the UI runtime.
@@ -515,6 +540,7 @@ An embedded surface component should be able to declare:
 - desired source type
 - aspect-ratio preferences
 - refresh policy
+- composition mode
 - whether it accepts forwarded input
 - fallback content when the source is unavailable
 
@@ -522,7 +548,7 @@ The backing service should return:
 
 - a surface handle, texture handle, frame source, or equivalent host-defined reference
 - availability state
-- optional metadata such as source size or latency
+- optional metadata such as source size, aspect ratio, latency, refresh state, or last frame time
 
 ### Composition Rules
 
@@ -660,7 +686,7 @@ Recommended service set:
 - scroll service
 - theme service
 - timing service
-- asset or image service if needed
+- bitmap service for runtime-managed raster content
 - embedded surface or viewport service when supported
 
 These services should be injected by the runtime and be mockable in tests.
@@ -1000,12 +1026,14 @@ component EmbeddedSurface(id, props) {
     title?: string
     interactive?: boolean = false
     preserveAspectRatio?: boolean = true
+    compositionMode?: "copy" | "composite" = "copy"
   }
 
   mount(ctx) {
     ctx.surfaces.attach(id, {
       sourceId: props.sourceId,
-      preserveAspectRatio: props.preserveAspectRatio
+      preserveAspectRatio: props.preserveAspectRatio,
+      compositionMode: props.compositionMode
     })
   }
 
@@ -1045,7 +1073,7 @@ component EmbeddedSurface(id, props) {
     drawPanelFrame(bounds, props.title, ctx.theme)
 
     if (ctx.surfaces.isAvailable(id)) {
-      drawEmbeddedSurface(bounds.inset(8), ctx.surfaces.getHandle(id))
+      drawEmbeddedSurface(bounds.inset(8), ctx.surfaces.getHandle(id), props.compositionMode)
     } else {
       drawSurfacePlaceholder(bounds.inset(8), "Source Unavailable", ctx.theme)
     }
@@ -1084,3 +1112,198 @@ The central architectural idea is simple:
 - narrow host adapters
 
 If those pieces are clear and enforced, the system can support both simple device-like UIs and richer custom virtual interfaces without being tied to any one application or rendering environment.
+
+---
+
+# Pointer implementation
+
+`touch-os` should not implement a “star pointer.” It should implement a host-side 3D pointer interop layer that is domain-neutral.
+
+That layer should work in two modes:
+
+- standalone: `touch-os` supplies common 3D pointer sources and panel interaction behavior
+- interoperable: an app feeds its own ray/finger pointer into the same contract and gets back panel hit + claim/blocking results
+
+That fits the spec well: the core runtime stays display-space only, while hosts own ray/projection conversion and pointer blocking in [spec.md](/Users/kws/work/fis/touch-os/spec.md:558).
+
+**What To Implement First**
+
+1. Add a public `ThreePointerSample` transport contract above `ThreePanelHostInputEvent`.
+The current `ThreePanelHostInputEvent` in [three.ts](/Users/kws/work/fis/touch-os/src/hosts/three.ts:72) is already close to the final injected host event, but it is too low-level to be the main interop seam.
+
+Use a higher-level sample type like:
+
+```ts
+type ThreePointerTransport = "screen" | "ray" | "surface" | "contact";
+
+interface ThreePointerSample {
+  pointerId: string;
+  pointerType: PointerType;
+  transport: ThreePointerTransport;
+  phase: "move" | "down" | "up" | "cancel" | "scroll";
+  timestamp: number;
+  sourceId?: string;
+  handedness?: "left" | "right" | "none";
+  pressure?: number;
+  modifiers?: ModifierState;
+  ndcX?: number;
+  ndcY?: number;
+  origin?: Vector3Like;
+  direction?: Vector3Like;
+  surfaceX?: number;
+  surfaceY?: number;
+  contactPoint?: Vector3Like;
+  contactNormal?: Vector3Like;
+  deltaX?: number;
+  deltaY?: number;
+}
+```
+
+This gives one neutral format for:
+- mouse/screen pointers
+- XR/controller rays
+- virtual finger / poke contact
+- externally owned pointer systems
+
+2. Add a `PanelInteractor` that turns a pointer sample into panel input plus a claim result.
+This should live in the Three host layer, not in core.
+
+Suggested API:
+
+```ts
+interface PanelInteractionResult {
+  hit: ThreePanelHit | null;
+  claimed: boolean;
+  blocked: boolean;
+  dispatched: boolean;
+  hostEvent?: ThreePanelHostInputEvent;
+}
+
+interface PanelInteractor {
+  process(sample: ThreePointerSample, frame: ThreePanelHostFrame): PanelInteractionResult;
+  getPointerState(pointerId: string): unknown;
+  clear(pointerId?: string): void;
+}
+```
+
+Responsibilities:
+- convert screen/ray/contact samples into surface coordinates
+- inject normalized runtime input
+- track pointer continuity/capture
+- report whether the panel claims the pointer this frame
+
+This is the core piece that makes `touch-os` usable standalone and also lets an external pointer system plug in cleanly.
+
+3. Add explicit pointer claim / blocking policy.
+The spec already makes blocking a host concern in [spec.md](/Users/kws/work/fis/touch-os/spec.md:574). Make that configurable.
+
+Suggested policy:
+
+```ts
+type PointerClaimPolicy =
+  | "block-on-hit"
+  | "block-on-press"
+  | "passthrough"
+  | "manual";
+```
+
+Behavior:
+- `block-on-hit`: panel hover alone claims the pointer
+- `block-on-press`: only active press/drag claims it
+- `passthrough`: panel can react, but never blocks world interaction
+- `manual`: app decides from returned hit/result
+
+This is what lets one app fully replace its world pointer with `touch-os`, while another app keeps its own picker and only yields to `touch-os` when appropriate.
+
+4. Add direct-contact support as a first-class host transport.
+Most apps will have either:
+- a ray pointer
+- a direct touch / poke interaction
+- both
+
+So `touch-os` should support both natively at the host layer.
+
+Concrete addition:
+- support `transport: "contact"` in the interactor
+- convert a world-space contact point into local panel surface coordinates
+- optionally support simple touch radius / pressure later
+
+This avoids making every app reinvent the “virtual finger touching a panel” projection step.
+
+5. Add built-in pointer source adapters, but keep them optional.
+Ship helpers like:
+- `createScreenPointerSource()`
+- `createXrRayPointerSource()`
+- `createDirectTouchPointerSource()`
+
+These should produce `ThreePointerSample` values and nothing more.
+
+That gives `touch-os` a complete standalone story, while apps with existing interaction systems can skip them and feed samples directly.
+
+6. Decouple pointer visuals from pointer logic.
+Do not hard-code beam/reticle visuals into the panel interactor.
+
+Add an optional presentation interface like:
+
+```ts
+interface PointerPresentationState {
+  pointerId: string;
+  claimed: boolean;
+  blocked: boolean;
+  hit: ThreePanelHit | null;
+}
+
+interface PointerPresenter {
+  update(state: PointerPresentationState): void;
+  dispose(): void;
+}
+```
+
+This is important because:
+- some apps want `touch-os` to own the beam/cursor
+- some apps already have their own pointer visuals
+- some apps want one shared pointer visual that can hit world or panel targets
+
+The interactor should expose state; presentation should be pluggable.
+
+7. Keep the current host event path as the lowest-level escape hatch.
+Do not remove `ThreePanelHostInputEvent`. Keep it as the final injected format in [three.ts](/Users/kws/work/fis/touch-os/src/hosts/three.ts:72).
+
+Recommended layering:
+- `ThreePointerSample` = interop boundary
+- `PanelInteractor` = host-side resolver/arbitrator
+- `ThreePanelHostInputEvent` = final host injection format
+- core runtime = display-space only
+
+That gives clean abstraction without breaking the current host design.
+
+8. Add conformance tests for shared-pointer scenarios.
+Tests should cover:
+- external ray pointer feeds the interactor and gets a blocking claim
+- external ray pointer feeds the interactor and gets passthrough
+- direct touch contact on a panel
+- same pointer remains claimed through down/drag/up
+- panel switching still preserves correct claim behavior
+- custom pointer visuals can consume returned hit/claim state without owning event logic
+
+**What This Lets Apps Do**
+
+With this architecture, an app with its own 3D pointer can do:
+
+1. Build one ray/finger sample from its own interaction system.
+2. Feed that sample into the `touch-os` panel interactor.
+3. Inspect `claimed` / `blocked` / `hit`.
+4. Either stop world interaction, or continue to its own world picker.
+5. Reuse its existing pointer visual, or let `touch-os` provide one.
+
+And an app with no existing system can just use the built-in sources.
+
+**Bottom Line**
+
+The most important thing to add is not a built-in astronomy/world pointer. It is a neutral host-side `PanelInteractor` plus `ThreePointerSample` contract.
+
+That is the piece that:
+- works standalone
+- can replace an app’s current panel-pointer path
+- can also sit behind an existing app-owned pointer with minimal friction
+- stays faithful to the spec’s “host owns transport, core owns display semantics” boundary

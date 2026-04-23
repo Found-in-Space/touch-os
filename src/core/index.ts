@@ -24,11 +24,17 @@ export type {
 } from "./component.js";
 export { createNode, isDisplayEvent, isRuntimeOutputEvent } from "./component.js";
 export type {
+  BitmapDrawCommand,
+  BitmapFitMode,
+  BitmapHandle,
+  BitmapMetadata,
+  BitmapSampling,
   CircleDrawCommand,
   DrawCommand,
   LineDrawCommand,
   RectDrawCommand,
   RenderSnapshot,
+  SurfaceCompositionMode,
   SurfaceDrawCommand,
   TextDrawCommand
 } from "./draw.js";

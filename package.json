@@ -32,6 +32,10 @@
       "types": "./dist/hosts/index.d.ts",
       "import": "./dist/hosts/index.js"
     },
+    "./adapters/schema": {
+      "types": "./dist/adapters/schema.d.ts",
+      "import": "./dist/adapters/schema.js"
+    },
     "./hosts/*": {
       "types": "./dist/hosts/*.d.ts",
       "import": "./dist/hosts/*.js"

@@ -9,10 +9,21 @@ export interface ScrollContainerProps {
   backgroundColor?: string;
 }
 
-const ScrollContainerComponent: DisplayComponent<ScrollContainerProps> = {
+interface ScrollContainerState {
+  dragging: boolean;
+  dragStartOffsetX: number;
+  dragStartOffsetY: number;
+}
+
+const ScrollContainerComponent: DisplayComponent<ScrollContainerProps, ScrollContainerState> = {
   kind: "scroll-container",
   mount(ctx) {
     ctx.services.scroll.register(ctx.id);
+    return {
+      dragging: false,
+      dragStartOffsetX: 0,
+      dragStartOffsetY: 0
+    };
   },
   update(ctx) {
     ctx.services.scroll.register(ctx.id);
@@ -88,16 +99,39 @@ const ScrollContainerComponent: DisplayComponent<ScrollContainerProps> = {
     return ctx.bounds.width > 0 && ctx.bounds.height > 0 ? { targetId: `${ctx.id}:viewport` } : null;
   },
   handleEvent(ctx) {
-    if (ctx.event.type !== "scroll") {
-      return;
+    switch (ctx.event.type) {
+      case "scroll":
+        ctx.services.scroll.scrollBy(ctx.id, 0, ctx.event.deltaY);
+        break;
+      case "drag-start": {
+        const scrollState = ctx.services.scroll.getState(ctx.id);
+        ctx.state.dragging = true;
+        ctx.state.dragStartOffsetX = scrollState.offsetX;
+        ctx.state.dragStartOffsetY = scrollState.offsetY;
+        break;
+      }
+      case "drag-move":
+        if (!ctx.state.dragging) {
+          return;
+        }
+        ctx.services.scroll.setOffset(
+          ctx.id,
+          ctx.state.dragStartOffsetX - ctx.event.deltaX,
+          ctx.state.dragStartOffsetY - ctx.event.deltaY
+        );
+        break;
+      case "drag-end":
+      case "cancel":
+      case "pointer-leave":
+        ctx.state.dragging = false;
+        break;
     }
-    ctx.services.scroll.scrollBy(ctx.id, 0, ctx.event.deltaY);
   }
 };
 
 export function createScrollContainer(
   id: string,
   props: ScrollContainerProps
-): DisplayNode<ScrollContainerProps> {
+): DisplayNode<ScrollContainerProps, ScrollContainerState> {
   return createNode(id, ScrollContainerComponent, props);
 }

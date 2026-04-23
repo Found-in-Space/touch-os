@@ -1,6 +1,10 @@
 export type {
+  BitmapAllocation,
+  BitmapService,
+  BitmapUpdate,
   EmbeddedSurfaceAttachment,
   EmbeddedSurfaceConfig,
+  EmbeddedSurfaceStateUpdate,
   EmbeddedSurfaceService,
   FocusService,
   LayoutService,
@@ -18,6 +22,7 @@ export type {
 } from "./contracts.js";
 export {
   DEFAULT_THEME_TOKENS,
+  createBitmapService,
   createEmbeddedSurfaceService,
   createMemoryFocusService,
   createMemoryLayoutService,

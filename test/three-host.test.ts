@@ -1,6 +1,10 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { createRuntime } from "../src/index.js";
+import {
+  createEmbeddedSurface,
+  createEmbeddedSurfaceService,
+  createRuntime
+} from "../src/index.js";
 import { createButtonFixture } from "../src/examples/reference-fixtures.js";
 import {
   createHudHost,
@@ -185,6 +189,50 @@ describe("three host adapters", () => {
     expect(host.getHit()).toMatchObject({
       blocked: true,
       source: "screen"
+    });
+
+    host.detach();
+  });
+
+  it("exposes composite embedded surfaces without drawing them into the canvas", () => {
+    const surfaces = createEmbeddedSurfaceService();
+    const runtime = createRuntime({
+      root: createEmbeddedSurface("monitor", {
+        sourceId: "camera.rear",
+        compositionMode: "composite"
+      }),
+      surface: { width: 160, height: 100 },
+      services: { surfaces }
+    });
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1.6, 0.1, 10);
+    camera.position.set(0, 0, 1);
+    camera.lookAt(0, 0, 0);
+    scene.add(camera);
+
+    surfaces.setState("monitor", {
+      available: true,
+      handle: { kind: "mock-surface" },
+      sourceWidth: 640,
+      sourceHeight: 480
+    });
+
+    const host = createScenePanelHost({
+      runtime,
+      surface: { width: 160, height: 100 },
+      panelWidth: 1,
+      panelHeight: 0.625,
+      createCanvas: createFakeCanvas
+    });
+
+    host.attach();
+    host.update({ scene, camera });
+
+    expect(host.getCompositeSurfaces()).toHaveLength(1);
+    expect(host.getCompositeSurfaces()[0]).toMatchObject({
+      componentId: "monitor",
+      compositionMode: "composite"
     });
 
     host.detach();

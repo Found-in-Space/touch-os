@@ -1,4 +1,5 @@
 import type { DisplayEvent } from "../core/events.js";
+import type { BitmapHandle, BitmapMetadata, SurfaceCompositionMode } from "../core/draw.js";
 import type { Insets, Rect, Size } from "../core/geometry.js";
 
 export interface LayoutService {
@@ -104,6 +105,28 @@ export interface SurfaceService {
   update(metrics: Partial<SurfaceMetrics>): void;
 }
 
+export interface BitmapAllocation {
+  image: unknown;
+  width: number;
+  height: number;
+  revision?: number;
+}
+
+export interface BitmapUpdate {
+  image?: unknown;
+  width?: number;
+  height?: number;
+  revision?: number;
+}
+
+export interface BitmapService {
+  allocate(bitmapId: string, bitmap: BitmapAllocation): BitmapHandle;
+  update(bitmapId: string, bitmap: BitmapUpdate): BitmapHandle | undefined;
+  getHandle(bitmapId: string): BitmapHandle | undefined;
+  getMetadata(bitmapId: string): BitmapMetadata | undefined;
+  release(bitmapId: string): void;
+}
+
 export interface EmbeddedSurfaceConfig {
   sourceId: string;
   interactive?: boolean;
@@ -112,6 +135,7 @@ export interface EmbeddedSurfaceConfig {
   refreshPolicy?: "manual" | "always";
   acceptsForwardedInput?: boolean;
   fallbackLabel?: string;
+  compositionMode?: SurfaceCompositionMode;
 }
 
 export interface EmbeddedSurfaceAttachment {
@@ -124,7 +148,25 @@ export interface EmbeddedSurfaceAttachment {
   fallbackLabel: string | undefined;
   available: boolean;
   handle: unknown | undefined;
+  compositionMode: SurfaceCompositionMode;
+  sourceWidth: number | undefined;
+  sourceHeight: number | undefined;
+  aspectRatio: number | undefined;
+  latencyMs: number | undefined;
+  refreshState: "idle" | "updating" | "stale";
+  lastFrameTimestamp: number | undefined;
   forwardedEvents: readonly DisplayEvent[];
+}
+
+export interface EmbeddedSurfaceStateUpdate {
+  available?: boolean;
+  handle?: unknown;
+  sourceWidth?: number;
+  sourceHeight?: number;
+  aspectRatio?: number;
+  latencyMs?: number;
+  refreshState?: "idle" | "updating" | "stale";
+  lastFrameTimestamp?: number;
 }
 
 export interface EmbeddedSurfaceService {
@@ -134,6 +176,7 @@ export interface EmbeddedSurfaceService {
   getAttachment(componentId: string): EmbeddedSurfaceAttachment | undefined;
   isAvailable(componentId: string): boolean;
   getHandle(componentId: string): unknown;
+  setState(componentId: string, state: EmbeddedSurfaceStateUpdate): void;
   forwardEvent(componentId: string, event: DisplayEvent): void;
 }
 
@@ -145,5 +188,6 @@ export interface RuntimeServices {
   theme: ThemeService;
   timing: TimingService;
   surface: SurfaceService;
+  bitmaps: BitmapService;
   surfaces: EmbeddedSurfaceService;
 }

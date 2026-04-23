@@ -6,8 +6,10 @@ class FakeCanvasContext implements CanvasContextLike {
   strokeStyle: string | CanvasGradient | CanvasPattern = "#000000";
   lineWidth = 1;
   font = "14px sans-serif";
+  globalAlpha = 1;
   textAlign: "left" | "center" | "right" = "left";
   textBaseline: "top" | "middle" | "bottom" | "alphabetic" = "top";
+  imageSmoothingEnabled = true;
 
   save(): void {}
 

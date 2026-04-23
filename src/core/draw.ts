@@ -7,6 +7,23 @@ interface DrawCommandBase {
   clipRect?: Rect;
 }
 
+export type BitmapFitMode = "stretch" | "contain" | "cover";
+
+export type BitmapSampling = "linear" | "nearest";
+
+export type SurfaceCompositionMode = "copy" | "composite";
+
+export interface BitmapMetadata {
+  width: number;
+  height: number;
+  revision: number;
+}
+
+export interface BitmapHandle extends BitmapMetadata {
+  kind: "bitmap";
+  image: unknown;
+}
+
 export interface RectDrawCommand extends DrawCommandBase {
   type: "rect";
   rect: Rect;
@@ -47,10 +64,20 @@ export interface CircleDrawCommand extends DrawCommandBase {
   strokeWidth?: number;
 }
 
+export interface BitmapDrawCommand extends DrawCommandBase {
+  type: "bitmap";
+  rect: Rect;
+  handle: BitmapHandle;
+  fit?: BitmapFitMode;
+  opacity?: number;
+  sampling?: BitmapSampling;
+}
+
 export interface SurfaceDrawCommand extends DrawCommandBase {
   type: "surface";
   rect: Rect;
   handle: unknown;
+  compositionMode?: SurfaceCompositionMode;
 }
 
 export type DrawCommand =
@@ -58,6 +85,7 @@ export type DrawCommand =
   | TextDrawCommand
   | LineDrawCommand
   | CircleDrawCommand
+  | BitmapDrawCommand
   | SurfaceDrawCommand;
 
 export interface RenderSnapshot {

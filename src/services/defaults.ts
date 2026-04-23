@@ -7,7 +7,12 @@ import {
   createSize,
   type Rect
 } from "../core/geometry.js";
+import type { BitmapHandle, BitmapMetadata } from "../core/draw.js";
 import type {
+  BitmapAllocation,
+  BitmapService,
+  BitmapUpdate,
+  EmbeddedSurfaceStateUpdate,
   EmbeddedSurfaceAttachment,
   EmbeddedSurfaceConfig,
   EmbeddedSurfaceService,
@@ -34,6 +39,31 @@ interface MemoryNavigationEntry {
 
 function emit(listener?: ChangeListener): void {
   listener?.();
+}
+
+function cloneBitmapHandle(handle: BitmapHandle): BitmapHandle {
+  return {
+    kind: "bitmap",
+    image: handle.image,
+    width: handle.width,
+    height: handle.height,
+    revision: handle.revision
+  };
+}
+
+function toBitmapMetadata(handle: BitmapHandle): BitmapMetadata {
+  return {
+    width: handle.width,
+    height: handle.height,
+    revision: handle.revision
+  };
+}
+
+function hasOwn<Key extends PropertyKey>(
+  value: object,
+  key: Key
+): value is object & Record<Key, unknown> {
+  return Object.prototype.hasOwnProperty.call(value, key);
 }
 
 export function createMemoryLayoutService(): MutableLayoutService {
@@ -360,6 +390,62 @@ export function createSurfaceService(
   };
 }
 
+export function createBitmapService(onChange?: ChangeListener): BitmapService {
+  const bitmaps = new Map<string, BitmapHandle>();
+
+  function resolveRevision(existing: BitmapHandle | undefined, revision: number | undefined): number {
+    if (revision !== undefined) {
+      return revision;
+    }
+    return existing ? existing.revision + 1 : 0;
+  }
+
+  return {
+    allocate(bitmapId, bitmap) {
+      const handle: BitmapHandle = {
+        kind: "bitmap",
+        image: bitmap.image,
+        width: bitmap.width,
+        height: bitmap.height,
+        revision: resolveRevision(undefined, bitmap.revision)
+      };
+      bitmaps.set(bitmapId, handle);
+      emit(onChange);
+      return cloneBitmapHandle(handle);
+    },
+    update(bitmapId, bitmap) {
+      const existing = bitmaps.get(bitmapId);
+      if (!existing) {
+        return undefined;
+      }
+
+      const next: BitmapHandle = {
+        kind: "bitmap",
+        image: bitmap.image ?? existing.image,
+        width: bitmap.width ?? existing.width,
+        height: bitmap.height ?? existing.height,
+        revision: resolveRevision(existing, bitmap.revision)
+      };
+      bitmaps.set(bitmapId, next);
+      emit(onChange);
+      return cloneBitmapHandle(next);
+    },
+    getHandle(bitmapId) {
+      const handle = bitmaps.get(bitmapId);
+      return handle ? cloneBitmapHandle(handle) : undefined;
+    },
+    getMetadata(bitmapId) {
+      const handle = bitmaps.get(bitmapId);
+      return handle ? toBitmapMetadata(handle) : undefined;
+    },
+    release(bitmapId) {
+      if (bitmaps.delete(bitmapId)) {
+        emit(onChange);
+      }
+    }
+  };
+}
+
 export function createEmbeddedSurfaceService(onChange?: ChangeListener): EmbeddedSurfaceService {
   const attachments = new Map<string, EmbeddedSurfaceAttachment>();
 
@@ -382,6 +468,13 @@ export function createEmbeddedSurfaceService(onChange?: ChangeListener): Embedde
       fallbackLabel: fallback?.fallbackLabel,
       available: false,
       handle: undefined,
+      compositionMode: fallback?.compositionMode ?? "copy",
+      sourceWidth: undefined,
+      sourceHeight: undefined,
+      aspectRatio: undefined,
+      latencyMs: undefined,
+      refreshState: "idle",
+      lastFrameTimestamp: undefined,
       forwardedEvents: []
     };
     attachments.set(componentId, created);
@@ -398,7 +491,37 @@ export function createEmbeddedSurfaceService(onChange?: ChangeListener): Embedde
       interactive: config.interactive ?? attachment.interactive,
       preserveAspectRatio: config.preserveAspectRatio ?? attachment.preserveAspectRatio,
       acceptsForwardedInput: config.acceptsForwardedInput ?? attachment.acceptsForwardedInput,
+      compositionMode: config.compositionMode ?? attachment.compositionMode,
       forwardedEvents: attachment.forwardedEvents
+    };
+  }
+
+  function updateSurfaceState(
+    attachment: EmbeddedSurfaceAttachment,
+    state: EmbeddedSurfaceStateUpdate
+  ): EmbeddedSurfaceAttachment {
+    const sourceWidth = hasOwn(state, "sourceWidth")
+      ? (state.sourceWidth as number | undefined)
+      : attachment.sourceWidth;
+    const sourceHeight = hasOwn(state, "sourceHeight")
+      ? (state.sourceHeight as number | undefined)
+      : attachment.sourceHeight;
+    const aspectRatio = hasOwn(state, "aspectRatio")
+      ? (state.aspectRatio as number | undefined)
+      : sourceWidth && sourceHeight
+        ? sourceWidth / sourceHeight
+        : attachment.aspectRatio;
+
+    return {
+      ...attachment,
+      available: state.available ?? attachment.available,
+      handle: hasOwn(state, "handle") ? state.handle : attachment.handle,
+      sourceWidth,
+      sourceHeight,
+      aspectRatio,
+      latencyMs: state.latencyMs ?? attachment.latencyMs,
+      refreshState: state.refreshState ?? attachment.refreshState,
+      lastFrameTimestamp: state.lastFrameTimestamp ?? attachment.lastFrameTimestamp
     };
   }
 
@@ -431,6 +554,11 @@ export function createEmbeddedSurfaceService(onChange?: ChangeListener): Embedde
     },
     getHandle(componentId) {
       return attachments.get(componentId)?.handle;
+    },
+    setState(componentId, state) {
+      const attachment = resolveAttachment(componentId);
+      attachments.set(componentId, updateSurfaceState(attachment, state));
+      emit(onChange);
     },
     forwardEvent(componentId, event) {
       const attachment = resolveAttachment(componentId);

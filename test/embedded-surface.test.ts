@@ -139,6 +139,45 @@ describe("embedded surface", () => {
     const forwardedAfterDismiss = surfaces.getAttachment("monitor")?.forwardedEvents ?? [];
     expect(forwardedAfterDismiss).toHaveLength(forwardedBeforeDismiss.length);
   });
+
+  it("supports explicit composition mode and host-reported surface metadata", () => {
+    const surfaces = createMockEmbeddedSurfaceService();
+
+    const runtime = createRuntime({
+      root: createEmbeddedSurface("monitor", {
+        sourceId: "camera.rear",
+        compositionMode: "composite"
+      }),
+      surface: { width: 320, height: 180 },
+      services: { surfaces }
+    });
+
+    surfaces.setState("monitor", {
+      available: true,
+      handle: { kind: "mock-surface" },
+      sourceWidth: 640,
+      sourceHeight: 480,
+      latencyMs: 12,
+      refreshState: "updating",
+      lastFrameTimestamp: 24
+    });
+
+    const snapshot = runtime.render();
+    const viewport = findCommandByRole(snapshot.commands, "embedded-surface-viewport");
+    if (viewport.type !== "surface") {
+      throw new Error("Expected the embedded viewport to render as a surface command.");
+    }
+
+    expect(viewport.compositionMode).toBe("composite");
+    expect(surfaces.getAttachment("monitor")).toMatchObject({
+      sourceWidth: 640,
+      sourceHeight: 480,
+      aspectRatio: 640 / 480,
+      latencyMs: 12,
+      refreshState: "updating",
+      lastFrameTimestamp: 24
+    });
+  });
 });
 
 function createMockEmbeddedSurfaceService(options?: {
@@ -171,6 +210,13 @@ function createMockEmbeddedSurfaceService(options?: {
       fallbackLabel: fallback?.fallbackLabel,
       available,
       handle,
+      compositionMode: fallback?.compositionMode ?? "copy",
+      sourceWidth: undefined,
+      sourceHeight: undefined,
+      aspectRatio: undefined,
+      latencyMs: undefined,
+      refreshState: "idle",
+      lastFrameTimestamp: undefined,
       forwardedEvents: []
     };
     attachments.set(componentId, created);
@@ -187,6 +233,7 @@ function createMockEmbeddedSurfaceService(options?: {
       interactive: config.interactive ?? attachment.interactive,
       preserveAspectRatio: config.preserveAspectRatio ?? attachment.preserveAspectRatio,
       acceptsForwardedInput: config.acceptsForwardedInput ?? attachment.acceptsForwardedInput,
+      compositionMode: config.compositionMode ?? attachment.compositionMode,
       forwardedEvents: attachment.forwardedEvents
     };
   }
@@ -228,6 +275,24 @@ function createMockEmbeddedSurfaceService(options?: {
     },
     getHandle(componentId) {
       return attachments.get(componentId)?.handle;
+    },
+    setState(componentId, state) {
+      const attachment = resolveAttachment(componentId);
+      const sourceWidth =
+        state.sourceWidth === undefined ? attachment.sourceWidth : state.sourceWidth;
+      const sourceHeight =
+        state.sourceHeight === undefined ? attachment.sourceHeight : state.sourceHeight;
+      attachments.set(componentId, {
+        ...attachment,
+        available: state.available ?? attachment.available,
+        handle: state.handle ?? attachment.handle,
+        sourceWidth,
+        sourceHeight,
+        aspectRatio: state.aspectRatio ?? (sourceWidth && sourceHeight ? sourceWidth / sourceHeight : attachment.aspectRatio),
+        latencyMs: state.latencyMs ?? attachment.latencyMs,
+        refreshState: state.refreshState ?? attachment.refreshState,
+        lastFrameTimestamp: state.lastFrameTimestamp ?? attachment.lastFrameTimestamp
+      });
     },
     forwardEvent(componentId, event) {
       const attachment = resolveAttachment(componentId);
