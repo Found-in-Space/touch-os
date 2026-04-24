@@ -12,6 +12,8 @@ export type { EmbeddedSurfaceProps } from "./embedded-surface.js";
 export { createEmbeddedSurface } from "./embedded-surface.js";
 export type { HoldButtonProps } from "./hold-button.js";
 export { createHoldButton } from "./hold-button.js";
+export type { ListItemProps } from "./list-item.js";
+export { createListItem } from "./list-item.js";
 export type { RepeatButtonProps } from "./repeat-button.js";
 export { createRepeatButton } from "./repeat-button.js";
 export type { ChoiceGroupOrientation, ChoiceGroupProps, ChoiceGroupSelectionMode, ChoiceOption } from "./choice-group.js";
