@@ -1293,14 +1293,16 @@ function getCameraViewPlane(
   camera: THREE.Camera,
   distance: number
 ): { width: number; height: number } | undefined {
-  const elements = camera.projectionMatrix.elements;
+  const projectionCamera = resolveProjectionCamera(camera);
+  const elements = projectionCamera.projectionMatrix.elements;
   const scaleX = Math.abs(elements[0] ?? 0);
   const scaleY = Math.abs(elements[5] ?? 0);
   if (scaleX <= 0 || scaleY <= 0) {
     return undefined;
   }
 
-  const isOrthographic = "isOrthographicCamera" in camera && camera.isOrthographicCamera === true;
+  const isOrthographic =
+    "isOrthographicCamera" in projectionCamera && projectionCamera.isOrthographicCamera === true;
   if (isOrthographic) {
     return {
       width: 2 / scaleX,
@@ -1312,6 +1314,22 @@ function getCameraViewPlane(
     width: (2 * distance) / scaleX,
     height: (2 * distance) / scaleY
   };
+}
+
+function resolveProjectionCamera(camera: THREE.Camera): THREE.Camera {
+  const arrayCamera = camera as THREE.Camera & {
+    isArrayCamera?: boolean;
+    cameras?: THREE.Camera[];
+  };
+
+  if (arrayCamera.isArrayCamera === true && Array.isArray(arrayCamera.cameras)) {
+    const viewCamera = arrayCamera.cameras[0];
+    if (viewCamera) {
+      return viewCamera;
+    }
+  }
+
+  return camera;
 }
 
 function toWorldTransform(object: THREE.Object3D): ThreeStaticTransform {

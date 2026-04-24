@@ -4,7 +4,6 @@ import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
 import {
   createEmbeddedSurfaceService,
   createHeldTabletDriver,
-  createHudPanelDriver,
   createRuntime,
   createScenePanelDriver,
   type ActionEvent,
@@ -40,6 +39,10 @@ import {
   type RoomDemoAction,
   type RoomDemoState
 } from "./store.js";
+import {
+  getPresentationSurfaceMetrics,
+  resolvePresentationCamera
+} from "./view.js";
 
 type ScreenPointerSample = ThreePointerSample & {
   transport: "screen";
@@ -335,6 +338,7 @@ renderer.setAnimationLoop(() => {
   }
 
   const viewerCamera = room.camera;
+  const presentationCamera = resolvePresentationCamera(renderer, room.camera);
 
   room.syncRearViewCamera(viewerCamera);
   const hudVisible = hudDriverBinding.driver.host.mesh.visible;
@@ -363,7 +367,7 @@ renderer.setAnimationLoop(() => {
   if (xrActive) {
     hudDriverBinding.update({
       ...baseFrame,
-      surfaceMetrics: getViewportSurfaceMetrics()
+      surfaceMetrics: getPresentationSurfaceMetrics(renderer, presentationCamera)
     });
 
     const armPose = resolveArmPose();
@@ -379,7 +383,7 @@ renderer.setAnimationLoop(() => {
   } else {
     hudDriverBinding.update({
       ...baseFrame,
-      surfaceMetrics: getViewportSurfaceMetrics()
+      surfaceMetrics: getPresentationSurfaceMetrics(renderer, presentationCamera)
     });
 
     armDriverBinding.enabled = false;
@@ -458,11 +462,25 @@ function createRuntimeBinding(
 }
 
 function createHudDriverBinding(runtime: DisplayRuntime): DriverBinding {
-  const driver = createHudPanelDriver({
+  const distance = 0.68;
+  const driver = createScenePanelDriver({
     runtime,
     surface: getRoomPanelSurface("hud"),
-    distance: 0.68,
-    sizing: "viewport"
+    panelWidth: 1,
+    panelHeight: 1,
+    parent: room.camera,
+    depthTest: false,
+    updatePlacement(mesh, frame) {
+      const viewPlane = getHudViewPlane(frame.camera, distance);
+      if (!viewPlane) {
+        return false;
+      }
+
+      mesh.position.set(0, 0, -distance);
+      mesh.quaternion.identity();
+      mesh.scale.set(viewPlane.width, viewPlane.height, 1);
+      return true;
+    }
   });
 
   return createDriverBinding("hud", driver, runtime);
@@ -843,16 +861,6 @@ function syncXrPresentationState(xrActive: boolean): void {
   });
 }
 
-function getViewportSurfaceMetrics(): Partial<SurfaceMetrics> {
-  const size = new THREE.Vector2();
-  renderer.getSize(size);
-  return {
-    width: size.x,
-    height: size.y,
-    pixelDensity: renderer.getPixelRatio()
-  };
-}
-
 function isMovementIntent(value: unknown): value is MovementIntent {
   return (
     value === "forward" ||
@@ -862,6 +870,27 @@ function isMovementIntent(value: unknown): value is MovementIntent {
     value === "turnLeft" ||
     value === "turnRight"
   );
+}
+
+function getHudViewPlane(
+  camera: THREE.Camera | undefined,
+  distance: number
+): { width: number; height: number } | undefined {
+  if (!camera || distance <= 0) {
+    return undefined;
+  }
+
+  const elements = camera.projectionMatrix.elements;
+  const scaleX = Math.abs(elements[0] ?? 0);
+  const scaleY = Math.abs(elements[5] ?? 0);
+  if (scaleX <= 0 || scaleY <= 0) {
+    return undefined;
+  }
+
+  return {
+    width: (2 * distance) / scaleX,
+    height: (2 * distance) / scaleY
+  };
 }
 
 function syncMovementFromKeyboard(code: string): void {

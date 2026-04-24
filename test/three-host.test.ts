@@ -241,6 +241,55 @@ describe("three host adapters", () => {
     host.detach();
   });
 
+  it("sizes viewport HUD overlays from the active XR eye projection", () => {
+    const runtime = createRuntime({
+      root: createButtonFixture(),
+      surface: { width: 160, height: 100 }
+    });
+
+    const scene = new THREE.Scene();
+    const leftCamera = new THREE.PerspectiveCamera(58, 0.9, 0.1, 10);
+    leftCamera.updateProjectionMatrix();
+    (leftCamera as THREE.PerspectiveCamera & { viewport?: THREE.Vector4 }).viewport =
+      new THREE.Vector4(0, 0, 900, 1000);
+    const rightCamera = new THREE.PerspectiveCamera(58, 0.9, 0.1, 10);
+    rightCamera.updateProjectionMatrix();
+    (rightCamera as THREE.PerspectiveCamera & { viewport?: THREE.Vector4 }).viewport =
+      new THREE.Vector4(900, 0, 900, 1000);
+    const xrCamera = new THREE.ArrayCamera([leftCamera, rightCamera]);
+    xrCamera.position.set(0.2, 0.35, 1.4);
+    xrCamera.updateMatrixWorld(true);
+    scene.add(xrCamera);
+
+    const host = createHudHost({
+      runtime,
+      surface: { width: 160, height: 100 },
+      distance: 0.5,
+      sizing: "viewport",
+      createCanvas: createFakeCanvas
+    });
+
+    host.attach();
+    host.update({
+      scene,
+      camera: xrCamera,
+      surfaceMetrics: {
+        width: 900,
+        height: 1000,
+        pixelDensity: 1
+      }
+    });
+
+    const expectedHeight = 2 * Math.tan((THREE.MathUtils.degToRad(58) / 2)) * 0.5;
+    const expectedWidth = expectedHeight * 0.9;
+
+    expect(host.mesh.visible).toBe(true);
+    expect(host.mesh.scale.x).toBeCloseTo(expectedWidth, 5);
+    expect(host.mesh.scale.y).toBeCloseTo(expectedHeight, 5);
+
+    host.detach();
+  });
+
   it("anchors HUD placement from the camera world transform instead of camera parenting", () => {
     const runtime = createRuntime({
       root: createButtonFixture(),
