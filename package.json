@@ -67,7 +67,7 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "three": "^0.180.0"
+    "three": ">=0.170.0 <1"
   },
   "peerDependenciesMeta": {
     "three": {

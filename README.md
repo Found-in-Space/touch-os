@@ -191,6 +191,29 @@ Planned but not shipped yet:
 - `npm run typecheck` runs TypeScript without emitting
 - `npm run example:living-room` runs the Three.js example app
 
+## CI And Release Automation
+
+The repo now includes two GitHub Actions workflows:
+
+- `.github/workflows/ci.yml`
+  Runs a matrix of Node and Three.js versions, including the declared minimum supported Three.js version.
+- `.github/workflows/release.yml`
+  Publishes to npm from pushed `v*` tags after running typecheck, tests, and build.
+
+The release workflow is designed for npm trusted publishing via GitHub Actions OIDC rather than a long-lived npm token.
+
+Expected setup:
+
+1. Configure the package's trusted publisher on npm for this repository and the `release.yml` workflow.
+2. Optionally protect the `npm` GitHub environment with reviewer approval.
+3. Push a version tag such as `v0.1.0` or `v0.2.0-dev.0`.
+
+Dist-tag behavior:
+
+- stable versions publish to npm `latest`
+- prerelease versions publish to a tag derived from the prerelease label
+- for example, `0.2.0-dev.0` publishes with npm tag `dev`
+
 ## Status
 
 `touch-os` is aimed at reusable shared-surface UI, not at replacing the DOM or becoming a general-purpose web framework. The current release focuses on a stable headless runtime and a solid Three.js hosting story first, with browser hosts and higher-level orchestration features tracked as explicit follow-on plans.
