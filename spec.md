@@ -555,6 +555,8 @@ Decision rule:
 
 - `bitmap` = runtime-generated raster content that is still part of the shared UI surface
 - `embedded surface` = externally owned viewport, stream, camera, or secondary render target
+- `embedded surface` in `copy` mode = externally owned content copied into the shared UI surface
+- `embedded surface` in `composite` mode = externally owned content presented alongside the shared UI surface by the host
 
 ## Embedded Surface Components
 
@@ -598,6 +600,14 @@ The runtime or host service should own:
 
 This distinction keeps the component model clean. A mirror or live monitor is still "just a component" to the layout system, but it is not forced into the same rendering path as text, buttons, or sliders.
 
+An embedded surface component references a source. It is not the source of truth for that content.
+
+That distinction matters because:
+
+- one published source may appear in more than one presentation
+- one component instance may rebind to a different source over time
+- a source may publish frames before any one presentation mounts
+
 ### Embedded Surface Contract
 
 An embedded surface component should be able to declare:
@@ -615,6 +625,22 @@ The backing service should return:
 - a surface handle, texture handle, frame source, or equivalent host-defined reference
 - availability state
 - optional metadata such as source size, aspect ratio, latency, refresh state, or last frame time
+- a monotonically increasing surface revision for source updates
+
+The backing service should also provide a public publication path for applications or host integrations:
+
+- `publish(sourceId, update)` to publish handles and metadata for one external source
+- `unpublish(sourceId)` to remove a previously published source cleanly
+- `getSource(sourceId)` or equivalent inspection for testing and diagnostics
+
+Required lifecycle rules:
+
+- publishing a source must not require a component instance to already exist
+- multiple embedded-surface components may reference one published `sourceId`
+- rebinding one component from one `sourceId` to another must not require source recreation
+- unpublishing a source must make dependent presentations unavailable cleanly
+
+Forwarded input remains presentation-scoped in the first phase. Source-bound input sinks may be added later if real use cases justify them.
 
 When `preserveAspectRatio` is enabled, the default interpretation should be centered `contain`
 behavior inside the component viewport. That means letterboxing or pillarboxing is preferred over
@@ -636,6 +662,19 @@ The first model is simpler and works well when performance and platform behavior
 The second model is closer to classic overlay or native-surface composition and is often the better fit for live camera views or other continuously updated content.
 
 The component framework should not hard-code only one of these strategies. It should define the component contract so hosts can choose the most suitable composition path.
+
+Hosts that support composite embedded surfaces should expose enough placement data for application-side composition:
+
+- presentation identity such as `componentId`
+- source identity such as `sourceId`
+- the opaque published handle
+- destination rect
+- composition mode
+- presentation hints such as horizontal mirroring
+
+This lets applications present foreign GPU-native or host-native surfaces without requiring the runtime to own those rendering implementations.
+
+When only a composite embedded surface publishes a new frame, hosts should not need to redraw the shared UI raster just to keep the foreign surface current.
 
 ### Input Rules For Embedded Surfaces
 
@@ -1383,7 +1422,12 @@ component EmbeddedSurface(id, props) {
     drawPanelFrame(bounds, props.title, ctx.theme)
 
     if (ctx.surfaces.isAvailable(id)) {
-      drawEmbeddedSurface(bounds.inset(8), ctx.surfaces.getHandle(id), props.compositionMode)
+      drawEmbeddedSurface(bounds.inset(8), {
+        sourceId: props.sourceId,
+        handle: ctx.surfaces.getHandle(id),
+        compositionMode: props.compositionMode,
+        surfaceRevision: ctx.surfaces.getAttachment(id).surfaceRevision
+      })
     } else {
       drawSurfacePlaceholder(bounds.inset(8), "Source Unavailable", ctx.theme)
     }
@@ -1403,6 +1447,7 @@ Uses services:
 
 - theme service
 - embedded surface or viewport service
+- external source publication through the embedded surface service
 
 Proves:
 
@@ -1410,6 +1455,21 @@ Proves:
 - host-provided live content
 - surface composition without breaking the component contract
 - explicit routing between shell controls and forwarded viewport input
+
+Application or host publication sketch:
+
+```text
+surfaces.publish("camera.rear", {
+  available: true,
+  handle: foreignHandle,
+  sourceWidth: 640,
+  sourceHeight: 360,
+  refreshState: "updating",
+  lastFrameTimestamp: now
+})
+
+surfaces.unpublish("camera.rear")
+```
 
 ## Summary
 

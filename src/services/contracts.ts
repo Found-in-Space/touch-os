@@ -149,6 +149,20 @@ export interface EmbeddedSurfaceConfig {
   compositionMode?: SurfaceCompositionMode;
 }
 
+export interface EmbeddedSurfaceSourceSnapshot {
+  sourceId: string;
+  available: boolean;
+  handle: unknown | undefined;
+  sourceWidth: number | undefined;
+  sourceHeight: number | undefined;
+  aspectRatio: number | undefined;
+  latencyMs: number | undefined;
+  refreshState: "idle" | "updating" | "stale";
+  lastFrameTimestamp: number | undefined;
+  sourceType: string | undefined;
+  surfaceRevision: number;
+}
+
 export interface EmbeddedSurfaceAttachment {
   sourceId: string;
   interactive: boolean;
@@ -167,10 +181,12 @@ export interface EmbeddedSurfaceAttachment {
   latencyMs: number | undefined;
   refreshState: "idle" | "updating" | "stale";
   lastFrameTimestamp: number | undefined;
+  sourceType: string | undefined;
+  surfaceRevision: number;
   forwardedEvents: readonly DisplayEvent[];
 }
 
-export interface EmbeddedSurfaceStateUpdate {
+export interface EmbeddedSurfaceSourceUpdate {
   available?: boolean;
   handle?: unknown;
   sourceWidth?: number;
@@ -179,15 +195,23 @@ export interface EmbeddedSurfaceStateUpdate {
   latencyMs?: number;
   refreshState?: "idle" | "updating" | "stale";
   lastFrameTimestamp?: number;
+  sourceType?: string;
 }
+
+export type EmbeddedSurfaceStateUpdate = EmbeddedSurfaceSourceUpdate;
 
 export interface EmbeddedSurfaceService {
   attach(componentId: string, config: EmbeddedSurfaceConfig): void;
   configure(componentId: string, config: Partial<EmbeddedSurfaceConfig>): void;
   release(componentId: string): void;
+  subscribe(listener: () => void): () => void;
   getAttachment(componentId: string): EmbeddedSurfaceAttachment | undefined;
+  getSource(sourceId: string): EmbeddedSurfaceSourceSnapshot | undefined;
   isAvailable(componentId: string): boolean;
   getHandle(componentId: string): unknown;
+  publish(sourceId: string, update: EmbeddedSurfaceSourceUpdate): void;
+  unpublish(sourceId: string): void;
+  /** @deprecated Use publish(sourceId, update). */
   setState(componentId: string, state: EmbeddedSurfaceStateUpdate): void;
   forwardEvent(componentId: string, event: DisplayEvent): void;
 }

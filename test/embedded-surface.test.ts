@@ -5,6 +5,7 @@ import {
   type DisplayEvent,
   type EmbeddedSurfaceAttachment,
   type EmbeddedSurfaceConfig,
+  type EmbeddedSurfaceSourceSnapshot,
   type EmbeddedSurfaceService
 } from "../src/index.js";
 import { findCommandByRole, getTexts, pressAt } from "./helpers/runtime-helpers.js";
@@ -50,7 +51,9 @@ describe("embedded surface", () => {
         (command) =>
           command.type === "surface" &&
           command.role === "embedded-surface-viewport" &&
-          command.mirrorX === true
+          command.mirrorX === true &&
+          command.sourceId === "camera.rear" &&
+          command.surfaceRevision === 0
       )
     ).toBe(true);
 
@@ -163,7 +166,7 @@ describe("embedded surface", () => {
       services: { surfaces }
     });
 
-    surfaces.setState("monitor", {
+    surfaces.publish("camera.rear", {
       available: true,
       handle: { kind: "mock-surface" },
       sourceWidth: 640,
@@ -181,6 +184,8 @@ describe("embedded surface", () => {
 
     expect(viewport.compositionMode).toBe("composite");
     expect(viewport.mirrorX).toBe(false);
+    expect(viewport.sourceId).toBe("camera.rear");
+    expect(viewport.surfaceRevision).toBe(1);
     expect(surfaces.getAttachment("monitor")).toMatchObject({
       sourceWidth: 640,
       sourceHeight: 480,
@@ -206,7 +211,7 @@ describe("embedded surface", () => {
       services: { surfaces }
     });
 
-    surfaces.setState("mirror", {
+    surfaces.publish("camera.rear", {
       available: true,
       handle: { kind: "mock-surface" },
       sourceWidth: 640,
@@ -281,6 +286,7 @@ function createMockEmbeddedSurfaceService(options?: {
   handle?: unknown;
 }): MockEmbeddedSurfaceService {
   const attachments = new Map<string, EmbeddedSurfaceAttachment>();
+  const sources = new Map<string, EmbeddedSurfaceSourceSnapshot>();
   const attachCalls: Array<{ componentId: string; config: EmbeddedSurfaceConfig }> = [];
   const configureCalls: Array<{ componentId: string; config: Partial<EmbeddedSurfaceConfig> }> = [];
   const releaseCalls: string[] = [];
@@ -314,6 +320,8 @@ function createMockEmbeddedSurfaceService(options?: {
       latencyMs: undefined,
       refreshState: "idle",
       lastFrameTimestamp: undefined,
+      sourceType: undefined,
+      surfaceRevision: 0,
       forwardedEvents: []
     };
     attachments.set(componentId, created);
@@ -334,6 +342,71 @@ function createMockEmbeddedSurfaceService(options?: {
       compositionMode: config.compositionMode ?? attachment.compositionMode,
       forwardedEvents: attachment.forwardedEvents
     };
+  }
+
+  function resolveSource(sourceId: string): EmbeddedSurfaceSourceSnapshot {
+    const existing = sources.get(sourceId);
+    if (existing) {
+      return existing;
+    }
+
+    return {
+      sourceId,
+      available,
+      handle,
+      sourceWidth: undefined,
+      sourceHeight: undefined,
+      aspectRatio: undefined,
+      latencyMs: undefined,
+      refreshState: "idle",
+      lastFrameTimestamp: undefined,
+      sourceType: undefined,
+      surfaceRevision: 0
+    };
+  }
+
+  function getAttachmentSnapshot(componentId: string): EmbeddedSurfaceAttachment | undefined {
+    const attachment = attachments.get(componentId);
+    if (!attachment) {
+      return undefined;
+    }
+
+    const source = sources.get(attachment.sourceId);
+    return {
+      ...attachment,
+      available: source?.available ?? attachment.available,
+      handle: source?.handle ?? attachment.handle,
+      sourceWidth: source?.sourceWidth ?? attachment.sourceWidth,
+      sourceHeight: source?.sourceHeight ?? attachment.sourceHeight,
+      aspectRatio: source?.aspectRatio ?? attachment.aspectRatio,
+      latencyMs: source?.latencyMs ?? attachment.latencyMs,
+      refreshState: source?.refreshState ?? attachment.refreshState,
+      lastFrameTimestamp: source?.lastFrameTimestamp ?? attachment.lastFrameTimestamp,
+      sourceType: source?.sourceType ?? attachment.sourceType,
+      surfaceRevision: source?.surfaceRevision ?? attachment.surfaceRevision,
+      forwardedEvents: [...attachment.forwardedEvents]
+    };
+  }
+
+  function publishSource(sourceId: string, state: Parameters<EmbeddedSurfaceService["publish"]>[1]): void {
+    const source = resolveSource(sourceId);
+    const sourceWidth = state.sourceWidth === undefined ? source.sourceWidth : state.sourceWidth;
+    const sourceHeight = state.sourceHeight === undefined ? source.sourceHeight : state.sourceHeight;
+    sources.set(sourceId, {
+      ...source,
+      available: state.available ?? source.available,
+      handle: state.handle ?? source.handle,
+      sourceWidth,
+      sourceHeight,
+      aspectRatio:
+        state.aspectRatio ??
+        (sourceWidth && sourceHeight ? sourceWidth / sourceHeight : source.aspectRatio),
+      latencyMs: state.latencyMs ?? source.latencyMs,
+      refreshState: state.refreshState ?? source.refreshState,
+      lastFrameTimestamp: state.lastFrameTimestamp ?? source.lastFrameTimestamp,
+      sourceType: state.sourceType ?? source.sourceType,
+      surfaceRevision: source.surfaceRevision + 1
+    });
   }
 
   return {
@@ -359,38 +432,31 @@ function createMockEmbeddedSurfaceService(options?: {
       releaseCalls.push(componentId);
       attachments.delete(componentId);
     },
+    subscribe() {
+      return () => {};
+    },
     getAttachment(componentId) {
-      const attachment = attachments.get(componentId);
-      return attachment
-        ? {
-            ...attachment,
-            forwardedEvents: [...attachment.forwardedEvents]
-          }
-        : undefined;
+      return getAttachmentSnapshot(componentId);
+    },
+    getSource(sourceId) {
+      const source = sources.get(sourceId);
+      return source ? { ...source } : undefined;
     },
     isAvailable(componentId) {
-      return attachments.get(componentId)?.available ?? false;
+      return getAttachmentSnapshot(componentId)?.available ?? false;
     },
     getHandle(componentId) {
-      return attachments.get(componentId)?.handle;
+      return getAttachmentSnapshot(componentId)?.handle;
+    },
+    publish(sourceId, state) {
+      publishSource(sourceId, state);
+    },
+    unpublish(sourceId) {
+      sources.delete(sourceId);
     },
     setState(componentId, state) {
-      const attachment = resolveAttachment(componentId);
-      const sourceWidth =
-        state.sourceWidth === undefined ? attachment.sourceWidth : state.sourceWidth;
-      const sourceHeight =
-        state.sourceHeight === undefined ? attachment.sourceHeight : state.sourceHeight;
-      attachments.set(componentId, {
-        ...attachment,
-        available: state.available ?? attachment.available,
-        handle: state.handle ?? attachment.handle,
-        sourceWidth,
-        sourceHeight,
-        aspectRatio: state.aspectRatio ?? (sourceWidth && sourceHeight ? sourceWidth / sourceHeight : attachment.aspectRatio),
-        latencyMs: state.latencyMs ?? attachment.latencyMs,
-        refreshState: state.refreshState ?? attachment.refreshState,
-        lastFrameTimestamp: state.lastFrameTimestamp ?? attachment.lastFrameTimestamp
-      });
+      const attachment = attachments.get(componentId);
+      publishSource(attachment?.sourceId ?? componentId, state);
     },
     forwardEvent(componentId, event) {
       const attachment = resolveAttachment(componentId);

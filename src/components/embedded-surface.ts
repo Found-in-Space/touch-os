@@ -133,15 +133,17 @@ const EmbeddedSurfaceComponent: DisplayComponent<EmbeddedSurfaceProps, EmbeddedS
       });
     }
 
-    if (ctx.services.surfaces.isAvailable(ctx.id)) {
+    if (attachment?.available) {
       commands.push({
         type: "surface" as const,
         componentId: ctx.id,
         role: "embedded-surface-viewport",
         rect: viewportRect,
-        handle: ctx.services.surfaces.getHandle(ctx.id),
-        compositionMode: ctx.props.compositionMode ?? "copy",
-        mirrorX: attachment?.mirrorX ?? ctx.props.mirrorX ?? false
+        handle: attachment.handle,
+        sourceId: attachment.sourceId,
+        surfaceRevision: attachment.surfaceRevision,
+        compositionMode: attachment.compositionMode,
+        mirrorX: attachment.mirrorX
       });
     } else {
       commands.push({

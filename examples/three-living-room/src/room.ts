@@ -13,6 +13,7 @@ export interface LivingRoomScene {
   readonly lampLight: THREE.PointLight;
   readonly tvAnchor: PanelAnchor;
   readonly mirrorAnchor: PanelAnchor;
+  readonly pictureAnchor: PanelAnchor;
   readonly rearViewCamera: THREE.PerspectiveCamera;
   readonly mirrorSize: { width: number; height: number };
   applyState(state: RoomDemoState): void;
@@ -65,6 +66,7 @@ export function createLivingRoomScene(): LivingRoomScene {
   room.add(floor);
 
   room.add(createWall(0, 1.4, -3.1, 6.4, 2.8, 0.14, "#dcc7aa"));
+  room.add(createWall(0, 1.4, 3.1, 6.4, 2.8, 0.14, "#ddc8ae"));
   room.add(createWall(-3.1, 1.4, 0, 0.14, 2.8, 6.4, "#d8c2a1"));
 
   const rightWallSegments = [
@@ -178,6 +180,27 @@ export function createLivingRoomScene(): LivingRoomScene {
   tvFrame.position.set(0, 1.52, -2.92);
   room.add(tvFrame);
 
+  const pictureFrame = new THREE.Mesh(
+    new THREE.BoxGeometry(1.24, 0.82, 0.05),
+    new THREE.MeshStandardMaterial({
+      color: "#6f5238",
+      metalness: 0.04,
+      roughness: 0.64
+    })
+  );
+  pictureFrame.position.set(0, 1.58, 3.02);
+  room.add(pictureFrame);
+
+  const pictureBacking = new THREE.Mesh(
+    new THREE.BoxGeometry(1.18, 0.76, 0.02),
+    new THREE.MeshStandardMaterial({
+      color: "#140f0c",
+      roughness: 0.82
+    })
+  );
+  pictureBacking.position.set(0, 1.58, 2.995);
+  room.add(pictureBacking);
+
   const lampBase = new THREE.Mesh(
     new THREE.CylinderGeometry(0.18, 0.22, 0.04, 24),
     new THREE.MeshStandardMaterial({
@@ -223,6 +246,15 @@ export function createLivingRoomScene(): LivingRoomScene {
       w: Math.cos(Math.PI / 4)
     }
   };
+  const pictureAnchor: PanelAnchor = {
+    position: { x: 0, y: 1.58, z: 3.0 },
+    quaternion: {
+      x: 0,
+      y: 1,
+      z: 0,
+      w: 0
+    }
+  };
 
   function applyState(state: RoomDemoState): void {
     lampLight.intensity = state.lightOn ? 2.2 : 0.12;
@@ -245,6 +277,7 @@ export function createLivingRoomScene(): LivingRoomScene {
     lampLight,
     tvAnchor,
     mirrorAnchor,
+    pictureAnchor,
     rearViewCamera,
     mirrorSize,
     applyState,

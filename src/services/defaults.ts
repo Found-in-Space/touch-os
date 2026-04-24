@@ -12,9 +12,11 @@ import type {
   BitmapAllocation,
   BitmapService,
   BitmapUpdate,
-  EmbeddedSurfaceStateUpdate,
   EmbeddedSurfaceAttachment,
   EmbeddedSurfaceConfig,
+  EmbeddedSurfaceSourceSnapshot,
+  EmbeddedSurfaceSourceUpdate,
+  EmbeddedSurfaceStateUpdate,
   EmbeddedSurfaceService,
   FocusRegistrationOptions,
   FocusService,
@@ -549,19 +551,43 @@ export function createBitmapService(onChange?: ChangeListener): BitmapService {
   };
 }
 
+interface EmbeddedSurfaceAttachmentRecord {
+  sourceId: string;
+  interactive: boolean;
+  preserveAspectRatio: boolean;
+  mirrorX: boolean;
+  desiredSourceType: string | undefined;
+  refreshPolicy: "manual" | "always" | undefined;
+  acceptsForwardedInput: boolean;
+  fallbackLabel: string | undefined;
+  compositionMode: "copy" | "composite";
+  forwardedEvents: readonly DisplayEvent[];
+}
+
 export function createEmbeddedSurfaceService(onChange?: ChangeListener): EmbeddedSurfaceService {
-  const attachments = new Map<string, EmbeddedSurfaceAttachment>();
+  const attachments = new Map<string, EmbeddedSurfaceAttachmentRecord>();
+  const sources = new Map<string, EmbeddedSurfaceSourceSnapshot>();
+  const listeners = new Set<ChangeListener>();
+  if (onChange) {
+    listeners.add(onChange);
+  }
+
+  function emitChanges(): void {
+    for (const listener of listeners) {
+      listener();
+    }
+  }
 
   function resolveAttachment(
     componentId: string,
     fallback?: EmbeddedSurfaceConfig
-  ): EmbeddedSurfaceAttachment {
+  ): EmbeddedSurfaceAttachmentRecord {
     const attachment = attachments.get(componentId);
     if (attachment) {
       return attachment;
     }
 
-    const created: EmbeddedSurfaceAttachment = {
+    const created: EmbeddedSurfaceAttachmentRecord = {
       sourceId: fallback?.sourceId ?? componentId,
       interactive: fallback?.interactive ?? false,
       preserveAspectRatio: fallback?.preserveAspectRatio ?? true,
@@ -570,15 +596,7 @@ export function createEmbeddedSurfaceService(onChange?: ChangeListener): Embedde
       refreshPolicy: fallback?.refreshPolicy,
       acceptsForwardedInput: fallback?.acceptsForwardedInput ?? false,
       fallbackLabel: fallback?.fallbackLabel,
-      available: false,
-      handle: undefined,
       compositionMode: fallback?.compositionMode ?? "copy",
-      sourceWidth: undefined,
-      sourceHeight: undefined,
-      aspectRatio: undefined,
-      latencyMs: undefined,
-      refreshState: "idle",
-      lastFrameTimestamp: undefined,
       forwardedEvents: []
     };
     attachments.set(componentId, created);
@@ -586,9 +604,9 @@ export function createEmbeddedSurfaceService(onChange?: ChangeListener): Embedde
   }
 
   function updateAttachment(
-    attachment: EmbeddedSurfaceAttachment,
+    attachment: EmbeddedSurfaceAttachmentRecord,
     config: Partial<EmbeddedSurfaceConfig>
-  ): EmbeddedSurfaceAttachment {
+  ): EmbeddedSurfaceAttachmentRecord {
     return {
       ...attachment,
       ...config,
@@ -601,69 +619,139 @@ export function createEmbeddedSurfaceService(onChange?: ChangeListener): Embedde
     };
   }
 
-  function updateSurfaceState(
-    attachment: EmbeddedSurfaceAttachment,
-    state: EmbeddedSurfaceStateUpdate
-  ): EmbeddedSurfaceAttachment {
-    const sourceWidth = hasOwn(state, "sourceWidth")
-      ? (state.sourceWidth as number | undefined)
-      : attachment.sourceWidth;
-    const sourceHeight = hasOwn(state, "sourceHeight")
-      ? (state.sourceHeight as number | undefined)
-      : attachment.sourceHeight;
-    const aspectRatio = hasOwn(state, "aspectRatio")
-      ? (state.aspectRatio as number | undefined)
-      : sourceWidth && sourceHeight
-        ? sourceWidth / sourceHeight
-        : attachment.aspectRatio;
+  function resolveSource(sourceId: string): EmbeddedSurfaceSourceSnapshot {
+    const existing = sources.get(sourceId);
+    if (existing) {
+      return existing;
+    }
 
     return {
+      sourceId,
+      available: false,
+      handle: undefined,
+      sourceWidth: undefined,
+      sourceHeight: undefined,
+      aspectRatio: undefined,
+      latencyMs: undefined,
+      refreshState: "idle",
+      lastFrameTimestamp: undefined,
+      sourceType: undefined,
+      surfaceRevision: 0
+    };
+  }
+
+  function cloneSource(source: EmbeddedSurfaceSourceSnapshot): EmbeddedSurfaceSourceSnapshot {
+    return {
+      ...source
+    };
+  }
+
+  function resolveAttachmentSnapshot(
+    attachment: EmbeddedSurfaceAttachmentRecord
+  ): EmbeddedSurfaceAttachment {
+    const source = sources.get(attachment.sourceId);
+    return {
       ...attachment,
-      available: state.available ?? attachment.available,
-      handle: hasOwn(state, "handle") ? state.handle : attachment.handle,
+      available: source?.available ?? false,
+      handle: source?.handle,
+      sourceWidth: source?.sourceWidth,
+      sourceHeight: source?.sourceHeight,
+      aspectRatio: source?.aspectRatio,
+      latencyMs: source?.latencyMs,
+      refreshState: source?.refreshState ?? "idle",
+      lastFrameTimestamp: source?.lastFrameTimestamp,
+      sourceType: source?.sourceType,
+      surfaceRevision: source?.surfaceRevision ?? 0,
+      forwardedEvents: [...attachment.forwardedEvents]
+    };
+  }
+
+  function updateSource(
+    source: EmbeddedSurfaceSourceSnapshot,
+    update: EmbeddedSurfaceSourceUpdate
+  ): EmbeddedSurfaceSourceSnapshot {
+    const sourceWidth = hasOwn(update, "sourceWidth")
+      ? (update.sourceWidth as number | undefined)
+      : source.sourceWidth;
+    const sourceHeight = hasOwn(update, "sourceHeight")
+      ? (update.sourceHeight as number | undefined)
+      : source.sourceHeight;
+    const aspectRatio = hasOwn(update, "aspectRatio")
+      ? (update.aspectRatio as number | undefined)
+      : sourceWidth && sourceHeight
+        ? sourceWidth / sourceHeight
+        : source.aspectRatio;
+
+    return {
+      ...source,
+      available: update.available ?? source.available,
+      handle: hasOwn(update, "handle") ? update.handle : source.handle,
       sourceWidth,
       sourceHeight,
       aspectRatio,
-      latencyMs: state.latencyMs ?? attachment.latencyMs,
-      refreshState: state.refreshState ?? attachment.refreshState,
-      lastFrameTimestamp: state.lastFrameTimestamp ?? attachment.lastFrameTimestamp
+      latencyMs: update.latencyMs ?? source.latencyMs,
+      refreshState: update.refreshState ?? source.refreshState,
+      lastFrameTimestamp: update.lastFrameTimestamp ?? source.lastFrameTimestamp,
+      sourceType: hasOwn(update, "sourceType")
+        ? (update.sourceType as string | undefined)
+        : source.sourceType,
+      surfaceRevision: source.surfaceRevision + 1
     };
   }
 
   return {
     attach(componentId, config) {
       attachments.set(componentId, resolveAttachment(componentId, config));
-      emit(onChange);
+      emitChanges();
     },
     configure(componentId, config) {
       const attachment = resolveAttachment(componentId);
       attachments.set(componentId, updateAttachment(attachment, config));
-      emit(onChange);
+      emitChanges();
     },
     release(componentId) {
       if (attachments.delete(componentId)) {
-        emit(onChange);
+        emitChanges();
       }
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     },
     getAttachment(componentId) {
       const attachment = attachments.get(componentId);
-      return attachment
-        ? {
-            ...attachment,
-            forwardedEvents: [...attachment.forwardedEvents]
-          }
-        : undefined;
+      return attachment ? resolveAttachmentSnapshot(attachment) : undefined;
+    },
+    getSource(sourceId) {
+      const source = sources.get(sourceId);
+      return source ? cloneSource(source) : undefined;
     },
     isAvailable(componentId) {
-      return attachments.get(componentId)?.available ?? false;
+      const attachment = attachments.get(componentId);
+      return attachment ? (sources.get(attachment.sourceId)?.available ?? false) : false;
     },
     getHandle(componentId) {
-      return attachments.get(componentId)?.handle;
+      const attachment = attachments.get(componentId);
+      return attachment ? sources.get(attachment.sourceId)?.handle : undefined;
+    },
+    publish(sourceId, update) {
+      const source = resolveSource(sourceId);
+      sources.set(sourceId, updateSource(source, update));
+      emitChanges();
+    },
+    unpublish(sourceId) {
+      if (sources.delete(sourceId)) {
+        emitChanges();
+      }
     },
     setState(componentId, state) {
-      const attachment = resolveAttachment(componentId);
-      attachments.set(componentId, updateSurfaceState(attachment, state));
-      emit(onChange);
+      const attachment = attachments.get(componentId);
+      const sourceId = attachment?.sourceId ?? componentId;
+      const source = resolveSource(sourceId);
+      sources.set(sourceId, updateSource(source, state));
+      emitChanges();
     },
     forwardEvent(componentId, event) {
       const attachment = resolveAttachment(componentId);
@@ -671,7 +759,7 @@ export function createEmbeddedSurfaceService(onChange?: ChangeListener): Embedde
         ...attachment,
         forwardedEvents: [...attachment.forwardedEvents, cloneDisplayEvent(event)]
       });
-      emit(onChange);
+      emitChanges();
     }
   };
 }

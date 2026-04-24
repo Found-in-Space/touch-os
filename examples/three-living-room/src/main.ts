@@ -22,21 +22,26 @@ import {
 import {
   createXrHudRoot,
   createWallMirrorRoot,
+  createWallPictureRoot,
   createRoomPanelRoot,
   getXrHudSurface,
   getXrHudTheme,
   getWallMirrorSurface,
   getWallMirrorTheme,
+  getWallPictureSurface,
+  getWallPictureTheme,
   getRoomPanelSurface,
   getRoomPanelTheme
 } from "./panel-ui.js";
 import {
-  MIRROR_COMPONENT_ID,
-  XR_HUD_MIRROR_COMPONENT_ID,
-  WALL_MIRROR_COMPONENT_ID,
+  REAR_VIEW_SOURCE_ID,
   clearMirrorSurface,
   publishMirrorSurface
 } from "./mirror.js";
+import {
+  createShaderPicturePresenter,
+  createShaderPictureSource
+} from "./shader-picture.js";
 import { createLivingRoomScene } from "./room.js";
 import {
   createRoomDemoStore,
@@ -101,7 +106,7 @@ interface StaticRuntimeBinding {
 }
 
 interface DriverBinding {
-  key: "desktop-hud" | "xr-hud" | "tv" | "arm";
+  key: "desktop-hud" | "xr-hud" | "tv" | "arm" | "wall-mirror" | "wall-picture";
   runtime: DisplayRuntime;
   driver: ThreePanelDriver;
   enabled: boolean;
@@ -125,18 +130,24 @@ const tvBinding = createRuntimeBinding("tv");
 const armBinding = createRuntimeBinding("arm");
 const xrHudBinding = createXrHudRuntimeBinding();
 const wallMirrorBinding = createWallMirrorRuntimeBinding();
+const wallPictureBinding = createWallPictureRuntimeBinding();
 
 const desktopHudDriverBinding = createDesktopHudDriverBinding(desktopHudBinding.runtime);
 const tvDriverBinding = createTvDriverBinding(tvBinding.runtime);
 const armDriverBinding = createArmDriverBinding(armBinding.runtime);
 const xrHudDriverBinding = createXrHudDriverBinding(xrHudBinding.runtime);
 const wallMirrorDriverBinding = createWallMirrorDriverBinding(wallMirrorBinding.runtime);
+const wallPictureDriverBinding = createWallPictureDriverBinding(wallPictureBinding.runtime);
 
 desktopHudDriverBinding.driver.attach();
 tvDriverBinding.driver.attach();
 armDriverBinding.driver.attach();
 xrHudDriverBinding.driver.attach();
 wallMirrorDriverBinding.driver.attach();
+wallPictureDriverBinding.driver.attach();
+
+const shaderPictureSource = createShaderPictureSource();
+const shaderPicturePresenter = createShaderPicturePresenter(wallPictureDriverBinding.driver.host.mesh);
 
 const pressedKeys = new Set<string>();
 let lookActive = false;
@@ -361,12 +372,13 @@ renderer.setAnimationLoop(() => {
   desktopHudDriverBinding.driver.host.mesh.visible = desktopHudVisible;
   xrHudDriverBinding.driver.host.mesh.visible = xrHudVisible;
   armDriverBinding.driver.host.mesh.visible = armVisible;
-  publishMirrorSurface(sharedSurfaces, MIRROR_COMPONENT_ID, mirrorCanvas, now);
-  publishMirrorSurface(sharedSurfaces, XR_HUD_MIRROR_COMPONENT_ID, mirrorCanvas, now);
-  publishMirrorSurface(sharedSurfaces, WALL_MIRROR_COMPONENT_ID, mirrorCanvas, now);
+  publishMirrorSurface(sharedSurfaces, REAR_VIEW_SOURCE_ID, mirrorCanvas, now);
+  shaderPictureSource.render(renderer, now);
+  shaderPictureSource.publish(sharedSurfaces, now);
   desktopHudBinding.refresh(state);
   xrHudBinding.refresh();
   wallMirrorBinding.refresh();
+  wallPictureBinding.refresh();
 
   const baseFrame: THREEFrame = {
     scene: room.scene,
@@ -377,6 +389,8 @@ renderer.setAnimationLoop(() => {
   tvDriverBinding.update(baseFrame);
   wallMirrorDriverBinding.enabled = true;
   wallMirrorDriverBinding.update(baseFrame);
+  wallPictureDriverBinding.enabled = true;
+  wallPictureDriverBinding.update(baseFrame);
 
   if (xrActive) {
     desktopHudDriverBinding.enabled = false;
@@ -448,6 +462,7 @@ renderer.setAnimationLoop(() => {
 
   tickActiveRuntime(tvDriverBinding, now);
   tickActiveRuntime(wallMirrorDriverBinding, now);
+  tickActiveRuntime(wallPictureDriverBinding, now);
   if (desktopHudDriverBinding.enabled) {
     tickActiveRuntime(desktopHudDriverBinding, now);
   }
@@ -460,6 +475,8 @@ renderer.setAnimationLoop(() => {
 
   tvDriverBinding.render();
   wallMirrorDriverBinding.render();
+  wallPictureDriverBinding.render();
+  shaderPicturePresenter.update(wallPictureDriverBinding.driver.host);
   desktopHudDriverBinding.render();
   xrHudDriverBinding.render();
   if (armDriverBinding.enabled) {
@@ -575,6 +592,24 @@ function createWallMirrorRuntimeBinding(): StaticRuntimeBinding {
   };
 }
 
+function createWallPictureRuntimeBinding(): StaticRuntimeBinding {
+  const runtime = createRuntime({
+    root: createWallPictureRoot(),
+    surface: getWallPictureSurface(),
+    theme: getWallPictureTheme(),
+    services: {
+      surfaces: sharedSurfaces
+    }
+  });
+
+  return {
+    runtime,
+    refresh() {
+      runtime.setRoot(createWallPictureRoot());
+    }
+  };
+}
+
 function createWallMirrorDriverBinding(runtime: DisplayRuntime): DriverBinding {
   const driver = createScenePanelDriver({
     runtime,
@@ -585,7 +620,20 @@ function createWallMirrorDriverBinding(runtime: DisplayRuntime): DriverBinding {
     quaternion: room.mirrorAnchor.quaternion
   });
 
-  return createDriverBinding("tv", driver, runtime);
+  return createDriverBinding("wall-mirror", driver, runtime);
+}
+
+function createWallPictureDriverBinding(runtime: DisplayRuntime): DriverBinding {
+  const driver = createScenePanelDriver({
+    runtime,
+    surface: getWallPictureSurface(),
+    panelWidth: 1.12,
+    panelHeight: 0.7,
+    position: room.pictureAnchor.position,
+    quaternion: room.pictureAnchor.quaternion
+  });
+
+  return createDriverBinding("wall-picture", driver, runtime);
 }
 
 function createArmDriverBinding(runtime: DisplayRuntime): DriverBinding {
@@ -602,7 +650,7 @@ function createArmDriverBinding(runtime: DisplayRuntime): DriverBinding {
 }
 
 function createDriverBinding(
-  key: "desktop-hud" | "xr-hud" | "tv" | "arm",
+  key: "desktop-hud" | "xr-hud" | "tv" | "arm" | "wall-mirror" | "wall-picture",
   driver: ThreePanelDriver,
   runtime: DisplayRuntime
 ): DriverBinding {
@@ -1120,8 +1168,10 @@ window.addEventListener("beforeunload", () => {
   armDriverBinding.driver.detach();
   xrHudDriverBinding.driver.detach();
   wallMirrorDriverBinding.driver.detach();
+  wallPictureDriverBinding.driver.detach();
+  shaderPicturePresenter.dispose();
+  shaderPictureSource.dispose();
   mirrorRenderer.dispose();
-  clearMirrorSurface(sharedSurfaces, MIRROR_COMPONENT_ID);
-  clearMirrorSurface(sharedSurfaces, XR_HUD_MIRROR_COMPONENT_ID);
-  clearMirrorSurface(sharedSurfaces, WALL_MIRROR_COMPONENT_ID);
+  clearMirrorSurface(sharedSurfaces, REAR_VIEW_SOURCE_ID);
+  shaderPictureSource.unpublish(sharedSurfaces);
 });

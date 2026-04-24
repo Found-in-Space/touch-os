@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createEmbeddedSurfaceService } from "../src/index.js";
 import {
-  MIRROR_COMPONENT_ID,
+  REAR_VIEW_SOURCE_ID,
   publishMirrorSurface
 } from "../examples/three-living-room/src/mirror.js";
 
@@ -11,7 +11,7 @@ describe("living room mirror bridge", () => {
 
     publishMirrorSurface(
       surfaces,
-      MIRROR_COMPONENT_ID,
+      REAR_VIEW_SOURCE_ID,
       {
         width: 640,
         height: 360
@@ -19,15 +19,16 @@ describe("living room mirror bridge", () => {
       42
     );
 
-    expect(surfaces.getAttachment(MIRROR_COMPONENT_ID)).toMatchObject({
+    expect(surfaces.getSource(REAR_VIEW_SOURCE_ID)).toMatchObject({
       available: true,
       sourceWidth: 640,
       sourceHeight: 360,
       lastFrameTimestamp: 42,
       refreshState: "updating",
-      forwardedEvents: []
+      sourceType: "canvas-image",
+      surfaceRevision: 1
     });
-    expect(surfaces.getAttachment(MIRROR_COMPONENT_ID)?.handle).toMatchObject({
+    expect(surfaces.getSource(REAR_VIEW_SOURCE_ID)?.handle).toMatchObject({
       image: {
         width: 640,
         height: 360

@@ -77,6 +77,8 @@ export interface SurfaceDrawCommand extends DrawCommandBase {
   type: "surface";
   rect: Rect;
   handle: unknown;
+  sourceId?: string;
+  surfaceRevision?: number;
   compositionMode?: SurfaceCompositionMode;
   mirrorX?: boolean;
 }
@@ -91,5 +93,6 @@ export type DrawCommand =
 
 export interface RenderSnapshot {
   revision: number;
+  sharedSurfaceRevision: number;
   commands: readonly DrawCommand[];
 }

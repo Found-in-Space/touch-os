@@ -9,7 +9,8 @@ import { createButtonFixture } from "../src/examples/reference-fixtures.js";
 import {
   createHudHost,
   createPoseAnchoredPanelHost,
-  createScenePanelHost
+  createScenePanelHost,
+  resolveCompositeSurfacePlacements
 } from "../src/hosts/three.js";
 import { createFakeCanvas } from "./helpers/fake-canvas.js";
 
@@ -343,9 +344,10 @@ describe("three host adapters", () => {
     camera.lookAt(0, 0, 0);
     scene.add(camera);
 
-    surfaces.setState("monitor", {
+    const handle = { kind: "mock-surface" };
+    surfaces.publish("camera.rear", {
       available: true,
-      handle: { kind: "mock-surface" },
+      handle,
       sourceWidth: 640,
       sourceHeight: 480
     });
@@ -364,8 +366,121 @@ describe("three host adapters", () => {
     expect(host.getCompositeSurfaces()).toHaveLength(1);
     expect(host.getCompositeSurfaces()[0]).toMatchObject({
       componentId: "monitor",
-      compositionMode: "composite"
+      sourceId: "camera.rear",
+      handle,
+      compositionMode: "composite",
+      surfaceRevision: 1
     });
+
+    host.detach();
+  });
+
+  it("resolves composite placements in panel-local mesh units", () => {
+    const surfaces = createEmbeddedSurfaceService();
+    const runtime = createRuntime({
+      root: createEmbeddedSurface("monitor", {
+        sourceId: "plot.main",
+        compositionMode: "composite",
+        preserveAspectRatio: false
+      }),
+      surface: { width: 160, height: 100 },
+      theme: { padding: 0 },
+      services: { surfaces }
+    });
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1.6, 0.1, 10);
+    camera.position.set(0, 0, 1);
+    camera.lookAt(0, 0, 0);
+    scene.add(camera);
+
+    surfaces.publish("plot.main", {
+      available: true,
+      handle: { kind: "plot-texture" },
+      sourceWidth: 160,
+      sourceHeight: 100
+    });
+
+    const host = createScenePanelHost({
+      runtime,
+      surface: { width: 160, height: 100 },
+      panelWidth: 1,
+      panelHeight: 0.625,
+      createCanvas: createFakeCanvas
+    });
+
+    host.attach();
+    host.update({ scene, camera });
+
+    const placements = resolveCompositeSurfacePlacements(host);
+    expect(placements).toHaveLength(1);
+    expect(placements[0]).toMatchObject({
+      componentId: "monitor",
+      sourceId: "plot.main",
+      panelRect: {
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 0.625
+      },
+      localCenter: {
+        x: 0,
+        y: 0,
+        z: 0
+      },
+      size: {
+        width: 1,
+        height: 0.625
+      }
+    });
+
+    host.detach();
+  });
+
+  it("updates composite surfaces without redrawing the shared canvas", () => {
+    const surfaces = createEmbeddedSurfaceService();
+    const runtime = createRuntime({
+      root: createEmbeddedSurface("monitor", {
+        sourceId: "plot.main",
+        compositionMode: "composite"
+      }),
+      surface: { width: 160, height: 100 },
+      services: { surfaces }
+    });
+    const recordingCanvas = createRecordingCanvas({ width: 160, height: 100, pixelDensity: 1 });
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1.6, 0.1, 10);
+    camera.position.set(0, 0, 1);
+    camera.lookAt(0, 0, 0);
+    scene.add(camera);
+
+    surfaces.publish("plot.main", {
+      available: true,
+      handle: { kind: "plot-texture", revision: 1 },
+      sourceWidth: 640,
+      sourceHeight: 480
+    });
+
+    const host = createScenePanelHost({
+      runtime,
+      surface: { width: 160, height: 100 },
+      panelWidth: 1,
+      panelHeight: 0.625,
+      createCanvas: () => recordingCanvas.canvas
+    });
+
+    host.attach();
+    host.update({ scene, camera });
+    const initialClearCount = countOperations(recordingCanvas.operations, "clearRect");
+
+    surfaces.publish("plot.main", {
+      lastFrameTimestamp: 24
+    });
+
+    const snapshot = host.render();
+    expect(countOperations(recordingCanvas.operations, "clearRect")).toBe(initialClearCount);
+    expect(snapshot.revision).toBeGreaterThan(0);
+    expect(host.getCompositeSurfaces()[0]?.surfaceRevision).toBe(2);
 
     host.detach();
   });
@@ -383,7 +498,7 @@ describe("three host adapters", () => {
       services: { surfaces }
     });
     const image = { width: 64, height: 32 };
-    surfaces.setState("mirror", {
+    surfaces.publish("camera.rear", {
       available: true,
       handle: { image },
       sourceWidth: 64,
@@ -405,6 +520,50 @@ describe("three host adapters", () => {
     expect(recordingCanvas.operations).toContainEqual(["translate", 160, 0]);
     expect(recordingCanvas.operations).toContainEqual(["scale", -1, 1]);
     expect(recordingCanvas.operations).toContainEqual(["drawImage", image, 0, 0, 160, 100]);
+
+    host.detach();
+  });
+
+  it("redraws copy-mode surfaces when the published frame advances without changing handle identity", () => {
+    const surfaces = createEmbeddedSurfaceService();
+    const runtime = createRuntime({
+      root: createEmbeddedSurface("mirror", {
+        sourceId: "camera.rear",
+        preserveAspectRatio: false
+      }),
+      surface: { width: 160, height: 100 },
+      theme: { padding: 0 },
+      services: { surfaces }
+    });
+    const image = { width: 64, height: 32 };
+    const recordingCanvas = createRecordingCanvas({ width: 160, height: 100, pixelDensity: 1 });
+    const host = createScenePanelHost({
+      runtime,
+      surface: { width: 160, height: 100 },
+      panelWidth: 1,
+      panelHeight: 0.625,
+      createCanvas: () => recordingCanvas.canvas
+    });
+
+    surfaces.publish("camera.rear", {
+      available: true,
+      handle: { image },
+      sourceWidth: 64,
+      sourceHeight: 32
+    });
+
+    host.attach();
+    host.render();
+    const initialClearCount = countOperations(recordingCanvas.operations, "clearRect");
+    const initialDrawCount = countOperations(recordingCanvas.operations, "drawImage");
+
+    surfaces.publish("camera.rear", {
+      lastFrameTimestamp: 42
+    });
+
+    host.render();
+    expect(countOperations(recordingCanvas.operations, "clearRect")).toBeGreaterThan(initialClearCount);
+    expect(countOperations(recordingCanvas.operations, "drawImage")).toBeGreaterThan(initialDrawCount);
 
     host.detach();
   });
@@ -493,4 +652,11 @@ function createRecordingCanvas(metrics: { width: number; height: number; pixelDe
     },
     operations
   };
+}
+
+function countOperations(
+  operations: ReadonlyArray<readonly unknown[]>,
+  name: string
+): number {
+  return operations.filter((operation) => operation[0] === name).length;
 }

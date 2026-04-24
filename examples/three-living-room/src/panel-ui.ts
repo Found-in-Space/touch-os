@@ -16,10 +16,15 @@ import {
   createSection
 } from "../../../src/index.js";
 import {
+  REAR_VIEW_SOURCE_ID,
   MIRROR_COMPONENT_ID,
   XR_HUD_MIRROR_COMPONENT_ID,
   WALL_MIRROR_COMPONENT_ID
 } from "./mirror.js";
+import {
+  WALL_PICTURE_COMPONENT_ID,
+  WALL_PICTURE_SOURCE_ID
+} from "./shader-picture.js";
 import type { MovementIntent, RoomDemoState } from "./store.js";
 
 export type RoomPanelVariant = "tv" | "hud" | "arm";
@@ -120,7 +125,7 @@ export function createRoomPanelRoot(
         bottomCenter: {
           maxWidth: 320,
           child: createEmbeddedSurface(MIRROR_COMPONENT_ID, {
-            sourceId: "camera.rear",
+            sourceId: REAR_VIEW_SOURCE_ID,
             interactive: false,
             acceptsForwardedInput: false,
             fallbackLabel: "Mirror offline",
@@ -202,7 +207,7 @@ export function createRoomPanelRoot(
 
 export function createXrHudRoot(): DisplayNode<unknown> {
   return createEmbeddedSurface(XR_HUD_MIRROR_COMPONENT_ID, {
-    sourceId: "camera.rear.xr-hud",
+    sourceId: REAR_VIEW_SOURCE_ID,
     interactive: false,
     acceptsForwardedInput: false,
     fallbackLabel: "Mirror offline",
@@ -322,12 +327,23 @@ export function getXrHudTheme(): Partial<ThemeTokens> {
 
 export function createWallMirrorRoot(): DisplayNode<unknown> {
   return createEmbeddedSurface(WALL_MIRROR_COMPONENT_ID, {
-    sourceId: "camera.rear.wall",
+    sourceId: REAR_VIEW_SOURCE_ID,
     interactive: false,
     acceptsForwardedInput: false,
     fallbackLabel: "Wall mirror offline",
     preserveAspectRatio: true,
     mirrorX: true
+  });
+}
+
+export function createWallPictureRoot(): DisplayNode<unknown> {
+  return createEmbeddedSurface(WALL_PICTURE_COMPONENT_ID, {
+    sourceId: WALL_PICTURE_SOURCE_ID,
+    interactive: false,
+    acceptsForwardedInput: false,
+    fallbackLabel: "Picture offline",
+    preserveAspectRatio: true,
+    compositionMode: "composite"
   });
 }
 
@@ -343,6 +359,22 @@ export function getWallMirrorTheme(): Partial<ThemeTokens> {
     accentColor: "#60a5fa",
     controlHeight: 40,
     radius: 10
+  };
+}
+
+export function getWallPictureSurface(): Partial<SurfaceMetrics> {
+  return { width: 640, height: 400 };
+}
+
+export function getWallPictureTheme(): Partial<ThemeTokens> {
+  return {
+    backgroundColor: "#0b0806",
+    surfaceColor: "#17110d",
+    borderColor: "#7b5f44",
+    accentColor: "#d97706",
+    controlHeight: 40,
+    padding: 12,
+    radius: 14
   };
 }
 

@@ -143,6 +143,8 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
   let renderDirty = true;
   let treeDirty = false;
   let renderRevision = 0;
+  let sharedSurfaceRevision = 0;
+  let sharedRenderSignature = "";
   let outputs: RuntimeOutput[] = [];
   const pendingEmissions: PendingEmission[] = [];
   let commands: DrawCommand[] = [];
@@ -168,12 +170,12 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
       createTimingService(options.now ?? 0, options.longPressDelay ?? 450),
     surface: options.services?.surface ?? createSurfaceService(options.surface, () => invalidateLayout()),
     bitmaps: options.services?.bitmaps ?? createBitmapService(() => invalidateRender()),
-    surfaces:
-      options.services?.surfaces ?? createEmbeddedSurfaceService(() => invalidateRender())
+    surfaces: options.services?.surfaces ?? createEmbeddedSurfaceService()
   };
 
   const focusService = services.focus;
   const timingService = services.timing;
+  const unsubscribeSurfaceChanges = services.surfaces.subscribe(() => invalidateRender());
 
   let rootDescriptor = options.root;
   let rootNode: RuntimeNodeState | undefined;
@@ -546,6 +548,11 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
 
     commands = [];
     renderNode(rootNode, undefined);
+    const nextSharedRenderSignature = getSharedRenderSignature(commands);
+    if (nextSharedRenderSignature !== sharedRenderSignature) {
+      sharedRenderSignature = nextSharedRenderSignature;
+      sharedSurfaceRevision += 1;
+    }
     renderRevision += 1;
     renderDirty = false;
   }
@@ -1200,6 +1207,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
   }
 
   function dispose(): void {
+    unsubscribeSurfaceChanges();
     if (rootNode) {
       disposeNode(rootNode);
       rootNode = undefined;
@@ -1218,6 +1226,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
       rebuildCommands();
       return {
         revision: renderRevision,
+        sharedSurfaceRevision,
         commands: [...commands]
       };
     },
@@ -1253,6 +1262,107 @@ function unconstrained(maxWidth: number, maxHeight: number): LayoutConstraints {
     minHeight: 0,
     maxHeight
   };
+}
+
+function getSharedRenderSignature(commands: readonly DrawCommand[]): string {
+  return commands
+    .map((command) => getSharedCommandSignature(command))
+    .filter((signature): signature is string => signature !== undefined)
+    .join("|");
+}
+
+function getSharedCommandSignature(command: DrawCommand): string | undefined {
+  switch (command.type) {
+    case "rect":
+      return [
+        "rect",
+        command.componentId,
+        command.role ?? "",
+        encodeRect(command.rect),
+        command.fill ?? "",
+        command.stroke ?? "",
+        command.strokeWidth ?? 0,
+        command.radius ?? 0,
+        encodeOptionalRect(command.clipRect)
+      ].join(":");
+    case "text":
+      return [
+        "text",
+        command.componentId,
+        command.role ?? "",
+        command.text,
+        encodeRect(command.rect),
+        command.color,
+        command.align ?? "",
+        command.verticalAlign ?? "",
+        command.fontSize ?? 0,
+        command.fontWeight ?? 0,
+        encodeOptionalRect(command.clipRect)
+      ].join(":");
+    case "line":
+      return [
+        "line",
+        command.componentId,
+        command.role ?? "",
+        command.x1,
+        command.y1,
+        command.x2,
+        command.y2,
+        command.stroke,
+        command.strokeWidth ?? 0,
+        encodeOptionalRect(command.clipRect)
+      ].join(":");
+    case "circle":
+      return [
+        "circle",
+        command.componentId,
+        command.role ?? "",
+        command.cx,
+        command.cy,
+        command.radius,
+        command.fill ?? "",
+        command.stroke ?? "",
+        command.strokeWidth ?? 0,
+        encodeOptionalRect(command.clipRect)
+      ].join(":");
+    case "bitmap":
+      return [
+        "bitmap",
+        command.componentId,
+        command.role ?? "",
+        encodeRect(command.rect),
+        command.handle.width,
+        command.handle.height,
+        command.handle.revision,
+        command.fit ?? "",
+        command.opacity ?? 1,
+        command.sampling ?? "linear",
+        encodeOptionalRect(command.clipRect)
+      ].join(":");
+    case "surface":
+      if ((command.compositionMode ?? "copy") === "composite") {
+        return undefined;
+      }
+      return [
+        "surface",
+        command.componentId,
+        command.role ?? "",
+        command.sourceId ?? "",
+        encodeRect(command.rect),
+        command.compositionMode ?? "copy",
+        command.mirrorX ? "1" : "0",
+        command.surfaceRevision ?? 0,
+        encodeOptionalRect(command.clipRect)
+      ].join(":");
+  }
+}
+
+function encodeRect(rect: Rect): string {
+  return `${rect.x},${rect.y},${rect.width},${rect.height}`;
+}
+
+function encodeOptionalRect(rect: Rect | undefined): string {
+  return rect ? encodeRect(rect) : "";
 }
 
 function withClip<TCommand extends DrawCommand>(

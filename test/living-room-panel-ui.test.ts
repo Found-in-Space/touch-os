@@ -3,9 +3,12 @@ import { createRuntime } from "../src/index.js";
 import type { TextDrawCommand } from "../src/core/draw.js";
 import {
   createXrHudRoot,
+  createWallPictureRoot,
   createRoomPanelRoot,
   getXrHudSurface,
   getXrHudTheme,
+  getWallPictureSurface,
+  getWallPictureTheme,
   getRoomPanelSurface,
   getRoomPanelTheme
 } from "../examples/three-living-room/src/panel-ui.js";
@@ -67,6 +70,18 @@ describe("living room panel ui", () => {
     expect(sharedStateTexts).toContain("Move");
     expect(sharedStateTexts).toContain("XR");
     expect(sharedStateTexts).toContain("Rear View");
+  });
+
+  it("renders a separate wall-picture placeholder for the composite path", () => {
+    const runtime = createRuntime({
+      root: createWallPictureRoot(),
+      surface: getWallPictureSurface(),
+      theme: getWallPictureTheme()
+    });
+
+    const texts = collectTexts(runtime.render().commands);
+    expect(texts).toContain("Picture offline");
+    expect(texts).not.toContain("Mirror offline");
   });
 });
 

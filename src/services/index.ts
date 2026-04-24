@@ -4,6 +4,8 @@ export type {
   BitmapUpdate,
   EmbeddedSurfaceAttachment,
   EmbeddedSurfaceConfig,
+  EmbeddedSurfaceSourceSnapshot,
+  EmbeddedSurfaceSourceUpdate,
   EmbeddedSurfaceStateUpdate,
   EmbeddedSurfaceService,
   FocusRegistrationOptions,

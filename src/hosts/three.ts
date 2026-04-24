@@ -242,6 +242,20 @@ export interface ThreePanelHost extends HostAdapter<ThreePanelHostFrame> {
   getCompositeSurfaces(): readonly SurfaceDrawCommand[];
 }
 
+export interface ThreeCompositeSurfacePlacement {
+  componentId: string;
+  sourceId: string | undefined;
+  compositionMode: "composite";
+  mirrorX: boolean;
+  command: SurfaceDrawCommand;
+  panelRect: Rect;
+  localCenter: Vector3Like;
+  size: {
+    width: number;
+    height: number;
+  };
+}
+
 /** Options for a panel attached to an application-supplied pose such as a hand, head, chest, or tool mount. */
 export interface PoseAnchoredPanelHostOptions extends ThreePanelHostOptions {
   tiltRadians?: number;
@@ -345,7 +359,7 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
 
   const raycaster = new THREE.Raycaster();
   let currentParent: THREE.Object3D | undefined;
-  let lastRenderedRevision = -1;
+  let lastRenderedSharedSurfaceRevision = -1;
   let latestHit: ThreePanelHit | null = null;
   let compositeSurfaces: SurfaceDrawCommand[] = [];
   const capturedPointers = new Set<string>();
@@ -364,6 +378,7 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
       canvas = (options.createCanvas ?? createDefaultCanvas)(surfaceMetrics);
       renderer = createCanvasSurfaceRenderer(canvas, surfaceMetrics);
       texture.image = canvas as never;
+      lastRenderedSharedSurfaceRevision = -1;
     }
 
     ensureParent(frame);
@@ -397,10 +412,10 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
       (command): command is SurfaceDrawCommand =>
         command.type === "surface" && (command.compositionMode ?? "copy") === "composite"
     );
-    if (snapshot.revision !== lastRenderedRevision) {
+    if (snapshot.sharedSurfaceRevision !== lastRenderedSharedSurfaceRevision) {
       renderer.draw(snapshot);
       texture.needsUpdate = true;
-      lastRenderedRevision = snapshot.revision;
+      lastRenderedSharedSurfaceRevision = snapshot.sharedSurfaceRevision;
     }
     return snapshot;
   }
@@ -564,6 +579,49 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
       return compositeSurfaces.map((command) => ({ ...command }));
     }
   };
+}
+
+export function resolveCompositeSurfacePlacements(
+  host: Pick<ThreePanelHost, "mesh" | "getSurfaceMetrics" | "getCompositeSurfaces">
+): readonly ThreeCompositeSurfacePlacement[] {
+  const metrics = host.getSurfaceMetrics();
+  if (metrics.width <= 0 || metrics.height <= 0) {
+    return [];
+  }
+
+  const geometry = host.mesh.geometry.parameters;
+  const panelWidth = geometry.width ?? 1;
+  const panelHeight = geometry.height ?? 1;
+  const halfWidth = panelWidth / 2;
+  const halfHeight = panelHeight / 2;
+
+  return host.getCompositeSurfaces().map((command) => {
+    const panelRect: Rect = {
+      x: (command.rect.x / metrics.width) * panelWidth,
+      y: (command.rect.y / metrics.height) * panelHeight,
+      width: (command.rect.width / metrics.width) * panelWidth,
+      height: (command.rect.height / metrics.height) * panelHeight
+    };
+    const localCenter = {
+      x: -halfWidth + panelRect.x + panelRect.width / 2,
+      y: halfHeight - panelRect.y - panelRect.height / 2,
+      z: 0
+    };
+
+    return {
+      componentId: command.componentId,
+      sourceId: command.sourceId,
+      compositionMode: "composite" as const,
+      mirrorX: command.mirrorX ?? false,
+      command: { ...command },
+      panelRect,
+      localCenter,
+      size: {
+        width: panelRect.width,
+        height: panelRect.height
+      }
+    };
+  });
 }
 
 /** Create a panel host that follows an explicit pose supplied on each frame. */
