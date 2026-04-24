@@ -19,4 +19,4 @@ XR behavior:
 - Enter XR with the browser XR button in the top-right corner
 - A separate head-mounted rear-view mirror remains visible in XR
 - The arm-mounted controller panel still appears for interactive controls
-- Use the dominant controller ray to interact with the arm panel or the TV
+- Use the dominant controller ray and hit marker to interact with the arm panel or the TV

@@ -156,6 +156,7 @@ interface XrControllerState {
   handedness: XRHandedness | "none";
   selectStarted: boolean;
   selectEnded: boolean;
+  selectActive: boolean;
 }
 
 interface XrControllerBinding {
@@ -172,9 +173,12 @@ const xrBindings: XrControllerBinding[] = [0, 1].map((index) => ({
   state: {
     handedness: "none",
     selectStarted: false,
-    selectEnded: false
+    selectEnded: false,
+    selectActive: false
   }
 }));
+
+const xrPointerVisual = createXrPointerVisual(room.scene);
 
 for (const binding of xrBindings) {
   room.scene.add(binding.controller);
@@ -187,12 +191,15 @@ for (const binding of xrBindings) {
     binding.state.handedness = "none";
     binding.state.selectStarted = false;
     binding.state.selectEnded = false;
+    binding.state.selectActive = false;
   });
   binding.controller.addEventListener("selectstart", () => {
     binding.state.selectStarted = true;
+    binding.state.selectActive = true;
   });
   binding.controller.addEventListener("selectend", () => {
     binding.state.selectEnded = true;
+    binding.state.selectActive = false;
   });
 }
 
@@ -410,6 +417,7 @@ renderer.setAnimationLoop(() => {
   }
 
   if (xrActive) {
+    let pointerVisualUpdated = false;
     const armPose = resolveArmPose();
     const xrFrame = armPose
       ? {
@@ -418,9 +426,17 @@ renderer.setAnimationLoop(() => {
         }
       : baseFrame;
     for (const sample of consumeXrSamples(now)) {
-      routePointerSample(xrPanels, sample, xrFrame);
+      const routing = routePointerSample(xrPanels, sample, xrFrame);
+      if (sample.pointerId === "xr-ray" && sample.transport === "ray") {
+        updateXrPointerVisual(sample, routing.ownerKey);
+        pointerVisualUpdated = true;
+      }
+    }
+    if (!pointerVisualUpdated) {
+      xrPointerVisual.hide();
     }
   } else {
+    xrPointerVisual.hide();
     while (pendingScreenSamples.length > 0) {
       const sample = pendingScreenSamples.shift();
       if (!sample) {
@@ -887,6 +903,129 @@ function consumeXrSamples(timestamp: number): ThreePointerSample[] {
   }
 
   return samples;
+}
+
+function updateXrPointerVisual(
+  sample: ThreePointerSample,
+  ownerKey: string | undefined
+): void {
+  if (!sample.origin || !sample.direction) {
+    xrPointerVisual.hide();
+    return;
+  }
+
+  const origin = new THREE.Vector3(sample.origin.x, sample.origin.y, sample.origin.z);
+  const direction = new THREE.Vector3(
+    sample.direction.x,
+    sample.direction.y,
+    sample.direction.z
+  ).normalize();
+  const activeBinding =
+    resolveXrBinding((entry) => entry.state.handedness === "right") ??
+    resolveXrBinding((entry) => entry.state.handedness === "none");
+  const pointerState = ownerKey ? getPointerStateForOwner(ownerKey, sample.pointerId) : undefined;
+  const hitDistance =
+    pointerState?.hit?.length && Number.isFinite(pointerState.hit.length)
+      ? pointerState.hit.length
+      : undefined;
+  const lineLength = hitDistance ?? 3.5;
+  const hitPoint = hitDistance
+    ? origin.clone().addScaledVector(direction, hitDistance)
+    : undefined;
+
+  xrPointerVisual.update({
+    origin,
+    direction,
+    lineLength,
+    active: activeBinding?.state.selectActive ?? false,
+    hovering: Boolean(pointerState?.hit),
+    ...(hitPoint ? { hitPoint } : {})
+  });
+}
+
+function getPointerStateForOwner(
+  ownerKey: string,
+  pointerId: string
+): ReturnType<ThreePanelDriver["getPointerState"]> {
+  switch (ownerKey) {
+    case "arm":
+      return armDriverBinding.driver.getPointerState(pointerId);
+    case "tv":
+      return tvDriverBinding.driver.getPointerState(pointerId);
+    case "xr-hud":
+      return xrHudDriverBinding.driver.getPointerState(pointerId);
+    case "desktop-hud":
+      return desktopHudDriverBinding.driver.getPointerState(pointerId);
+    default:
+      return undefined;
+  }
+}
+
+function createXrPointerVisual(scene: THREE.Scene): {
+  update(options: {
+    origin: THREE.Vector3;
+    direction: THREE.Vector3;
+    lineLength: number;
+    hitPoint?: THREE.Vector3;
+    active: boolean;
+    hovering: boolean;
+  }): void;
+  hide(): void;
+} {
+  const lineMaterial = new THREE.LineBasicMaterial({
+    color: "#38bdf8",
+    transparent: true,
+    opacity: 0.95
+  });
+  const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(),
+    new THREE.Vector3(0, 0, -1)
+  ]);
+  const line = new THREE.Line(lineGeometry, lineMaterial);
+  line.visible = false;
+  scene.add(line);
+
+  const hitMarker = new THREE.Mesh(
+    new THREE.SphereGeometry(0.012, 20, 20),
+    new THREE.MeshBasicMaterial({
+      color: "#ffffff",
+      transparent: true,
+      opacity: 0.95
+    })
+  );
+  hitMarker.visible = false;
+  scene.add(hitMarker);
+
+  const points = lineGeometry.getAttribute("position");
+
+  return {
+    update({ origin, direction, lineLength, hitPoint, active, hovering }) {
+      const end = origin.clone().addScaledVector(direction, lineLength);
+      if (!("setXYZ" in points) || typeof points.setXYZ !== "function") {
+        return;
+      }
+      points.setXYZ(0, origin.x, origin.y, origin.z);
+      points.setXYZ(1, end.x, end.y, end.z);
+      points.needsUpdate = true;
+      lineGeometry.computeBoundingSphere();
+      line.visible = true;
+      lineMaterial.color.set(active ? "#f59e0b" : hovering ? "#22c55e" : "#38bdf8");
+
+      if (hitPoint) {
+        hitMarker.visible = true;
+        hitMarker.position.copy(hitPoint);
+        (hitMarker.material as THREE.MeshBasicMaterial).color.set(
+          active ? "#f59e0b" : "#ffffff"
+        );
+      } else {
+        hitMarker.visible = false;
+      }
+    },
+    hide() {
+      line.visible = false;
+      hitMarker.visible = false;
+    }
+  };
 }
 
 function resolveXrBinding(
