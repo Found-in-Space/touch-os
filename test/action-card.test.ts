@@ -24,7 +24,7 @@ describe("action card", () => {
 
     expect(result.outputs).toContainEqual({
       type: "action",
-      actionId: "selection.go",
+      actionId: "details.open",
       componentId: "fixture-action-card"
     });
   });
@@ -45,7 +45,7 @@ describe("action card", () => {
 
     expect(result.outputs).toContainEqual({
       type: "action",
-      actionId: "selection.dismiss",
+      actionId: "details.dismiss",
       componentId: "fixture-action-card"
     });
   });
@@ -62,5 +62,59 @@ describe("action card", () => {
     const texts = getTexts(runtime.render().commands);
     expect(texts).toContain("Selected Target");
     expect(texts).toContain("No target selected");
+  });
+
+  it("leaves the body shell non-interactive outside its explicit chrome targets", () => {
+    const runtime = createRuntime({
+      root: createActionCardFixture(),
+      surface: { width: 320, height: 180 }
+    });
+
+    const snapshot = runtime.render();
+    const lineCommand = findCommandByRole(snapshot.commands, "action-card-line");
+    if (lineCommand.type !== "text") {
+      throw new Error("Expected the body line command to be text.");
+    }
+
+    const result = pressAt(
+      runtime,
+      lineCommand.rect.x + Math.min(40, lineCommand.rect.width / 2),
+      lineCommand.rect.y + lineCommand.rect.height / 2
+    );
+
+    expect(result.handled).toBe(false);
+    expect(result.outputs).toHaveLength(0);
+    expect(runtime.getInteraction().focusedComponentId).toBeUndefined();
+  });
+
+  it("renders focused chrome from theme tokens after interacting with shell actions", () => {
+    const runtime = createRuntime({
+      root: createActionCardFixture(),
+      surface: { width: 320, height: 180 },
+      theme: {
+        focusColor: "#ff0099"
+      }
+    });
+
+    const before = runtime.render();
+    const primaryCommand = findCommandByRole(before.commands, "action-card-primary");
+    if (primaryCommand.type !== "rect") {
+      throw new Error("Expected the primary action command to be a rect.");
+    }
+
+    pressAt(
+      runtime,
+      primaryCommand.rect.x + primaryCommand.rect.width / 2,
+      primaryCommand.rect.y + primaryCommand.rect.height / 2
+    );
+
+    const after = runtime.render();
+    const frameCommand = findCommandByRole(after.commands, "action-card-frame");
+    if (frameCommand.type !== "rect") {
+      throw new Error("Expected the frame command to be a rect.");
+    }
+
+    expect(runtime.getInteraction().focusedComponentId).toBe("fixture-action-card");
+    expect(frameCommand.stroke).toBe("#ff0099");
   });
 });

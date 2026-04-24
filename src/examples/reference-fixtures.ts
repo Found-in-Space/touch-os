@@ -50,12 +50,12 @@ export function createSettingsPageFixture(values: SettingsFixtureValues): Displa
 
 export function createActionCardFixture(): DisplayNode {
   return createActionCard("fixture-action-card", {
-    title: "Selected Target",
-    lines: ["Proxima Centauri", "Distance: 4.24 ly"],
+    title: "Selected Item",
+    lines: ["Status: Ready", "Last update: 14:30"],
     dismissible: true,
-    dismissActionId: "selection.dismiss",
-    primaryActionLabel: "Go to Target",
-    primaryActionId: "selection.go"
+    dismissActionId: "details.dismiss",
+    primaryActionLabel: "Open Details",
+    primaryActionId: "details.open"
   });
 }
 

@@ -37,7 +37,7 @@ The goal is to provide a small but complete component framework for virtual devi
 
 ## Core Model
 
-The system is split into four layers:
+The runtime itself is split into four layers:
 
 1. The display runtime
 2. The component model
@@ -45,6 +45,9 @@ The system is split into four layers:
 4. Host adapters
 
 Each layer has a distinct responsibility.
+
+An optional declarative schema adapter may sit above these layers as a convenience authoring
+surface. It compiles schema documents into ordinary display nodes and is not a separate runtime.
 
 ## Display Runtime
 
@@ -466,6 +469,24 @@ For continuous controls:
 - a repeat-button should stop immediately on pointer-up, cancel, disable, unmount, or forced pointer clear
 - the initial d-pad should be discrete four-direction hold input rather than an analog thumbstick
 
+### Action Card
+
+The action card is the generic shell for compact information-plus-action surfaces.
+
+It should:
+
+- require a title
+- render either one or more content lines or explicit empty-state text
+- support an optional primary shell action with an explicit action label and action id
+- support an optional dismiss affordance with an explicit dismiss action id
+- keep the body shell non-interactive outside the explicit shell-owned hit targets
+- grow vertically with content and optional chrome while allowing width to remain parent-constrained
+- derive frame, title emphasis, and focus treatment from theme tokens rather than fixed styling
+
+The control must remain domain-neutral. It should suit selected-item details, notices, warnings,
+status summaries, and similar compact panels without implying selection ownership, navigation, or
+application-specific commands.
+
 ## Rich Custom Components
 
 The architecture must support components that render richer graphics inside the same display surface.
@@ -776,6 +797,64 @@ Recommended service set:
 
 These services should be injected by the runtime and be mockable in tests.
 
+## Declarative Schema Layer
+
+The project may expose a declarative schema adapter as a convenience layer above direct component
+factories.
+
+The schema layer must:
+
+- compile schema documents to ordinary display nodes
+- remain optional rather than replacing direct code-authored trees
+- keep built-in kinds limited to generic controls and composition patterns that belong in core
+- use explicit custom kind registration with no hidden global registry
+- validate document versions, page ids, item ids, kind identifiers, and required item payloads before mount or update
+- fail loudly on invalid content rather than silently dropping nodes
+- keep failed controller updates transactional so the last valid compiled document remains active
+
+Recommended usage patterns:
+
+1. Use direct component factories when the surface is hand-authored and behavior-rich.
+2. Use schema documents when the surface needs serialization, whole-document replacement, patch-style updates, or tool generation.
+3. Use custom schema registrations when a product needs richer declarative controls without pushing domain-specific widgets into core.
+
+Recommended built-in schema kinds:
+
+- text
+- button
+- toggle
+- slider
+- value readout
+- action-card
+
+Recommended public shape:
+
+```ts
+interface SchemaBuildContext {
+  readField<TValue>(field: string, fallback: TValue): TValue;
+  readText(itemId: string, fallback: string): string;
+}
+
+interface SchemaKindRegistration<TItem> {
+  kind: string;
+  validate(item: unknown): TItem;
+  createNode(item: TItem, context: SchemaBuildContext): DisplayNode;
+}
+
+interface SchemaDocument<TItem> {
+  version?: 1;
+  pages: readonly SchemaPage<TItem>[];
+  initialPageId?: string;
+}
+```
+
+Recommended controller capabilities:
+
+- replace the active schema document
+- update field values
+- update display text
+- replace an individual item by id
+
 ## Testing Requirements
 
 The architecture should be testable without a full 3D or XR environment.
@@ -800,9 +879,11 @@ A sensible implementation path is:
 2. Build container services and layout primitives.
 3. Add host adapters for scene-mounted surfaces, explicit-pose XR panels, and optional HUD surfaces.
 4. Add richer custom component support on top of the same lifecycle and event model.
-5. Only then consider whether a more declarative authoring model is needed.
+5. Add an optional declarative schema adapter above the stable component model when serialization, replacement, and tool-generated surfaces become useful.
 
-This keeps the architecture grounded in reusable primitives instead of starting with a large framework surface.
+This keeps the architecture grounded in reusable primitives instead of starting with a large
+framework surface. The declarative layer should remain a convenience adapter rather than redefining
+the runtime contract.
 
 ## Success Criteria
 
@@ -814,6 +895,8 @@ The architecture is successful if:
 - layout and paging belong to the runtime rather than ad hoc application code
 - simple menus and settings panels are easy to build
 - richer custom components still fit the same lifecycle and event model
+- code-authored and schema-authored surfaces share the same runtime semantics
+- custom declarative kinds can extend the built-in set without deep imports into runtime internals
 
 ## Reference Component Examples
 
@@ -821,7 +904,7 @@ These examples are intentionally pseudocode.
 
 They are not meant to freeze one exact API shape. Instead, they define the sort of component behavior the framework must be able to express cleanly.
 
-When the new project begins, these should become both:
+These should serve as both:
 
 - reference documentation
 - conformance tests for the runtime and host adapters

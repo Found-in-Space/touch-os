@@ -6,16 +6,13 @@ import {
 } from "../core/component.js";
 import type { DrawCommand } from "../core/draw.js";
 import { createRect, rectContainsPoint, type Rect } from "../core/geometry.js";
+import {
+  normalizeActionCardProps,
+  resolveActionCardContent,
+  type ActionCardProps
+} from "./action-card-contract.js";
 
-export interface ActionCardProps {
-  title: string;
-  lines?: readonly string[];
-  emptyStateText?: string;
-  primaryActionId?: string;
-  primaryActionLabel?: string;
-  dismissible?: boolean;
-  dismissActionId?: string;
-}
+export type { ActionCardProps } from "./action-card-contract.js";
 
 interface ActionCardState {
   hoveredTargetId: string | undefined;
@@ -32,7 +29,11 @@ const ActionCardComponent: DisplayComponent<ActionCardProps, ActionCardState> = 
   },
   measure(ctx) {
     const theme = ctx.services.theme.getTokens();
-    const lines = (ctx.props.lines?.length ?? 0) > 0 ? ctx.props.lines ?? [] : [ctx.props.emptyStateText ?? "No details available"];
+    const content = resolveActionCardContent({
+      lines: ctx.props.lines,
+      emptyStateText: ctx.props.emptyStateText
+    });
+    const lines = content.lines;
     const contentHeight = lines.length * theme.typography.lineHeight;
     const actionHeight = ctx.props.primaryActionLabel ? theme.controlHeight + theme.spacing : 0;
     return {
@@ -47,6 +48,10 @@ const ActionCardComponent: DisplayComponent<ActionCardProps, ActionCardState> = 
   },
   render(ctx) {
     const theme = ctx.services.theme.getTokens();
+    const content = resolveActionCardContent({
+      lines: ctx.props.lines,
+      emptyStateText: ctx.props.emptyStateText
+    });
     const textLeft = ctx.bounds.x + theme.padding;
     const titleRect = createRect(
       textLeft,
@@ -54,7 +59,7 @@ const ActionCardComponent: DisplayComponent<ActionCardProps, ActionCardState> = 
       Math.max(0, ctx.bounds.width - theme.padding * 2 - (ctx.props.dismissible ? 28 : 0)),
       theme.typography.lineHeight
     );
-    const lines = (ctx.props.lines?.length ?? 0) > 0 ? ctx.props.lines ?? [] : [ctx.props.emptyStateText ?? "No details available"];
+    const lines = content.lines;
     const commands: DrawCommand[] = [
       {
         type: "rect" as const,
@@ -89,8 +94,7 @@ const ActionCardComponent: DisplayComponent<ActionCardProps, ActionCardState> = 
         role: "action-card-line",
         text: line,
         rect: createRect(textLeft, nextY, ctx.bounds.width - theme.padding * 2, theme.typography.lineHeight),
-        color:
-          (ctx.props.lines?.length ?? 0) > 0 ? theme.textColor : theme.mutedTextColor,
+        color: content.usesEmptyState ? theme.mutedTextColor : theme.textColor,
         align: "left" as const,
         verticalAlign: "top" as const,
         fontSize: theme.typography.fontSize,
@@ -204,17 +208,23 @@ const ActionCardComponent: DisplayComponent<ActionCardProps, ActionCardState> = 
         ctx.state.pressedTargetId = undefined;
         break;
       case "press":
-        if (ctx.event.targetId === `${ctx.id}:primary`) {
+        if (
+          ctx.event.targetId === `${ctx.id}:primary` &&
+          ctx.props.primaryActionId !== undefined
+        ) {
           ctx.emit({
             type: "action",
-            actionId: ctx.props.primaryActionId ?? `${ctx.id}.primary`,
+            actionId: ctx.props.primaryActionId,
             componentId: ctx.id
           });
         }
-        if (ctx.event.targetId === `${ctx.id}:dismiss`) {
+        if (
+          ctx.event.targetId === `${ctx.id}:dismiss` &&
+          ctx.props.dismissActionId !== undefined
+        ) {
           ctx.emit({
             type: "action",
-            actionId: ctx.props.dismissActionId ?? `${ctx.id}.dismiss`,
+            actionId: ctx.props.dismissActionId,
             componentId: ctx.id
           });
         }
@@ -228,7 +238,24 @@ export function createActionCard(
   id: string,
   props: ActionCardProps
 ): DisplayNode<ActionCardProps, ActionCardState> {
-  return createNode(id, ActionCardComponent, props);
+  return createNode(
+    id,
+    ActionCardComponent,
+    normalizeActionCardProps(
+      {
+        title: props.title,
+        ...(props.lines === undefined ? {} : { lines: props.lines }),
+        ...(props.emptyStateText === undefined ? {} : { emptyStateText: props.emptyStateText }),
+        ...(props.primaryActionId === undefined ? {} : { primaryActionId: props.primaryActionId }),
+        ...(props.primaryActionLabel === undefined
+          ? {}
+          : { primaryActionLabel: props.primaryActionLabel }),
+        ...(props.dismissible === undefined ? {} : { dismissible: props.dismissible }),
+        ...(props.dismissActionId === undefined ? {} : { dismissActionId: props.dismissActionId })
+      },
+      `Action card "${id}"`
+    )
+  );
 }
 
 function getPrimaryActionRect(
