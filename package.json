@@ -1,9 +1,26 @@
 {
   "name": "@foundinspace/touch-os",
   "version": "0.1.0",
-  "description": "A headless virtual-device UI runtime for reusable touch-like surfaces.",
+  "description": "A virtual-device UI runtime for shared surfaces in games, XR, simulations, and 3D apps.",
+  "license": "MIT",
   "type": "module",
   "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Found-in-Space/touch-os.git"
+  },
+  "homepage": "https://github.com/Found-in-Space/touch-os#readme",
+  "bugs": {
+    "url": "https://github.com/Found-in-Space/touch-os/issues"
+  },
+  "keywords": [
+    "ui",
+    "runtime",
+    "virtual-device",
+    "threejs",
+    "xr",
+    "headless"
+  ],
   "files": [
     "dist"
   ],
@@ -32,13 +49,13 @@
       "types": "./dist/hosts/index.d.ts",
       "import": "./dist/hosts/index.js"
     },
+    "./hosts/three": {
+      "types": "./dist/hosts/three.d.ts",
+      "import": "./dist/hosts/three.js"
+    },
     "./adapters/schema": {
       "types": "./dist/adapters/schema.d.ts",
       "import": "./dist/adapters/schema.js"
-    },
-    "./hosts/*": {
-      "types": "./dist/hosts/*.d.ts",
-      "import": "./dist/hosts/*.js"
     }
   },
   "scripts": {
@@ -51,6 +68,11 @@
   },
   "peerDependencies": {
     "three": "^0.180.0"
+  },
+  "peerDependenciesMeta": {
+    "three": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/three": "^0.180.0",

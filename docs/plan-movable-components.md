@@ -376,7 +376,8 @@ Phase 1.5 should be considered successful when:
 
 Project sources:
 
-- `spec.md` sections on embedded surfaces, host patterns, and pointer presentation
+- `docs/architecture.md` sections on host boundaries and state ownership
+- `docs/features.md` sections on embedded surfaces and Three.js host support
 - `examples/three-living-room/src/panel-ui.ts`
 - `src/components/embedded-surface.ts`
 - `src/hosts/three.ts`

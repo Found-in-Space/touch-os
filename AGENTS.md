@@ -1,10 +1,12 @@
 # Agent Instructions
 
-## Read The Spec First
+## Read The Docs First
 
-- Read [spec.md](./spec.md) before making substantial architectural or API changes.
-- Treat `spec.md` as the primary contract for the project.
-- If implementation pressure conflicts with the spec, prefer updating the spec deliberately rather than drifting silently.
+- Read [README.md](./README.md) and [docs/architecture.md](./docs/architecture.md) before making substantial architectural or API changes.
+- Use [docs/features.md](./docs/features.md) to understand what is already shipped.
+- Use [docs/usage.md](./docs/usage.md) to understand supported integration patterns.
+- Treat `docs/plan-*.md` as the contract for not-yet-implemented work.
+- If implementation pressure conflicts with the docs, prefer updating the docs deliberately rather than drifting silently.
 
 ## Project Purpose
 
@@ -35,7 +37,9 @@ Recommended package shape:
 - `@foundinspace/touch-os/components`
 - `@foundinspace/touch-os/containers`
 - `@foundinspace/touch-os/services`
-- `@foundinspace/touch-os/hosts/*`
+- `@foundinspace/touch-os/hosts`
+- `@foundinspace/touch-os/hosts/three`
+- `@foundinspace/touch-os/adapters/schema`
 
 ## Architecture Boundaries
 
@@ -78,11 +82,11 @@ Recommended package shape:
 - The core runtime must be testable without a full 3D, WebGL, or XR environment.
 - Add tests for lifecycle, layout, event dispatch, focus, scrolling, and emitted actions.
 - Test host adapters separately with mocked host input and mocked placement data.
-- Treat the reference component examples in `spec.md` as future conformance fixtures, not just illustrative examples.
+- Treat the reference fixtures in `src/examples/reference-fixtures.ts` and the supported patterns in `docs/usage.md` as conformance fixtures, not just illustrative examples.
 
 ## Change Discipline
 
 - When adding a new subsystem, define its public contract before expanding implementation detail.
 - Keep files and modules organized around architectural boundaries, not around temporary experiments.
-- Avoid premature framework sprawl. Start with the smallest runtime that cleanly satisfies the spec.
-- If you introduce a new abstraction, make sure it simplifies at least one reference use case in `spec.md`.
+- Avoid premature framework sprawl. Start with the smallest runtime that cleanly satisfies the documented architecture.
+- If you introduce a new abstraction, make sure it simplifies at least one documented use case in `docs/usage.md`, `src/examples/reference-fixtures.ts`, or `examples/three-living-room`.
