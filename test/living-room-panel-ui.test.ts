@@ -2,14 +2,17 @@ import { describe, expect, it } from "vitest";
 import { createRuntime } from "../src/index.js";
 import type { TextDrawCommand } from "../src/core/draw.js";
 import {
+  createXrHudRoot,
   createRoomPanelRoot,
+  getXrHudSurface,
+  getXrHudTheme,
   getRoomPanelSurface,
   getRoomPanelTheme
 } from "../examples/three-living-room/src/panel-ui.js";
 import { createRoomDemoStore } from "../examples/three-living-room/src/store.js";
 
 describe("living room panel ui", () => {
-  it("renders TV and HUD from shared XR state", () => {
+  it("renders TV from shared XR state while XR HUD uses a separate root", () => {
     const state = createRoomDemoStore({
       xrActive: true
     }).getState();
@@ -19,21 +22,22 @@ describe("living room panel ui", () => {
       surface: getRoomPanelSurface("tv"),
       theme: getRoomPanelTheme("tv")
     });
-    const hudRuntime = createRuntime({
-      root: createRoomPanelRoot("hud", state),
-      surface: getRoomPanelSurface("hud"),
-      theme: getRoomPanelTheme("hud")
+    const xrHudRuntime = createRuntime({
+      root: createXrHudRoot(),
+      surface: getXrHudSurface(),
+      theme: getXrHudTheme()
     });
 
     const tvTexts = collectTexts(tvRuntime.render().commands);
-    const hudTexts = collectTexts(hudRuntime.render().commands);
+    const xrHudTexts = collectTexts(xrHudRuntime.render().commands);
 
     expect(tvTexts).toContain("XR");
-    expect(hudTexts).not.toContain("Touch OS Living Room");
-    expect(hudTexts).not.toContain("Desktop");
+    expect(xrHudTexts).toContain("Mirror offline");
+    expect(xrHudTexts).not.toContain("Touch OS Living Room");
+    expect(xrHudTexts).not.toContain("Desktop");
   });
 
-  it("reconciles the HUD from desktop layout to XR layout when XR state changes", () => {
+  it("keeps the desktop HUD layout intact even when shared XR state changes", () => {
     const runtime = createRuntime({
       root: createRoomPanelRoot(
         "hud",
@@ -58,11 +62,11 @@ describe("living room panel ui", () => {
       )
     );
 
-    const xrTexts = collectTexts(runtime.render().commands);
-    expect(xrTexts).not.toContain("Touch OS Living Room");
-    expect(xrTexts).not.toContain("Desktop");
-    expect(xrTexts).not.toContain("Move");
-    expect(xrTexts).toContain("Mirror offline");
+    const sharedStateTexts = collectTexts(runtime.render().commands);
+    expect(sharedStateTexts).toContain("Touch OS Living Room");
+    expect(sharedStateTexts).toContain("Move");
+    expect(sharedStateTexts).toContain("XR");
+    expect(sharedStateTexts).toContain("Rear View");
   });
 });
 

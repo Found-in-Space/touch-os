@@ -649,22 +649,41 @@ Host responsibilities:
 - convert world interaction into local display coordinates
 - manage visibility and render texture updates
 
-### 2. Hand-Held XR Tablet Host
+### 2. Pose-Anchored XR Panel Host
 
-A display surface attached to a tracked hand, controller, or held rig object.
+A display surface attached to an explicit tracked pose supplied by the application.
 
 Typical uses:
 
 - virtual tablet
 - wrist slate
+- head-mounted mirror
+- chest panel
 - tool display
+- shoulder rig screen
 - portable control panel
 
 Host responsibilities:
 
 - bind panel placement to tracked pose data
 - convert controller ray interaction into local display coordinates
-- manage device-relative orientation and offset
+- manage anchor-relative orientation and offset
+
+Important architectural rule:
+
+- the host should accept explicit anchor pose data rather than hard-coding one body location
+
+The runtime should not care whether that pose represents:
+
+- a hand
+- a wrist
+- a head
+- a chest
+- a controller grip
+- a tool mount
+- another rig-defined body anchor
+
+The application or host adapter chooses the anchor source. The runtime just consumes the explicit pose.
 
 ### 3. Camera-Locked HUD Host
 
@@ -681,9 +700,22 @@ Host responsibilities:
 - keep the display stable relative to the view
 - support pointer or gaze interaction without world anchoring
 
-In viewport-sized overlay mode, the HUD surface width, height, and pixel density should track the
-active viewport. This is not a fixed-size card placed in front of the camera; it is a full-surface
-overlay mapped to the current view.
+There are two valid patterns here:
+
+1. Viewport-sized overlay mode
+   The HUD surface width, height, and pixel density track the active viewport.
+   This is a full-surface overlay mapped to the current view.
+
+2. Compact camera-relative panel mode
+   A fixed-size panel is anchored relative to the head or camera pose using the same explicit-pose
+   model as other pose-anchored XR panels.
+
+Viewport-sized overlay mode is optional. It should be used only when the product truly needs a
+full-view overlay. XR experiences that just need a rear-view mirror, utility card, or compact
+status surface may use a small pose-anchored panel instead.
+
+The runtime must not require desktop HUD and XR HUD presentations to share the same layout tree,
+host path, or rendering strategy.
 
 The HUD root may render no background of its own. In that configuration, only child components that
 explicitly draw chrome should be visible, and empty HUD pixels should remain visually transparent.
@@ -753,7 +785,7 @@ A sensible implementation path is:
 
 1. Build or extract the core display runtime with normalized events and basic controls.
 2. Build container services and layout primitives.
-3. Add host adapters for scene-mounted, hand-held XR, and HUD surfaces.
+3. Add host adapters for scene-mounted surfaces, explicit-pose XR panels, and optional HUD surfaces.
 4. Add richer custom component support on top of the same lifecycle and event model.
 5. Only then consider whether a more declarative authoring model is needed.
 

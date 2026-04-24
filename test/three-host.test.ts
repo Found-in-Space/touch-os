@@ -8,8 +8,8 @@ import {
 import { createButtonFixture } from "../src/examples/reference-fixtures.js";
 import {
   createHudHost,
-  createScenePanelHost,
-  createXrTabletHost
+  createPoseAnchoredPanelHost,
+  createScenePanelHost
 } from "../src/hosts/three.js";
 import { createFakeCanvas } from "./helpers/fake-canvas.js";
 
@@ -74,7 +74,7 @@ describe("three host adapters", () => {
     host.detach();
   });
 
-  it("applies tracked XR placement while reusing the shared ray-input host path", () => {
+  it("applies explicit pose placement while reusing the shared ray-input host path", () => {
     const runtime = createRuntime({
       root: createButtonFixture(),
       surface: { width: 160, height: 100 }
@@ -86,7 +86,7 @@ describe("three host adapters", () => {
       orientation: { x: 0, y: 0, z: 0, w: 1 }
     };
 
-    const host = createXrTabletHost({
+    const host = createPoseAnchoredPanelHost({
       runtime,
       surface: { width: 160, height: 100 },
       panelWidth: 1,
@@ -99,7 +99,7 @@ describe("three host adapters", () => {
     host.attach();
     host.update({
       scene,
-      xrPose: pose,
+      anchorPose: pose,
       events: [
         {
           source: "ray",

@@ -3,7 +3,8 @@ import * as THREE from "three";
 import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
 import {
   createEmbeddedSurfaceService,
-  createHeldTabletDriver,
+  createHudPanelDriver,
+  createPoseAnchoredPanelDriver,
   createRuntime,
   createScenePanelDriver,
   type ActionEvent,
@@ -19,8 +20,11 @@ import {
   type CoordinatedPanel
 } from "./coordinator.js";
 import {
+  createXrHudRoot,
   createWallMirrorRoot,
   createRoomPanelRoot,
+  getXrHudSurface,
+  getXrHudTheme,
   getWallMirrorSurface,
   getWallMirrorTheme,
   getRoomPanelSurface,
@@ -28,6 +32,7 @@ import {
 } from "./panel-ui.js";
 import {
   MIRROR_COMPONENT_ID,
+  XR_HUD_MIRROR_COMPONENT_ID,
   WALL_MIRROR_COMPONENT_ID,
   clearMirrorSurface,
   publishMirrorSurface
@@ -39,10 +44,6 @@ import {
   type RoomDemoAction,
   type RoomDemoState
 } from "./store.js";
-import {
-  getPresentationSurfaceMetrics,
-  resolvePresentationCamera
-} from "./view.js";
 
 type ScreenPointerSample = ThreePointerSample & {
   transport: "screen";
@@ -100,7 +101,7 @@ interface StaticRuntimeBinding {
 }
 
 interface DriverBinding {
-  key: "hud" | "tv" | "arm";
+  key: "desktop-hud" | "xr-hud" | "tv" | "arm";
   runtime: DisplayRuntime;
   driver: ThreePanelDriver;
   enabled: boolean;
@@ -112,26 +113,29 @@ interface DriverBinding {
 interface THREEFrame {
   scene: THREE.Scene;
   camera: THREE.Camera;
-  xrPose?: {
+  anchorPose?: {
     position: { x: number; y: number; z: number };
     orientation: { x: number; y: number; z: number; w: number };
   };
   surfaceMetrics?: Partial<SurfaceMetrics>;
 }
 
-const hudBinding = createRuntimeBinding("hud");
+const desktopHudBinding = createRuntimeBinding("hud");
 const tvBinding = createRuntimeBinding("tv");
 const armBinding = createRuntimeBinding("arm");
+const xrHudBinding = createXrHudRuntimeBinding();
 const wallMirrorBinding = createWallMirrorRuntimeBinding();
 
-const hudDriverBinding = createHudDriverBinding(hudBinding.runtime);
+const desktopHudDriverBinding = createDesktopHudDriverBinding(desktopHudBinding.runtime);
 const tvDriverBinding = createTvDriverBinding(tvBinding.runtime);
 const armDriverBinding = createArmDriverBinding(armBinding.runtime);
+const xrHudDriverBinding = createXrHudDriverBinding(xrHudBinding.runtime);
 const wallMirrorDriverBinding = createWallMirrorDriverBinding(wallMirrorBinding.runtime);
 
-hudDriverBinding.driver.attach();
+desktopHudDriverBinding.driver.attach();
 tvDriverBinding.driver.attach();
 armDriverBinding.driver.attach();
+xrHudDriverBinding.driver.attach();
 wallMirrorDriverBinding.driver.attach();
 
 const pressedKeys = new Set<string>();
@@ -193,11 +197,10 @@ for (const binding of xrBindings) {
 }
 
 const desktopPanels: CoordinatedPanel<ScreenPointerSample, THREEFrame>[] = [
-  toCoordinatedPanel(hudDriverBinding),
+  toCoordinatedPanel(desktopHudDriverBinding),
   toCoordinatedPanel(tvDriverBinding)
 ];
 const xrPanels: CoordinatedPanel<ThreePointerSample, THREEFrame>[] = [
-  toCoordinatedPanel(hudDriverBinding),
   toCoordinatedPanel(armDriverBinding),
   toCoordinatedPanel(tvDriverBinding)
 ];
@@ -207,7 +210,8 @@ store.subscribe(() => {
   syncRuntimeBindings(state);
   room.applyState(state);
   if (isXrPresentationActive()) {
-    hudDriverBinding.driver.clearPointer();
+    desktopHudDriverBinding.driver.clearPointer();
+    xrHudDriverBinding.driver.clearPointer();
   } else {
     armDriverBinding.driver.clearPointer();
   }
@@ -338,19 +342,23 @@ renderer.setAnimationLoop(() => {
   }
 
   const viewerCamera = room.camera;
-  const presentationCamera = resolvePresentationCamera(renderer, room.camera);
 
   room.syncRearViewCamera(viewerCamera);
-  const hudVisible = hudDriverBinding.driver.host.mesh.visible;
+  const desktopHudVisible = desktopHudDriverBinding.driver.host.mesh.visible;
+  const xrHudVisible = xrHudDriverBinding.driver.host.mesh.visible;
   const armVisible = armDriverBinding.driver.host.mesh.visible;
-  hudDriverBinding.driver.host.mesh.visible = false;
+  desktopHudDriverBinding.driver.host.mesh.visible = false;
+  xrHudDriverBinding.driver.host.mesh.visible = false;
   armDriverBinding.driver.host.mesh.visible = false;
   mirrorRenderer.render(room.scene, room.rearViewCamera);
-  hudDriverBinding.driver.host.mesh.visible = hudVisible;
+  desktopHudDriverBinding.driver.host.mesh.visible = desktopHudVisible;
+  xrHudDriverBinding.driver.host.mesh.visible = xrHudVisible;
   armDriverBinding.driver.host.mesh.visible = armVisible;
   publishMirrorSurface(sharedSurfaces, MIRROR_COMPONENT_ID, mirrorCanvas, now);
+  publishMirrorSurface(sharedSurfaces, XR_HUD_MIRROR_COMPONENT_ID, mirrorCanvas, now);
   publishMirrorSurface(sharedSurfaces, WALL_MIRROR_COMPONENT_ID, mirrorCanvas, now);
-  hudBinding.refresh(state);
+  desktopHudBinding.refresh(state);
+  xrHudBinding.refresh();
   wallMirrorBinding.refresh();
 
   const baseFrame: THREEFrame = {
@@ -363,12 +371,20 @@ renderer.setAnimationLoop(() => {
   wallMirrorDriverBinding.enabled = true;
   wallMirrorDriverBinding.update(baseFrame);
 
-  hudDriverBinding.enabled = true;
   if (xrActive) {
-    hudDriverBinding.update({
-      ...baseFrame,
-      surfaceMetrics: getPresentationSurfaceMetrics(renderer, presentationCamera)
-    });
+    desktopHudDriverBinding.enabled = false;
+    desktopHudDriverBinding.hide();
+
+    const headPose = resolveHeadPose(viewerCamera);
+    xrHudDriverBinding.enabled = Boolean(headPose);
+    xrHudDriverBinding.update(
+      headPose
+        ? {
+            ...baseFrame,
+            anchorPose: headPose
+          }
+        : baseFrame
+    );
 
     const armPose = resolveArmPose();
     armDriverBinding.enabled = Boolean(armPose);
@@ -376,18 +392,21 @@ renderer.setAnimationLoop(() => {
       armPose
         ? {
             ...baseFrame,
-            xrPose: armPose
+            anchorPose: armPose
           }
         : baseFrame
     );
   } else {
-    hudDriverBinding.update({
+    desktopHudDriverBinding.enabled = true;
+    desktopHudDriverBinding.update({
       ...baseFrame,
-      surfaceMetrics: getPresentationSurfaceMetrics(renderer, presentationCamera)
+      surfaceMetrics: getDesktopSurfaceMetrics()
     });
 
     armDriverBinding.enabled = false;
     armDriverBinding.hide();
+    xrHudDriverBinding.enabled = false;
+    xrHudDriverBinding.hide();
   }
 
   if (xrActive) {
@@ -395,7 +414,7 @@ renderer.setAnimationLoop(() => {
     const xrFrame = armPose
       ? {
           ...baseFrame,
-          xrPose: armPose
+          anchorPose: armPose
         }
       : baseFrame;
     for (const sample of consumeXrSamples(now)) {
@@ -413,14 +432,20 @@ renderer.setAnimationLoop(() => {
 
   tickActiveRuntime(tvDriverBinding, now);
   tickActiveRuntime(wallMirrorDriverBinding, now);
-  tickActiveRuntime(hudDriverBinding, now);
+  if (desktopHudDriverBinding.enabled) {
+    tickActiveRuntime(desktopHudDriverBinding, now);
+  }
+  if (xrHudDriverBinding.enabled) {
+    tickActiveRuntime(xrHudDriverBinding, now);
+  }
   if (armDriverBinding.enabled) {
     tickActiveRuntime(armDriverBinding, now);
   }
 
   tvDriverBinding.render();
   wallMirrorDriverBinding.render();
-  hudDriverBinding.render();
+  desktopHudDriverBinding.render();
+  xrHudDriverBinding.render();
   if (armDriverBinding.enabled) {
     armDriverBinding.render();
   }
@@ -461,29 +486,46 @@ function createRuntimeBinding(
   };
 }
 
-function createHudDriverBinding(runtime: DisplayRuntime): DriverBinding {
-  const distance = 0.68;
-  const driver = createScenePanelDriver({
-    runtime,
-    surface: getRoomPanelSurface("hud"),
-    panelWidth: 1,
-    panelHeight: 1,
-    parent: room.camera,
-    depthTest: false,
-    updatePlacement(mesh, frame) {
-      const viewPlane = getHudViewPlane(frame.camera, distance);
-      if (!viewPlane) {
-        return false;
-      }
-
-      mesh.position.set(0, 0, -distance);
-      mesh.quaternion.identity();
-      mesh.scale.set(viewPlane.width, viewPlane.height, 1);
-      return true;
+function createXrHudRuntimeBinding(): StaticRuntimeBinding {
+  const runtime = createRuntime({
+    root: createXrHudRoot(),
+    surface: getXrHudSurface(),
+    theme: getXrHudTheme(),
+    services: {
+      surfaces: sharedSurfaces
     }
   });
 
-  return createDriverBinding("hud", driver, runtime);
+  return {
+    runtime,
+    refresh() {
+      runtime.setRoot(createXrHudRoot());
+    }
+  };
+}
+
+function createDesktopHudDriverBinding(runtime: DisplayRuntime): DriverBinding {
+  const driver = createHudPanelDriver({
+    runtime,
+    surface: getRoomPanelSurface("hud"),
+    distance: 0.68,
+    sizing: "viewport"
+  });
+
+  return createDriverBinding("desktop-hud", driver, runtime);
+}
+
+function createXrHudDriverBinding(runtime: DisplayRuntime): DriverBinding {
+  const driver = createPoseAnchoredPanelDriver({
+    runtime,
+    surface: getXrHudSurface(),
+    panelWidth: 0.17,
+    panelHeight: 0.095625,
+    tiltRadians: 0,
+    offset: { x: 0.08, y: 0.02, z: -0.42 }
+  });
+
+  return createDriverBinding("xr-hud", driver, runtime);
 }
 
 function createTvDriverBinding(runtime: DisplayRuntime): DriverBinding {
@@ -531,7 +573,7 @@ function createWallMirrorDriverBinding(runtime: DisplayRuntime): DriverBinding {
 }
 
 function createArmDriverBinding(runtime: DisplayRuntime): DriverBinding {
-  const driver = createHeldTabletDriver({
+  const driver = createPoseAnchoredPanelDriver({
     runtime,
     surface: getRoomPanelSurface("arm"),
     panelWidth: 0.48,
@@ -544,7 +586,7 @@ function createArmDriverBinding(runtime: DisplayRuntime): DriverBinding {
 }
 
 function createDriverBinding(
-  key: "hud" | "tv" | "arm",
+  key: "desktop-hud" | "xr-hud" | "tv" | "arm",
   driver: ThreePanelDriver,
   runtime: DisplayRuntime
 ): DriverBinding {
@@ -558,14 +600,14 @@ function createDriverBinding(
         this.hide();
         return;
       }
-      if (key === "arm" && !frame.xrPose) {
+      if ((key === "arm" || key === "xr-hud") && !frame.anchorPose) {
         this.hide();
         return;
       }
       driver.host.update({
         scene: frame.scene,
         camera: frame.camera,
-        ...(frame.xrPose ? { xrPose: frame.xrPose } : {}),
+        ...(frame.anchorPose ? { anchorPose: frame.anchorPose } : {}),
         ...(frame.surfaceMetrics ? { surfaceMetrics: frame.surfaceMetrics } : {})
       });
     },
@@ -595,7 +637,7 @@ function toCoordinatedPanel<TSample extends ThreePointerSample>(
       const result = binding.driver.interactor.process(sample, {
         scene: frame.scene,
         camera: frame.camera,
-        ...(frame.xrPose ? { xrPose: frame.xrPose } : {}),
+        ...(frame.anchorPose ? { anchorPose: frame.anchorPose } : {}),
         ...(frame.surfaceMetrics ? { surfaceMetrics: frame.surfaceMetrics } : {})
       });
       flushRuntimeOutputs(binding.runtime);
@@ -737,13 +779,33 @@ function getNdcFromMouseEvent(
   );
 }
 
-function resolveArmPose(): THREEFrame["xrPose"] | undefined {
+function resolveArmPose(): THREEFrame["anchorPose"] | undefined {
   return resolveGripPose("left");
+}
+
+function resolveHeadPose(camera: THREE.Camera): THREEFrame["anchorPose"] | undefined {
+  const position = new THREE.Vector3();
+  const quaternion = new THREE.Quaternion();
+  camera.getWorldPosition(position);
+  camera.getWorldQuaternion(quaternion);
+  return {
+    position: {
+      x: position.x,
+      y: position.y,
+      z: position.z
+    },
+    orientation: {
+      x: quaternion.x,
+      y: quaternion.y,
+      z: quaternion.z,
+      w: quaternion.w
+    }
+  };
 }
 
 function resolveGripPose(
   preferredHand: XRHandedness
-): THREEFrame["xrPose"] | undefined {
+): THREEFrame["anchorPose"] | undefined {
   const binding =
     resolveXrBinding((entry) => entry.state.handedness === preferredHand) ??
     resolveXrBinding((entry) => entry.state.handedness === "none");
@@ -841,7 +903,7 @@ function tickActiveRuntime(binding: DriverBinding, timestamp: number): void {
 function syncRuntimeBindings(
   state: RoomDemoState
 ): void {
-  hudBinding.sync(state);
+  desktopHudBinding.sync(state);
   tvBinding.sync(state);
   armBinding.sync(state);
 }
@@ -872,24 +934,13 @@ function isMovementIntent(value: unknown): value is MovementIntent {
   );
 }
 
-function getHudViewPlane(
-  camera: THREE.Camera | undefined,
-  distance: number
-): { width: number; height: number } | undefined {
-  if (!camera || distance <= 0) {
-    return undefined;
-  }
-
-  const elements = camera.projectionMatrix.elements;
-  const scaleX = Math.abs(elements[0] ?? 0);
-  const scaleY = Math.abs(elements[5] ?? 0);
-  if (scaleX <= 0 || scaleY <= 0) {
-    return undefined;
-  }
-
+function getDesktopSurfaceMetrics(): Partial<SurfaceMetrics> {
+  const size = new THREE.Vector2();
+  renderer.getSize(size);
   return {
-    width: (2 * distance) / scaleX,
-    height: (2 * distance) / scaleY
+    width: size.x,
+    height: size.y,
+    pixelDensity: renderer.getPixelRatio()
   };
 }
 
@@ -925,11 +976,13 @@ for (const [intent, keys] of Object.entries(KEY_BINDINGS) as Array<[MovementInte
 }
 
 window.addEventListener("beforeunload", () => {
-  hudDriverBinding.driver.detach();
+  desktopHudDriverBinding.driver.detach();
   tvDriverBinding.driver.detach();
   armDriverBinding.driver.detach();
+  xrHudDriverBinding.driver.detach();
   wallMirrorDriverBinding.driver.detach();
   mirrorRenderer.dispose();
   clearMirrorSurface(sharedSurfaces, MIRROR_COMPONENT_ID);
+  clearMirrorSurface(sharedSurfaces, XR_HUD_MIRROR_COMPONENT_ID);
   clearMirrorSurface(sharedSurfaces, WALL_MIRROR_COMPONENT_ID);
 });

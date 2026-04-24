@@ -177,6 +177,8 @@ export interface ThreePanelHostFrame {
   parent?: THREE.Object3D;
   surfaceMetrics?: Partial<SurfaceMetrics>;
   events?: readonly ThreePanelHostInputEvent[];
+  anchorPose?: ThreeHostPose;
+  /** @deprecated Use anchorPose. */
   xrPose?: ThreeHostPose;
 }
 
@@ -238,10 +240,14 @@ export interface ThreePanelHost extends HostAdapter<ThreePanelHostFrame> {
   getCompositeSurfaces(): readonly SurfaceDrawCommand[];
 }
 
-export interface XrTabletHostOptions extends ThreePanelHostOptions {
+/** Options for a panel attached to an application-supplied pose such as a hand, head, chest, or tool mount. */
+export interface PoseAnchoredPanelHostOptions extends ThreePanelHostOptions {
   tiltRadians?: number;
   offset?: Vector3Like;
 }
+
+/** @deprecated Use PoseAnchoredPanelHostOptions. */
+export interface XrTabletHostOptions extends PoseAnchoredPanelHostOptions {}
 
 export interface HudHostOptions extends ThreePanelHostOptions {
   distance?: number;
@@ -280,7 +286,11 @@ export interface ThreePanelDriverOptions {
 
 export interface ScenePanelDriverOptions extends ThreePanelHostOptions, ThreePanelDriverOptions {}
 
-export interface HeldTabletDriverOptions extends XrTabletHostOptions, ThreePanelDriverOptions {}
+export interface PoseAnchoredPanelDriverOptions
+  extends PoseAnchoredPanelHostOptions, ThreePanelDriverOptions {}
+
+/** @deprecated Use PoseAnchoredPanelDriverOptions. */
+export interface HeldTabletDriverOptions extends PoseAnchoredPanelDriverOptions {}
 
 export interface HudPanelDriverOptions extends HudHostOptions, ThreePanelDriverOptions {}
 
@@ -554,20 +564,29 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
   };
 }
 
-export function createXrTabletHost(options: XrTabletHostOptions): ThreePanelHost {
+/** Create a panel host that follows an explicit pose supplied on each frame. */
+export function createPoseAnchoredPanelHost(
+  options: PoseAnchoredPanelHostOptions
+): ThreePanelHost {
   return createAnchoredPanelHost({
     ...options,
     anchor(frame) {
-      return frame.xrPose
+      const pose = frame.anchorPose ?? frame.xrPose;
+      return pose
         ? {
-            position: frame.xrPose.position,
-            quaternion: frame.xrPose.orientation
+            position: pose.position,
+            quaternion: pose.orientation
           }
         : undefined;
     },
     anchorOffset: options.offset ?? { x: 0, y: 0.08, z: -0.02 },
     tiltRadians: options.tiltRadians ?? -Math.PI * 0.35
   });
+}
+
+/** @deprecated Use createPoseAnchoredPanelHost. */
+export function createXrTabletHost(options: XrTabletHostOptions): ThreePanelHost {
+  return createPoseAnchoredPanelHost(options);
 }
 
 export function createHudHost(options: HudHostOptions): ThreePanelHost {
@@ -846,8 +865,15 @@ export function createScenePanelDriver(options: ScenePanelDriverOptions): ThreeP
 }
 
 export function createHeldTabletDriver(options: HeldTabletDriverOptions): ThreePanelDriver {
+  return createPoseAnchoredPanelDriver(options);
+}
+
+/** Create a panel driver that follows an explicit pose supplied on each frame. */
+export function createPoseAnchoredPanelDriver(
+  options: PoseAnchoredPanelDriverOptions
+): ThreePanelDriver {
   return createPanelDriver(
-    createXrTabletHost(options),
+    createPoseAnchoredPanelHost(options),
     options.runtime,
     options.pointerClaimPolicy,
     options.pointerSources,
