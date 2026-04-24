@@ -164,6 +164,7 @@ export function createShaderPicturePresenter(parent: THREE.Object3D): ShaderPict
   mesh.position.z = 0.01;
   mesh.visible = false;
   parent.add(mesh);
+  let currentTexture: THREE.Texture | undefined;
 
   return {
     update(host) {
@@ -175,8 +176,12 @@ export function createShaderPicturePresenter(parent: THREE.Object3D): ShaderPict
         return;
       }
 
-      material.map = placement.command.handle.texture;
-      material.needsUpdate = true;
+      const nextTexture = placement.command.handle.texture;
+      if (material.map !== nextTexture || currentTexture !== nextTexture) {
+        currentTexture = nextTexture;
+        material.map = nextTexture;
+        material.needsUpdate = true;
+      }
       mesh.renderOrder = host.mesh.renderOrder + 1;
       mesh.position.set(placement.localCenter.x, placement.localCenter.y, 0.01);
       mesh.scale.set(

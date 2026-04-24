@@ -13,6 +13,7 @@ import type {
   BitmapService,
   BitmapUpdate,
   EmbeddedSurfaceAttachment,
+  EmbeddedSurfaceChange,
   EmbeddedSurfaceConfig,
   EmbeddedSurfaceSourceSnapshot,
   EmbeddedSurfaceSourceUpdate,
@@ -65,6 +66,17 @@ function toBitmapMetadata(handle: BitmapHandle): BitmapMetadata {
     height: handle.height,
     revision: handle.revision
   };
+}
+
+function cloneEmbeddedSurfaceChange(change: EmbeddedSurfaceChange): EmbeddedSurfaceChange {
+  return {
+    componentIds: [...change.componentIds],
+    sourceIds: [...change.sourceIds]
+  };
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values.filter((value) => value.length > 0))];
 }
 
 function hasOwn<Key extends PropertyKey>(
@@ -567,15 +579,25 @@ interface EmbeddedSurfaceAttachmentRecord {
 export function createEmbeddedSurfaceService(onChange?: ChangeListener): EmbeddedSurfaceService {
   const attachments = new Map<string, EmbeddedSurfaceAttachmentRecord>();
   const sources = new Map<string, EmbeddedSurfaceSourceSnapshot>();
-  const listeners = new Set<ChangeListener>();
+  const listeners = new Set<(change: EmbeddedSurfaceChange) => void>();
   if (onChange) {
-    listeners.add(onChange);
+    listeners.add(() => onChange());
   }
 
-  function emitChanges(): void {
+  function emitChanges(change: EmbeddedSurfaceChange): void {
     for (const listener of listeners) {
-      listener();
+      listener(cloneEmbeddedSurfaceChange(change));
     }
+  }
+
+  function getAttachmentComponentIdsForSource(sourceId: string): string[] {
+    const componentIds: string[] = [];
+    for (const [componentId, attachment] of attachments.entries()) {
+      if (attachment.sourceId === sourceId) {
+        componentIds.push(componentId);
+      }
+    }
+    return componentIds;
   }
 
   function resolveAttachment(
@@ -702,16 +724,27 @@ export function createEmbeddedSurfaceService(onChange?: ChangeListener): Embedde
   return {
     attach(componentId, config) {
       attachments.set(componentId, resolveAttachment(componentId, config));
-      emitChanges();
+      emitChanges({
+        componentIds: [componentId],
+        sourceIds: [config.sourceId]
+      });
     },
     configure(componentId, config) {
       const attachment = resolveAttachment(componentId);
-      attachments.set(componentId, updateAttachment(attachment, config));
-      emitChanges();
+      const nextAttachment = updateAttachment(attachment, config);
+      attachments.set(componentId, nextAttachment);
+      emitChanges({
+        componentIds: [componentId],
+        sourceIds: uniqueStrings([attachment.sourceId, nextAttachment.sourceId])
+      });
     },
     release(componentId) {
+      const attachment = attachments.get(componentId);
       if (attachments.delete(componentId)) {
-        emitChanges();
+        emitChanges({
+          componentIds: [componentId],
+          sourceIds: attachment ? [attachment.sourceId] : []
+        });
       }
     },
     subscribe(listener) {
@@ -739,11 +772,17 @@ export function createEmbeddedSurfaceService(onChange?: ChangeListener): Embedde
     publish(sourceId, update) {
       const source = resolveSource(sourceId);
       sources.set(sourceId, updateSource(source, update));
-      emitChanges();
+      emitChanges({
+        componentIds: getAttachmentComponentIdsForSource(sourceId),
+        sourceIds: [sourceId]
+      });
     },
     unpublish(sourceId) {
       if (sources.delete(sourceId)) {
-        emitChanges();
+        emitChanges({
+          componentIds: getAttachmentComponentIdsForSource(sourceId),
+          sourceIds: [sourceId]
+        });
       }
     },
     setState(componentId, state) {
@@ -751,7 +790,10 @@ export function createEmbeddedSurfaceService(onChange?: ChangeListener): Embedde
       const sourceId = attachment?.sourceId ?? componentId;
       const source = resolveSource(sourceId);
       sources.set(sourceId, updateSource(source, state));
-      emitChanges();
+      emitChanges({
+        componentIds: getAttachmentComponentIdsForSource(sourceId),
+        sourceIds: [sourceId]
+      });
     },
     forwardEvent(componentId, event) {
       const attachment = resolveAttachment(componentId);
@@ -759,7 +801,10 @@ export function createEmbeddedSurfaceService(onChange?: ChangeListener): Embedde
         ...attachment,
         forwardedEvents: [...attachment.forwardedEvents, cloneDisplayEvent(event)]
       });
-      emitChanges();
+      emitChanges({
+        componentIds: [componentId],
+        sourceIds: [attachment.sourceId]
+      });
     }
   };
 }

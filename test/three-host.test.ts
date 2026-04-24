@@ -375,6 +375,49 @@ describe("three host adapters", () => {
     host.detach();
   });
 
+  it("supports deferring host rendering until render is called explicitly", () => {
+    const surfaces = createEmbeddedSurfaceService();
+    const runtime = createRuntime({
+      root: createEmbeddedSurface("monitor", {
+        sourceId: "plot.main",
+        compositionMode: "composite"
+      }),
+      surface: { width: 160, height: 100 },
+      services: { surfaces }
+    });
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1.6, 0.1, 10);
+    camera.position.set(0, 0, 1);
+    camera.lookAt(0, 0, 0);
+    scene.add(camera);
+
+    surfaces.publish("plot.main", {
+      available: true,
+      handle: { kind: "plot-texture" },
+      sourceWidth: 640,
+      sourceHeight: 480
+    });
+
+    const host = createScenePanelHost({
+      runtime,
+      surface: { width: 160, height: 100 },
+      panelWidth: 1,
+      panelHeight: 0.625,
+      renderOnUpdate: false,
+      createCanvas: createFakeCanvas
+    });
+
+    host.attach();
+    host.update({ scene, camera });
+    expect(host.getCompositeSurfaces()).toHaveLength(0);
+
+    host.render();
+    expect(host.getCompositeSurfaces()).toHaveLength(1);
+
+    host.detach();
+  });
+
   it("resolves composite placements in panel-local mesh units", () => {
     const surfaces = createEmbeddedSurfaceService();
     const runtime = createRuntime({

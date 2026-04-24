@@ -2,6 +2,7 @@ export type {
   BitmapAllocation,
   BitmapService,
   BitmapUpdate,
+  EmbeddedSurfaceChange,
   EmbeddedSurfaceAttachment,
   EmbeddedSurfaceConfig,
   EmbeddedSurfaceSourceSnapshot,

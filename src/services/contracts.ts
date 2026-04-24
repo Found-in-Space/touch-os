@@ -200,11 +200,16 @@ export interface EmbeddedSurfaceSourceUpdate {
 
 export type EmbeddedSurfaceStateUpdate = EmbeddedSurfaceSourceUpdate;
 
+export interface EmbeddedSurfaceChange {
+  componentIds: readonly string[];
+  sourceIds: readonly string[];
+}
+
 export interface EmbeddedSurfaceService {
   attach(componentId: string, config: EmbeddedSurfaceConfig): void;
   configure(componentId: string, config: Partial<EmbeddedSurfaceConfig>): void;
   release(componentId: string): void;
-  subscribe(listener: () => void): () => void;
+  subscribe(listener: (change: EmbeddedSurfaceChange) => void): () => void;
   getAttachment(componentId: string): EmbeddedSurfaceAttachment | undefined;
   getSource(sourceId: string): EmbeddedSurfaceSourceSnapshot | undefined;
   isAvailable(componentId: string): boolean;

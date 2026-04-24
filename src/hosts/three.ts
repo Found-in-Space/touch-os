@@ -218,6 +218,7 @@ export interface ThreePanelHostOptions extends ThreeStaticTransform {
   surface?: Partial<SurfaceMetrics>;
   panelWidth?: number;
   panelHeight?: number;
+  renderOnUpdate?: boolean;
   renderOrder?: number;
   depthTest?: boolean;
   transparent?: boolean;
@@ -393,7 +394,9 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
       latestHit = null;
     }
 
-    render();
+    if (options.renderOnUpdate ?? true) {
+      render();
+    }
   }
 
   function detach(): void {
@@ -916,7 +919,10 @@ export function createDirectTouchPointerSource(
 
 export function createScenePanelDriver(options: ScenePanelDriverOptions): ThreePanelDriver {
   return createPanelDriver(
-    createScenePanelHost(options),
+    createScenePanelHost({
+      ...options,
+      renderOnUpdate: false
+    }),
     options.runtime,
     options.pointerClaimPolicy,
     options.pointerSources,
@@ -933,7 +939,10 @@ export function createPoseAnchoredPanelDriver(
   options: PoseAnchoredPanelDriverOptions
 ): ThreePanelDriver {
   return createPanelDriver(
-    createPoseAnchoredPanelHost(options),
+    createPoseAnchoredPanelHost({
+      ...options,
+      renderOnUpdate: false
+    }),
     options.runtime,
     options.pointerClaimPolicy,
     options.pointerSources,
@@ -943,7 +952,10 @@ export function createPoseAnchoredPanelDriver(
 
 export function createHudPanelDriver(options: HudPanelDriverOptions): ThreePanelDriver {
   return createPanelDriver(
-    createHudHost(options),
+    createHudHost({
+      ...options,
+      renderOnUpdate: false
+    }),
     options.runtime,
     options.pointerClaimPolicy,
     options.pointerSources,

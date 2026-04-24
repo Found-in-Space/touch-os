@@ -169,4 +169,38 @@ describe("embedded surface sources", () => {
       sourceId: "plot.shared"
     });
   });
+
+  it("only invalidates runtimes that reference the changed source", () => {
+    const surfaces = createEmbeddedSurfaceService();
+    const plotRuntime = createRuntime({
+      root: createEmbeddedSurface("plot-panel", {
+        sourceId: "plot.main",
+        fallbackLabel: "Plot offline"
+      }),
+      surface: { width: 320, height: 180 },
+      services: { surfaces }
+    });
+    const statusRuntime = createRuntime({
+      root: createColumn("status-root", {
+        children: []
+      }),
+      surface: { width: 320, height: 180 },
+      services: { surfaces }
+    });
+
+    plotRuntime.render();
+    statusRuntime.render();
+    expect(plotRuntime.isRenderDirty()).toBe(false);
+    expect(statusRuntime.isRenderDirty()).toBe(false);
+
+    surfaces.publish("plot.main", {
+      available: true,
+      handle: { kind: "plot-surface" },
+      sourceWidth: 800,
+      sourceHeight: 400
+    });
+
+    expect(plotRuntime.isRenderDirty()).toBe(true);
+    expect(statusRuntime.isRenderDirty()).toBe(false);
+  });
 });

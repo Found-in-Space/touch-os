@@ -39,6 +39,7 @@ import {
 } from "./geometry.js";
 import type {
   BitmapService,
+  EmbeddedSurfaceChange,
   FocusService,
   MutableLayoutService,
   RuntimeServices,
@@ -175,7 +176,11 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
 
   const focusService = services.focus;
   const timingService = services.timing;
-  const unsubscribeSurfaceChanges = services.surfaces.subscribe(() => invalidateRender());
+  const unsubscribeSurfaceChanges = services.surfaces.subscribe((change) => {
+    if (isRelevantEmbeddedSurfaceChange(change)) {
+      invalidateRender();
+    }
+  });
 
   let rootDescriptor = options.root;
   let rootNode: RuntimeNodeState | undefined;
@@ -195,6 +200,32 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
 
   function invalidateRender(): void {
     renderDirty = true;
+  }
+
+  function isRelevantEmbeddedSurfaceChange(change: EmbeddedSurfaceChange): boolean {
+    for (const componentId of change.componentIds) {
+      if (nodeLookup.has(componentId)) {
+        return true;
+      }
+    }
+
+    if (change.sourceIds.length === 0) {
+      return false;
+    }
+
+    const changedSources = new Set(change.sourceIds);
+    for (const node of nodeLookup.values()) {
+      if (node.component.kind !== "embedded-surface") {
+        continue;
+      }
+
+      const sourceId = getEmbeddedSurfaceSourceId(node.props);
+      if (sourceId && changedSources.has(sourceId)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   function runComponentDispatch<TValue>(fn: () => TValue): TValue {
@@ -1262,6 +1293,15 @@ function unconstrained(maxWidth: number, maxHeight: number): LayoutConstraints {
     minHeight: 0,
     maxHeight
   };
+}
+
+function getEmbeddedSurfaceSourceId(props: unknown): string | undefined {
+  if (typeof props !== "object" || props === null || !("sourceId" in props)) {
+    return undefined;
+  }
+
+  const sourceId = (props as { sourceId?: unknown }).sourceId;
+  return typeof sourceId === "string" ? sourceId : undefined;
 }
 
 function getSharedRenderSignature(commands: readonly DrawCommand[]): string {

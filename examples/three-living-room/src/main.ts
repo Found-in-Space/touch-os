@@ -97,12 +97,10 @@ const sharedSurfaces = createEmbeddedSurfaceService();
 interface RuntimeBinding {
   runtime: DisplayRuntime;
   sync(state: RoomDemoState): void;
-  refresh(state: RoomDemoState): void;
 }
 
 interface StaticRuntimeBinding {
   runtime: DisplayRuntime;
-  refresh(): void;
 }
 
 interface DriverBinding {
@@ -349,7 +347,6 @@ renderer.setAnimationLoop(() => {
   const deltaSeconds = Math.min((now - lastFrameTime) / 1000, 0.05);
   lastFrameTime = now;
   const state = store.getState();
-  syncRuntimeBindings(state);
 
   if (!xrActive) {
     updateDesktopCamera(deltaSeconds, state);
@@ -375,10 +372,6 @@ renderer.setAnimationLoop(() => {
   publishMirrorSurface(sharedSurfaces, REAR_VIEW_SOURCE_ID, mirrorCanvas, now);
   shaderPictureSource.render(renderer, now);
   shaderPictureSource.publish(sharedSurfaces, now);
-  desktopHudBinding.refresh(state);
-  xrHudBinding.refresh();
-  wallMirrorBinding.refresh();
-  wallPictureBinding.refresh();
 
   const baseFrame: THREEFrame = {
     scene: room.scene,
@@ -489,7 +482,7 @@ renderer.setAnimationLoop(() => {
 function createRuntimeBinding(
   variant: "hud" | "tv" | "arm"
 ): RuntimeBinding {
-  let lastRenderKey = "";
+  let lastState = store.getState();
   const runtime = createRuntime({
     root: createRoomPanelRoot(variant, store.getState()),
     surface: getRoomPanelSurface(variant),
@@ -502,18 +495,11 @@ function createRuntimeBinding(
   return {
     runtime,
     sync(state) {
-      const nextRenderKey = JSON.stringify({
-        variant,
-        state
-      });
-      if (nextRenderKey === lastRenderKey) {
+      if (state === lastState) {
         return;
       }
 
-      lastRenderKey = nextRenderKey;
-      runtime.setRoot(createRoomPanelRoot(variant, state));
-    },
-    refresh(state) {
+      lastState = state;
       runtime.setRoot(createRoomPanelRoot(variant, state));
     }
   };
@@ -530,10 +516,7 @@ function createXrHudRuntimeBinding(): StaticRuntimeBinding {
   });
 
   return {
-    runtime,
-    refresh() {
-      runtime.setRoot(createXrHudRoot());
-    }
+    runtime
   };
 }
 
@@ -585,10 +568,7 @@ function createWallMirrorRuntimeBinding(): StaticRuntimeBinding {
   });
 
   return {
-    runtime,
-    refresh() {
-      runtime.setRoot(createWallMirrorRoot());
-    }
+    runtime
   };
 }
 
@@ -603,10 +583,7 @@ function createWallPictureRuntimeBinding(): StaticRuntimeBinding {
   });
 
   return {
-    runtime,
-    refresh() {
-      runtime.setRoot(createWallPictureRoot());
-    }
+    runtime
   };
 }
 
