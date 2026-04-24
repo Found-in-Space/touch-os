@@ -2,6 +2,7 @@ import {
   createActionCard,
   createBitmapPlot,
   createButton,
+  createChoiceGroup,
   createCustomGraph,
   createEmbeddedSurface,
   createSlider,
@@ -39,6 +40,49 @@ export function createSliderFixture(value = 50): DisplayNode {
     min: 0,
     max: 100,
     step: 5
+  });
+}
+
+export function createFormattedSliderFixture(value = 1.5): DisplayNode {
+  return createSlider("fixture-formatted-slider", {
+    label: "Zoom",
+    value,
+    min: 1,
+    max: 2,
+    step: 0.25,
+    valueText: `${value.toFixed(2)}x`
+  });
+}
+
+export function createSingleChoiceGroupFixture(value = "medium"): DisplayNode {
+  return createChoiceGroup("fixture-single-choice-group", {
+    label: "Quality",
+    selectionMode: "single",
+    field: "quality",
+    value,
+    orientation: "horizontal",
+    options: [
+      { value: "low", label: "Low" },
+      { value: "medium", label: "Medium" },
+      { value: "high", label: "High" }
+    ]
+  });
+}
+
+export function createMultiChoiceGroupFixture(values: readonly string[] = ["alpha"]): DisplayNode {
+  return createChoiceGroup("fixture-multi-choice-group", {
+    label: "Channels",
+    selectionMode: "multiple",
+    field: "channels",
+    values,
+    orientation: "horizontal",
+    columns: 2,
+    options: [
+      { value: "alpha", label: "Alpha" },
+      { value: "beta", label: "Beta" },
+      { value: "gamma", label: "Gamma" },
+      { value: "delta", label: "Delta" }
+    ]
   });
 }
 

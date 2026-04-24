@@ -5,9 +5,11 @@ import {
   createDPad,
   createHoldButton,
   createRepeatButton,
+  createSlider,
   createTextLabel,
   createToggle
 } from "../src/components/index.js";
+import { findCommandByRole } from "./helpers/runtime-helpers.js";
 
 describe("built-in controls", () => {
   it("emits button actions through one-way output flow", () => {
@@ -48,21 +50,23 @@ describe("built-in controls", () => {
       surface: { width: 260, height: 120 }
     });
 
-    runtime.render();
-    const bounds = runtime.getBounds("fixture-slider");
-    expect(bounds).toBeDefined();
+    const snapshot = runtime.render();
+    const thumb = findCommandByRole(snapshot.commands, "slider-thumb");
+    if (thumb.type !== "circle") {
+      throw new Error("Expected the slider thumb to render as a circle.");
+    }
 
     runtime.dispatchInput({
       type: "pointer-down",
-      surfaceX: (bounds?.x ?? 0) + 24,
-      surfaceY: (bounds?.y ?? 0) + (bounds?.height ?? 0) - 8,
+      surfaceX: thumb.cx,
+      surfaceY: thumb.cy,
       timestamp: 1
     });
 
     const dragResult = runtime.dispatchInput({
       type: "pointer-move",
-      surfaceX: (bounds?.x ?? 0) + (bounds?.width ?? 0) - 24,
-      surfaceY: (bounds?.y ?? 0) + (bounds?.height ?? 0) - 8,
+      surfaceX: thumb.cx + 90,
+      surfaceY: thumb.cy,
       timestamp: 2
     });
 
@@ -76,6 +80,262 @@ describe("built-in controls", () => {
     if (request?.type === "change-request") {
       expect(request.value).toBeGreaterThan(50);
     }
+  });
+
+  it("rejects invalid slider configuration", () => {
+    expect(() =>
+      createSlider("invalid-range", {
+        label: "Bad",
+        value: 5,
+        min: 10,
+        max: 10
+      })
+    ).toThrow(/max must be greater than min/i);
+
+    expect(() =>
+      createSlider("invalid-step", {
+        label: "Bad",
+        value: 5,
+        min: 0,
+        max: 10,
+        step: 0
+      })
+    ).toThrow(/step must be greater than 0/i);
+
+    expect(() =>
+      createSlider("duplicate-labels", {
+        label: "Bad",
+        value: 5,
+        min: 0,
+        max: 10,
+        valueLabels: [
+          { value: 2, text: "Two" },
+          { value: 2, text: "Deux" }
+        ]
+      })
+    ).toThrow(/must not repeat/i);
+
+    expect(() =>
+      createSlider("out-of-range-label", {
+        label: "Bad",
+        value: 5,
+        min: 0,
+        max: 10,
+        valueLabels: [{ value: 12, text: "Twelve" }]
+      })
+    ).toThrow(/stay within the slider range/i);
+  });
+
+  it("clamps and step-snaps slider values for rendering", () => {
+    const snappedRuntime = createRuntime({
+      root: createSlider("snapped-slider", {
+        label: "Projection",
+        value: 9,
+        min: 0,
+        max: 10,
+        step: 4
+      }),
+      surface: { width: 260, height: 120 }
+    });
+
+    const snappedValue = findCommandByRole(snappedRuntime.render().commands, "slider-value");
+    if (snappedValue.type !== "text") {
+      throw new Error("Expected slider value text.");
+    }
+    expect(snappedValue.text).toBe("8");
+
+    const clampedRuntime = createRuntime({
+      root: createSlider("clamped-slider", {
+        label: "Brightness",
+        value: 200,
+        min: 0,
+        max: 10,
+        step: 2
+      }),
+      surface: { width: 260, height: 120 }
+    });
+
+    const clampedValue = findCommandByRole(clampedRuntime.render().commands, "slider-value");
+    if (clampedValue.type !== "text") {
+      throw new Error("Expected slider value text.");
+    }
+    expect(clampedValue.text).toBe("10");
+  });
+
+  it("renders mapped and explicit slider value text", () => {
+    const mappedRuntime = createRuntime({
+      root: createSlider("mapped-slider", {
+        label: "Projection",
+        value: 2,
+        min: 0,
+        max: 4,
+        step: 1,
+        valueLabels: [{ value: 2, text: "Frustum" }]
+      }),
+      surface: { width: 260, height: 120 }
+    });
+
+    const mappedValue = findCommandByRole(mappedRuntime.render().commands, "slider-value");
+    if (mappedValue.type !== "text") {
+      throw new Error("Expected slider value text.");
+    }
+    expect(mappedValue.text).toBe("Frustum");
+
+    const explicitRuntime = createRuntime({
+      root: createSlider("explicit-slider", {
+        label: "Zoom",
+        value: 1.25,
+        min: 1,
+        max: 2,
+        step: 0.25,
+        valueText: "1.25x",
+        valueLabels: [{ value: 1.25, text: "Mapped" }]
+      }),
+      surface: { width: 260, height: 120 }
+    });
+
+    const explicitValue = findCommandByRole(explicitRuntime.render().commands, "slider-value");
+    if (explicitValue.type !== "text") {
+      throw new Error("Expected slider value text.");
+    }
+    expect(explicitValue.text).toBe("1.25x");
+  });
+
+  it("jumps on track press and dedupes drag updates within the same step", () => {
+    const runtime = createRuntime({
+      root: createSlider("track-slider", {
+        label: "Brightness",
+        value: 50,
+        min: 0,
+        max: 100,
+        step: 10
+      }),
+      surface: { width: 260, height: 120 }
+    });
+
+    const snapshot = runtime.render();
+    const track = findCommandByRole(snapshot.commands, "slider-track");
+    if (track.type !== "rect") {
+      throw new Error("Expected the slider track to render as a rect.");
+    }
+
+    const startX = track.rect.x + track.rect.width * 0.8;
+    const centerY = track.rect.y + track.rect.height / 2;
+    const downResult = runtime.dispatchInput({
+      type: "pointer-down",
+      surfaceX: startX,
+      surfaceY: centerY,
+      timestamp: 1
+    });
+    expect(downResult.outputs).toContainEqual({
+      type: "change-request",
+      componentId: "track-slider",
+      field: "value",
+      value: 80
+    });
+
+    const sameStepMove = runtime.dispatchInput({
+      type: "pointer-move",
+      surfaceX: startX + 7,
+      surfaceY: centerY,
+      timestamp: 2
+    });
+    expect(
+      sameStepMove.outputs.some((output) => output.type === "change-request")
+    ).toBe(false);
+
+    const nextStepMove = runtime.dispatchInput({
+      type: "pointer-move",
+      surfaceX: startX + 30,
+      surfaceY: centerY,
+      timestamp: 3
+    });
+    expect(nextStepMove.outputs).toContainEqual({
+      type: "change-request",
+      componentId: "track-slider",
+      field: "value",
+      value: 90
+    });
+  });
+
+  it("cleans up slider drag state on cancel and stays non-interactive when disabled", () => {
+    const runtime = createRuntime({
+      root: createSlider("cancel-slider", {
+        label: "Brightness",
+        value: 50,
+        min: 0,
+        max: 100,
+        step: 10
+      }),
+      surface: { width: 260, height: 120 }
+    });
+
+    const snapshot = runtime.render();
+    const thumb = findCommandByRole(snapshot.commands, "slider-thumb");
+    const track = findCommandByRole(snapshot.commands, "slider-track");
+    if (thumb.type !== "circle" || track.type !== "rect") {
+      throw new Error("Expected slider thumb and track commands.");
+    }
+
+    runtime.dispatchInput({
+      type: "pointer-down",
+      surfaceX: thumb.cx,
+      surfaceY: thumb.cy,
+      timestamp: 1
+    });
+    runtime.dispatchInput({
+      type: "pointer-move",
+      surfaceX: thumb.cx + 90,
+      surfaceY: thumb.cy,
+      timestamp: 2
+    });
+    runtime.takeOutputs();
+
+    const cancelResult = runtime.dispatchInput({
+      type: "cancel",
+      surfaceX: -1,
+      surfaceY: -1,
+      timestamp: 3
+    });
+    expect(cancelResult.outputs).toHaveLength(0);
+
+    const afterCancelMove = runtime.dispatchInput({
+      type: "pointer-move",
+      surfaceX: thumb.cx + 100,
+      surfaceY: thumb.cy,
+      timestamp: 4
+    });
+    expect(
+      afterCancelMove.outputs.some((output) => output.type === "change-request")
+    ).toBe(false);
+
+    runtime.setRoot(
+      createSlider("cancel-slider", {
+        label: "Brightness",
+        value: 50,
+        min: 0,
+        max: 100,
+        step: 10,
+        disabled: true
+      })
+    );
+
+    const disabledSnapshot = runtime.render();
+    const disabledLabel = findCommandByRole(disabledSnapshot.commands, "slider-label");
+    if (disabledLabel.type !== "text") {
+      throw new Error("Expected slider label text.");
+    }
+    expect(disabledLabel.color).toBe(runtime.getServices().theme.getTokens().mutedTextColor);
+
+    const disabledDown = runtime.dispatchInput({
+      type: "pointer-down",
+      surfaceX: track.rect.x + track.rect.width / 2,
+      surfaceY: track.rect.y + track.rect.height / 2,
+      timestamp: 5
+    });
+    expect(disabledDown.handled).toBe(false);
+    expect(disabledDown.outputs).toHaveLength(0);
+    expect(runtime.getInteraction().focusedComponentId).toBeUndefined();
   });
 
   it("emits toggle change requests as controlled updates", () => {

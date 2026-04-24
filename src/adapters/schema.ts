@@ -1,11 +1,20 @@
 import {
   createActionCard,
   createButton,
+  createChoiceGroup,
   createSlider,
   createTextLabel,
   createToggle,
   createValueReadout
 } from "../components/index.js";
+import {
+  normalizeChoiceGroupProps,
+  type ChoiceOption
+} from "../components/choice-group-contract.js";
+import {
+  normalizeSliderProps,
+  type SliderValueLabel
+} from "../components/slider-contract.js";
 import {
   normalizeActionCardProps,
   type ActionCardProps
@@ -49,6 +58,23 @@ export interface SchemaSliderItem extends SchemaBaseItem {
   min: number;
   max: number;
   step?: number;
+  disabled?: boolean;
+  valueText?: string;
+  valueTextField?: string;
+  valueLabels?: readonly SliderValueLabel[];
+}
+
+export interface SchemaChoiceGroupItem extends SchemaBaseItem {
+  kind: "choice-group";
+  label?: string;
+  field: string;
+  selectionMode: "single" | "multiple";
+  value?: string;
+  values?: readonly string[];
+  orientation?: "vertical" | "horizontal";
+  columns?: number;
+  options: readonly ChoiceOption[];
+  disabled?: boolean;
 }
 
 export interface SchemaReadoutItem extends SchemaBaseItem {
@@ -72,6 +98,7 @@ export type SchemaBuiltinItem =
   | SchemaButtonItem
   | SchemaToggleItem
   | SchemaSliderItem
+  | SchemaChoiceGroupItem
   | SchemaReadoutItem
   | SchemaActionCardItem;
 
@@ -236,7 +263,27 @@ const BUILTIN_REGISTRATIONS: readonly ErasedSchemaRegistration[] = [
     validate(item) {
       const record = expectRecord(item, "Schema slider item");
       const step = readOptionalNumberProperty(record, "step", "Schema slider item step");
-      return {
+      const disabled = readOptionalBooleanProperty(
+        record,
+        "disabled",
+        "Schema slider item disabled"
+      );
+      const valueText = readOptionalStringProperty(
+        record,
+        "valueText",
+        "Schema slider item valueText"
+      );
+      const valueTextField = readOptionalStringProperty(
+        record,
+        "valueTextField",
+        "Schema slider item valueTextField"
+      );
+      const valueLabels = readOptionalSliderValueLabelsProperty(
+        record,
+        "valueLabels",
+        "Schema slider item valueLabels"
+      );
+      const validatedItem: SchemaSliderItem = {
         kind: "slider",
         id: readRequiredStringProperty(record, "id", "Schema slider item id"),
         label: readRequiredStringProperty(record, "label", "Schema slider item label"),
@@ -244,17 +291,130 @@ const BUILTIN_REGISTRATIONS: readonly ErasedSchemaRegistration[] = [
         value: readRequiredNumberProperty(record, "value", "Schema slider item value"),
         min: readRequiredNumberProperty(record, "min", "Schema slider item min"),
         max: readRequiredNumberProperty(record, "max", "Schema slider item max"),
-        ...(step === undefined ? {} : { step })
+        ...(step === undefined ? {} : { step }),
+        ...(disabled === undefined ? {} : { disabled }),
+        ...(valueText === undefined ? {} : { valueText }),
+        ...(valueTextField === undefined ? {} : { valueTextField }),
+        ...(valueLabels === undefined ? {} : { valueLabels })
       };
+
+      normalizeSliderProps(
+        {
+          label: validatedItem.label,
+          field: validatedItem.field,
+          value: validatedItem.value,
+          min: validatedItem.min,
+          max: validatedItem.max,
+          ...(validatedItem.step === undefined ? {} : { step: validatedItem.step }),
+          ...(validatedItem.disabled === undefined ? {} : { disabled: validatedItem.disabled }),
+          ...(validatedItem.valueText === undefined ? {} : { valueText: validatedItem.valueText }),
+          ...(validatedItem.valueLabels === undefined
+            ? {}
+            : { valueLabels: validatedItem.valueLabels })
+        },
+        "Schema slider item"
+      );
+
+      return validatedItem;
     },
     createNode(item, context) {
+      const valueText =
+        item.valueTextField === undefined
+          ? item.valueText
+          : context.readField<string | undefined>(item.valueTextField, item.valueText);
+
       return createSlider(item.id, {
-        label: item.label,
+        label: context.readText(item.id, item.label),
         field: item.field,
         value: context.readField(item.field, item.value),
         min: item.min,
         max: item.max,
-        ...(item.step === undefined ? {} : { step: item.step })
+        ...(item.step === undefined ? {} : { step: item.step }),
+        ...(item.disabled === undefined ? {} : { disabled: item.disabled }),
+        ...(valueText === undefined ? {} : { valueText }),
+        ...(item.valueLabels === undefined ? {} : { valueLabels: item.valueLabels })
+      });
+    }
+  }),
+  eraseRegistration<SchemaChoiceGroupItem>({
+    kind: "choice-group",
+    validate(item) {
+      const record = expectRecord(item, "Schema choice-group item");
+      const label = readOptionalStringProperty(record, "label", "Schema choice-group item label");
+      const value = readOptionalStringProperty(record, "value", "Schema choice-group item value");
+      const values = readOptionalStringArrayProperty(
+        record,
+        "values",
+        "Schema choice-group item values"
+      );
+      const orientation = readOptionalChoiceGroupOrientationProperty(
+        record,
+        "orientation",
+        "Schema choice-group item orientation"
+      );
+      const columns = readOptionalNumberProperty(
+        record,
+        "columns",
+        "Schema choice-group item columns"
+      );
+      const disabled = readOptionalBooleanProperty(
+        record,
+        "disabled",
+        "Schema choice-group item disabled"
+      );
+      const validatedItem: SchemaChoiceGroupItem = {
+        kind: "choice-group",
+        id: readRequiredStringProperty(record, "id", "Schema choice-group item id"),
+        field: readRequiredStringProperty(record, "field", "Schema choice-group item field"),
+        selectionMode: readRequiredChoiceGroupSelectionModeProperty(
+          record,
+          "selectionMode",
+          "Schema choice-group item selectionMode"
+        ),
+        options: readRequiredChoiceOptionsProperty(
+          record,
+          "options",
+          "Schema choice-group item options"
+        ),
+        ...(label === undefined ? {} : { label }),
+        ...(value === undefined ? {} : { value }),
+        ...(values === undefined ? {} : { values }),
+        ...(orientation === undefined ? {} : { orientation }),
+        ...(columns === undefined ? {} : { columns }),
+        ...(disabled === undefined ? {} : { disabled })
+      };
+
+      normalizeChoiceGroupProps(validatedItem, "Schema choice-group item");
+      return validatedItem;
+    },
+    createNode(item, context) {
+      const label =
+        item.label === undefined ? undefined : context.readText(item.id, item.label);
+
+      if (item.selectionMode === "single") {
+        return createChoiceGroup(item.id, {
+          options: item.options,
+          selectionMode: item.selectionMode,
+          field: item.field,
+          ...(label === undefined ? {} : { label }),
+          ...(item.value === undefined
+            ? {}
+            : { value: context.readField(item.field, item.value) }),
+          ...(item.orientation === undefined ? {} : { orientation: item.orientation }),
+          ...(item.columns === undefined ? {} : { columns: item.columns }),
+          ...(item.disabled === undefined ? {} : { disabled: item.disabled })
+        });
+      }
+
+      return createChoiceGroup(item.id, {
+        options: item.options,
+        selectionMode: item.selectionMode,
+        field: item.field,
+        values: context.readField(item.field, item.values ?? []),
+        ...(label === undefined ? {} : { label }),
+        ...(item.orientation === undefined ? {} : { orientation: item.orientation }),
+        ...(item.columns === undefined ? {} : { columns: item.columns }),
+        ...(item.disabled === undefined ? {} : { disabled: item.disabled })
       });
     }
   }),
@@ -758,6 +918,74 @@ function readOptionalStringArrayProperty(
     }
   }
   return [...value];
+}
+
+function readOptionalSliderValueLabelsProperty(
+  record: Record<string, unknown>,
+  key: string,
+  label: string
+): readonly SliderValueLabel[] | undefined {
+  const value = record[key];
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const entries = readRequiredArray(value, label);
+  return entries.map((entry, index) => {
+    const entryRecord = expectRecord(entry, `${label} entry ${index}`);
+    return {
+      value: readRequiredNumberProperty(entryRecord, "value", `${label} entry ${index} value`),
+      text: readRequiredStringProperty(entryRecord, "text", `${label} entry ${index} text`)
+    };
+  });
+}
+
+function readRequiredChoiceOptionsProperty(
+  record: Record<string, unknown>,
+  key: string,
+  label: string
+): readonly ChoiceOption[] {
+  const value = readRequiredArray(record[key], label);
+  return value.map((entry, index) => {
+    const optionRecord = expectRecord(entry, `${label} entry ${index}`);
+    const disabled = readOptionalBooleanProperty(
+      optionRecord,
+      "disabled",
+      `${label} entry ${index} disabled`
+    );
+    return {
+      value: readRequiredStringProperty(optionRecord, "value", `${label} entry ${index} value`),
+      label: readRequiredStringProperty(optionRecord, "label", `${label} entry ${index} label`),
+      ...(disabled === undefined ? {} : { disabled })
+    };
+  });
+}
+
+function readRequiredChoiceGroupSelectionModeProperty(
+  record: Record<string, unknown>,
+  key: string,
+  label: string
+): "single" | "multiple" {
+  const value = readRequiredStringProperty(record, key, label);
+  if (value !== "single" && value !== "multiple") {
+    throw new Error(`${label} must be "single" or "multiple".`);
+  }
+  return value;
+}
+
+function readOptionalChoiceGroupOrientationProperty(
+  record: Record<string, unknown>,
+  key: string,
+  label: string
+): "vertical" | "horizontal" | undefined {
+  const value = readOptionalStringProperty(record, key, label);
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value !== "vertical" && value !== "horizontal") {
+    throw new Error(`${label} must be "vertical" or "horizontal".`);
+  }
+  return value;
 }
 
 function readRequiredString(value: unknown, label: string): string {

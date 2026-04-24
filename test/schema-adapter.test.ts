@@ -6,7 +6,12 @@ import {
   type SchemaDocument,
   type SchemaKindRegistration
 } from "../src/adapters/schema.js";
-import { findCommandByRole, getTexts, pressAt } from "./helpers/runtime-helpers.js";
+import {
+  findCommandByRole,
+  findRectCommandsByRole,
+  getTexts,
+  pressAt
+} from "./helpers/runtime-helpers.js";
 
 interface CustomStatusItem extends SchemaCustomItem {
   kind: "custom-status";
@@ -63,7 +68,10 @@ describe("schema adapter", () => {
               value: 35,
               min: 0,
               max: 100,
-              step: 5
+              step: 5,
+              valueText: "Warm",
+              valueTextField: "brightnessLabel",
+              valueLabels: [{ value: 35, text: "Mapped Warm" }]
             }
           ]
         }
@@ -78,14 +86,17 @@ describe("schema adapter", () => {
     let texts = getTexts(runtime.render().commands);
     expect(texts).toContain("Main");
     expect(texts).toContain("Offline");
-    expect(texts).toContain("Brightness: 35");
+    expect(texts).toContain("Brightness");
+    expect(texts).toContain("Warm");
 
     adapter.controller.setText("status-text", "Online");
     adapter.controller.setField("brightness", 60);
+    adapter.controller.setField("brightnessLabel", "Bright");
 
     texts = getTexts(runtime.render().commands);
     expect(texts).toContain("Online");
-    expect(texts).toContain("Brightness: 60");
+    expect(texts).toContain("Brightness");
+    expect(texts).toContain("Bright");
 
     adapter.controller.setSchema({
       version: 1,
@@ -109,6 +120,96 @@ describe("schema adapter", () => {
     texts = getTexts(runtime.render().commands);
     expect(texts).toContain("Secondary");
     expect(texts).toContain("Sync");
+  });
+
+  it("supports schema choice groups in single-select and multi-select modes", () => {
+    const adapter = createSchemaAdapter("schema-shell", {
+      version: 1,
+      pages: [
+        {
+          id: "main",
+          items: [
+            {
+              kind: "choice-group",
+              id: "mode-group",
+              label: "Mode",
+              field: "mode",
+              selectionMode: "single",
+              value: "standard",
+              orientation: "horizontal",
+              options: [
+                { value: "standard", label: "Standard" },
+                { value: "cinema", label: "Cinema" }
+              ]
+            },
+            {
+              kind: "choice-group",
+              id: "channel-group",
+              label: "Channels",
+              field: "channels",
+              selectionMode: "multiple",
+              values: ["alpha"],
+              orientation: "horizontal",
+              columns: 2,
+              options: [
+                { value: "alpha", label: "Alpha" },
+                { value: "beta", label: "Beta" },
+                { value: "gamma", label: "Gamma" },
+                { value: "delta", label: "Delta" }
+              ]
+            }
+          ]
+        }
+      ]
+    });
+
+    const runtime = createRuntime({
+      root: adapter.root,
+      surface: { width: 320, height: 260 }
+    });
+
+    let snapshot = runtime.render();
+    let texts = getTexts(snapshot.commands);
+    expect(texts).toContain("Mode");
+    expect(texts).toContain("Channels");
+
+    const modeOptionRows = findRectCommandsByRole(
+      snapshot.commands,
+      "choice-option-row",
+      "mode-group"
+    );
+    const modeResult = pressAt(
+      runtime,
+      modeOptionRows[1]!.rect.x + modeOptionRows[1]!.rect.width / 2,
+      modeOptionRows[1]!.rect.y + modeOptionRows[1]!.rect.height / 2
+    );
+    expect(modeResult.outputs).toContainEqual({
+      type: "change-request",
+      componentId: "mode-group",
+      field: "mode",
+      value: "cinema"
+    });
+
+    adapter.controller.setField("mode", "cinema");
+    snapshot = runtime.render();
+
+    const channelOptionRows = findRectCommandsByRole(
+      snapshot.commands,
+      "choice-option-row",
+      "channel-group"
+    );
+    const channelResult = pressAt(
+      runtime,
+      channelOptionRows[1]!.rect.x + channelOptionRows[1]!.rect.width / 2,
+      channelOptionRows[1]!.rect.y + channelOptionRows[1]!.rect.height / 2,
+      10
+    );
+    expect(channelResult.outputs).toContainEqual({
+      type: "change-request",
+      componentId: "channel-group",
+      field: "channels",
+      value: ["alpha", "beta"]
+    });
   });
 
   it("renders action-card items, emits shell actions, and supports replaceItem updates", () => {

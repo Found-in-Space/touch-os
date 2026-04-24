@@ -1,3 +1,4 @@
+import type { DrawCommand, RectDrawCommand } from "../../src/core/draw.js";
 import type { DisplayRuntime, RuntimeOutput } from "../../src/index.js";
 
 export function getTexts(commands: readonly { type: string; text?: string }[]): string[] {
@@ -73,4 +74,17 @@ export function findCommandByRole<TCommand extends { role?: string }>(
     throw new Error(`Unable to find a draw command with role "${role}".`);
   }
   return command;
+}
+
+export function findRectCommandsByRole(
+  commands: readonly DrawCommand[],
+  role: string,
+  componentId?: string
+): RectDrawCommand[] {
+  return commands.filter(
+    (command): command is RectDrawCommand =>
+      command.type === "rect" &&
+      command.role === role &&
+      (componentId === undefined || command.componentId === componentId)
+  );
 }

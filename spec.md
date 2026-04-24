@@ -466,13 +466,16 @@ Recommended base controls:
 - discrete four-direction d-pad
 - toggle
 - slider
+- choice-group
 - text label
 - value readout
 - action card
 - list item
-- segmented control or tab switcher
 
 These controls should remain generic. Richer or domain-specific controls can be built on top of the same component contract.
+
+Segmented or tab-like styling can later be introduced as a presentation variant of `choice-group`
+rather than as a separate core control contract.
 
 For continuous controls:
 
@@ -480,7 +483,16 @@ For continuous controls:
 - a hold-button should emit its stop action exactly once on pointer-up, cancel, disable, unmount, or forced pointer clear
 - a repeat-button should repeat from runtime time and tick delivery rather than browser timers
 - a repeat-button should stop immediately on pointer-up, cancel, disable, unmount, or forced pointer clear
+- a slider should clamp and step-snap its effective value before rendering or emitting change requests
+- a slider should allow the displayed value text to differ from the stored numeric value
+- disabled sliders should render as inactive and remain non-interactive
 - the initial d-pad should be discrete four-direction hold input rather than an analog thumbstick
+
+For grouped choice controls:
+
+- a choice-group should use one explicit contract for both single-select and multi-select behavior
+- a choice-group should support vertical lists, horizontal rows, and explicit wrapped columns
+- a choice-group should emit controlled change requests rather than mutating selection internally
 
 ### Action Card
 
@@ -841,6 +853,7 @@ Recommended built-in schema kinds:
 - button
 - toggle
 - slider
+- choice-group
 - value readout
 - action-card
 
@@ -1003,6 +1016,9 @@ component Slider(id, props) {
     min: number
     max: number
     step?: number = 1
+    field?: string = "value"
+    disabled?: boolean = false
+    valueText?: string
   }
 
   state: {
@@ -1014,20 +1030,37 @@ component Slider(id, props) {
   }
 
   hitTest(point, bounds) {
+    if (props.disabled) return null
     if (!pointInRect(point, bounds)) return null
     if (pointInSliderThumb(point, bounds, props.value)) return { targetId: id + ":thumb" }
     return { targetId: id + ":track" }
   }
 
   handleEvent(event, ctx) {
-    if (event.type == "pointer-down") state.dragging = true
-    if (event.type == "drag-end" || event.type == "cancel") state.dragging = false
+    if (props.disabled) return
 
-    if (event.type == "drag-move" || event.type == "press") {
+    if (event.type == "pointer-down") {
+      state.dragging = true
+      if (event.targetId == id + ":track") {
+        let nextValue = valueFromLocalX(event.localX, props.min, props.max, props.step)
+        ctx.emit({
+          type: "change-request",
+          field: props.field,
+          value: nextValue,
+          componentId: id
+        })
+      }
+    }
+
+    if (event.type == "pointer-up" || event.type == "drag-end" || event.type == "cancel") {
+      state.dragging = false
+    }
+
+    if (event.type == "drag-move") {
       let nextValue = valueFromLocalX(event.localX, props.min, props.max, props.step)
       ctx.emit({
         type: "change-request",
-        field: "value",
+        field: props.field,
         value: nextValue,
         componentId: id
       })
@@ -1035,9 +1068,11 @@ component Slider(id, props) {
   }
 
   render(ctx, bounds) {
-    drawSliderLabel(bounds, props.label, props.value, ctx.theme)
-    drawSliderTrack(bounds, ctx.theme)
-    drawSliderThumb(bounds, props.value, state.dragging, ctx.theme)
+    let normalizedValue = normalizeSliderValue(props.value, props.min, props.max, props.step)
+    let displayText = props.valueText ?? String(normalizedValue)
+    drawSliderLabel(bounds, props.label, displayText, ctx.theme)
+    drawSliderTrack(bounds, normalizedValue, ctx.theme)
+    drawSliderThumb(bounds, normalizedValue, state.dragging, ctx.theme)
   }
 }
 ```
@@ -1057,7 +1092,94 @@ Proves:
 - controlled component behavior
 - separation of runtime interaction state from application state
 
-### 3. Settings Page
+### 3. Choice Group
+
+This proves that grouped single-select and multi-select controls can share one explicit contract
+while still participating in ordinary layout, hit testing, focus, and controlled change flow.
+
+```text
+component ChoiceGroup(id, props) {
+  props: {
+    label?: string
+    field?: string
+    selectionMode: "single" | "multiple"
+    options: array<{ value: string, label: string, disabled?: boolean }>
+    value?: string
+    values?: array<string>
+    orientation?: "vertical" | "horizontal" = "vertical"
+    columns?: number
+    disabled?: boolean = false
+  }
+
+  state: {
+    hoveredTargetId?: string
+    pressedTargetId?: string
+  }
+
+  measure(ctx) {
+    return size(fillWidth, measuredChoiceGroupHeight(props, ctx.theme))
+  }
+
+  hitTest(point, bounds) {
+    if (props.disabled) return null
+    let option = optionAtPoint(point, bounds, props)
+    if (!option || option.disabled) return null
+    return { targetId: id + ":option:" + option.value }
+  }
+
+  handleEvent(event, ctx) {
+    if (props.disabled) return
+
+    if (event.type == "press") {
+      let option = optionForTargetId(event.targetId, props.options)
+      if (!option || option.disabled) return
+
+      if (props.selectionMode == "single") {
+        if (props.value == option.value) return
+        ctx.emit({
+          type: "change-request",
+          field: props.field ?? "value",
+          value: option.value,
+          componentId: id
+        })
+      }
+
+      if (props.selectionMode == "multiple") {
+        let nextValues = toggleValueInOptionOrder(props.values ?? [], option.value, props.options)
+        ctx.emit({
+          type: "change-request",
+          field: props.field ?? "values",
+          value: nextValues,
+          componentId: id
+        })
+      }
+    }
+  }
+
+  render(ctx, bounds) {
+    drawChoiceGroupFrame(bounds, ctx.theme)
+    drawChoiceGroupLabel(bounds, props.label, ctx.theme)
+    drawChoiceOptions(bounds, props, ctx.theme)
+  }
+}
+```
+
+Emits:
+
+- `change-request`
+
+Uses services:
+
+- theme service
+- focus service
+
+Proves:
+
+- shared grouped-choice semantics for single and multiple selection
+- option-level hit testing inside one component
+- runtime-owned layout for vertical, horizontal, and wrapped grouped controls
+
+### 4. Settings Page
 
 This shows that paging, scrolling, and composition belong to the runtime rather than being rebuilt inside each application.
 
@@ -1137,7 +1259,7 @@ Proves:
 - scroll ownership inside the runtime
 - reusable control composition
 
-### 4. Custom Graph
+### 5. Custom Graph
 
 This proves that richer visuals still fit the same component model rather than requiring an entirely separate UI system.
 
@@ -1200,7 +1322,7 @@ Proves:
 - custom hit testing
 - non-standard visuals without a separate component model
 
-### 5. Embedded Surface
+### 6. Embedded Surface
 
 This is the reference example for live viewports such as mirrors, monitors, camera feeds, or streamed application panels.
 
