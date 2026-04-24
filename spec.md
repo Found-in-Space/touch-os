@@ -558,6 +558,7 @@ An embedded surface component should be able to declare:
 
 - desired source type
 - aspect-ratio preferences
+- optional presentation transforms such as horizontal mirroring
 - refresh policy
 - composition mode
 - whether it accepts forwarded input
@@ -572,6 +573,10 @@ The backing service should return:
 When `preserveAspectRatio` is enabled, the default interpretation should be centered `contain`
 behavior inside the component viewport. That means letterboxing or pillarboxing is preferred over
 stretching or cropping.
+
+If a source represents a mirror rather than a monitor, the component contract should allow a
+horizontal mirror presentation hint. The backing source does not need to render mirrored pixels if
+the host can apply that transform during composition.
 
 ### Composition Rules
 
@@ -710,12 +715,20 @@ There are two valid patterns here:
    A fixed-size panel is anchored relative to the head or camera pose using the same explicit-pose
    model as other pose-anchored XR panels.
 
+For compact XR utilities, this second pattern should normally reuse the same pose-anchored panel
+path used by hand, wrist, chest, or tool-mounted panels, with head pose supplied as just another
+anchor source.
+
 Viewport-sized overlay mode is optional. It should be used only when the product truly needs a
 full-view overlay. XR experiences that just need a rear-view mirror, utility card, or compact
 status surface may use a small pose-anchored panel instead.
 
 The runtime must not require desktop HUD and XR HUD presentations to share the same layout tree,
 host path, or rendering strategy.
+
+Desktop and XR HUD presentations may use separate runtime instances, surfaces, themes, and embedded
+surface components when their layout goals differ. For example, a rich desktop HUD overlay may
+coexist with an XR-only head-mounted mirror or status card.
 
 The HUD root may render no background of its own. In that configuration, only child components that
 explicitly draw chrome should be visible, and empty HUD pixels should remain visually transparent.
@@ -1098,6 +1111,7 @@ component EmbeddedSurface(id, props) {
     title?: string
     interactive?: boolean = false
     preserveAspectRatio?: boolean = true
+    mirrorX?: boolean = false
     compositionMode?: "copy" | "composite" = "copy"
   }
 
@@ -1105,6 +1119,7 @@ component EmbeddedSurface(id, props) {
     ctx.surfaces.attach(id, {
       sourceId: props.sourceId,
       preserveAspectRatio: props.preserveAspectRatio,
+      mirrorX: props.mirrorX,
       compositionMode: props.compositionMode
     })
   }
@@ -1112,7 +1127,8 @@ component EmbeddedSurface(id, props) {
   update(ctx) {
     ctx.surfaces.configure(id, {
       sourceId: props.sourceId,
-      interactive: props.interactive
+      interactive: props.interactive,
+      mirrorX: props.mirrorX
     })
   }
 
