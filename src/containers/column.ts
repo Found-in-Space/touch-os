@@ -1,7 +1,13 @@
 import { type DisplayComponent, type DisplayNode, createNode } from "../core/component.js";
-import { resolvePadding, measureVerticalChildren, layoutVerticalChildren } from "./shared.js";
+import {
+  resolvePadding,
+  measureVerticalChildren,
+  layoutVerticalChildren,
+  resolvePointerOpaqueHit,
+  type PointerOpaqueProps
+} from "./shared.js";
 
-export interface ColumnProps {
+export interface ColumnProps extends PointerOpaqueProps {
   children: readonly DisplayNode<unknown, unknown>[];
   gap?: number;
   padding?: number;
@@ -55,8 +61,8 @@ const ColumnComponent: DisplayComponent<ColumnProps> = {
         ]
       : [];
   },
-  hitTest() {
-    return null;
+  hitTest(ctx) {
+    return resolvePointerOpaqueHit(ctx);
   }
 };
 

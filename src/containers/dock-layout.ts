@@ -1,7 +1,7 @@
 import type { Insets } from "../core/geometry.js";
 import { createRect, type LayoutConstraints, type Rect } from "../core/geometry.js";
 import { type DisplayComponent, type DisplayNode, createNode } from "../core/component.js";
-import { resolvePadding } from "./shared.js";
+import { resolvePadding, resolvePointerOpaqueHit, type PointerOpaqueProps } from "./shared.js";
 
 export interface DockSlotSpec {
   child: DisplayNode<unknown, unknown>;
@@ -9,7 +9,7 @@ export interface DockSlotSpec {
   maxHeight?: number;
 }
 
-export interface DockLayoutProps {
+export interface DockLayoutProps extends PointerOpaqueProps {
   padding?: number | Partial<Insets>;
   topLeft?: DockSlotSpec;
   topCenter?: DockSlotSpec;
@@ -77,8 +77,8 @@ const DockLayoutComponent: DisplayComponent<DockLayoutProps> = {
   render() {
     return [];
   },
-  hitTest() {
-    return null;
+  hitTest(ctx) {
+    return resolvePointerOpaqueHit(ctx);
   }
 };
 

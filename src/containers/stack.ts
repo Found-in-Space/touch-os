@@ -1,7 +1,13 @@
 import { type DisplayComponent, type DisplayNode, createNode } from "../core/component.js";
-import { layoutFillChildren, measureStackChildren, resolvePadding } from "./shared.js";
+import {
+  layoutFillChildren,
+  measureStackChildren,
+  resolvePadding,
+  resolvePointerOpaqueHit,
+  type PointerOpaqueProps
+} from "./shared.js";
 
-export interface StackProps {
+export interface StackProps extends PointerOpaqueProps {
   children: readonly DisplayNode<unknown, unknown>[];
   padding?: number;
   backgroundColor?: string;
@@ -52,8 +58,8 @@ const StackComponent: DisplayComponent<StackProps> = {
         ]
       : [];
   },
-  hitTest() {
-    return null;
+  hitTest(ctx) {
+    return resolvePointerOpaqueHit(ctx);
   }
 };
 

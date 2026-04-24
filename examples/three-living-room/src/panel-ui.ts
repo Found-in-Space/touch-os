@@ -58,6 +58,7 @@ export function createRoomPanelRoot(
       return createColumn("arm-root", {
         padding: 10,
         gap: 10,
+        pointerOpaque: true,
         backgroundColor: "#101826",
         children: [
           createTextLabel("arm-title", {

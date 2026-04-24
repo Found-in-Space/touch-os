@@ -1,8 +1,8 @@
 import { type DisplayComponent, type DisplayNode, createNode } from "../core/component.js";
 import { createRect } from "../core/geometry.js";
-import { resolvePadding } from "./shared.js";
+import { resolvePadding, resolvePointerOpaqueHit, type PointerOpaqueProps } from "./shared.js";
 
-export interface PageContainerProps {
+export interface PageContainerProps extends PointerOpaqueProps {
   children: readonly DisplayNode<unknown, unknown>[];
   initialPageId?: string;
   padding?: number;
@@ -95,8 +95,8 @@ const PageContainerComponent: DisplayComponent<PageContainerProps> = {
         ]
       : [];
   },
-  hitTest() {
-    return null;
+  hitTest(ctx) {
+    return resolvePointerOpaqueHit(ctx);
   }
 };
 

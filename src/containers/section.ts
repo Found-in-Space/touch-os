@@ -1,8 +1,14 @@
 import { type DisplayComponent, type DisplayNode, createNode } from "../core/component.js";
 import { createRect } from "../core/geometry.js";
-import { layoutVerticalChildren, measureVerticalChildren, resolvePadding } from "./shared.js";
+import {
+  layoutVerticalChildren,
+  measureVerticalChildren,
+  resolvePadding,
+  resolvePointerOpaqueHit,
+  type PointerOpaqueProps
+} from "./shared.js";
 
-export interface SectionProps {
+export interface SectionProps extends PointerOpaqueProps {
   title: string;
   children: readonly DisplayNode<unknown, unknown>[];
   gap?: number;
@@ -95,8 +101,8 @@ const SectionComponent: DisplayComponent<SectionProps> = {
       }
     ];
   },
-  hitTest() {
-    return null;
+  hitTest(ctx) {
+    return resolvePointerOpaqueHit(ctx);
   }
 };
 

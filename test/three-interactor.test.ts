@@ -277,6 +277,70 @@ describe("three interactor", () => {
     host.detach();
   });
 
+  it("can make empty viewport-sized HUD space pointer opaque", () => {
+    const runtime = createRuntime({
+      root: createDockLayout("hud-root", {
+        pointerOpaque: true,
+        topLeft: {
+          maxWidth: 180,
+          child: createButtonFixture()
+        }
+      }),
+      surface: { width: 800, height: 600 }
+    });
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 800 / 600, 0.1, 10);
+    camera.position.set(0, 0, 1);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    scene.add(camera);
+
+    const host = createHudHost({
+      runtime,
+      surface: { width: 800, height: 600 },
+      distance: 0.75,
+      sizing: "viewport",
+      createCanvas: createFakeCanvas
+    });
+    host.attach();
+    host.update({
+      scene,
+      camera,
+      surfaceMetrics: { width: 800, height: 600, pixelDensity: 1 }
+    });
+
+    const interactor = createPanelInteractor({
+      runtime,
+      mesh: host.mesh,
+      getSurfaceMetrics: () => host.getSurfaceMetrics(),
+      pointerClaimPolicy: "block-on-hit"
+    });
+
+    const result = interactor.process(
+      {
+        pointerId: "pointer-opaque",
+        pointerType: "mouse",
+        transport: "screen",
+        phase: "move",
+        timestamp: 1,
+        ndcX: 0,
+        ndcY: 0
+      },
+      { scene, camera, surfaceMetrics: { width: 800, height: 600, pixelDensity: 1 } }
+    );
+
+    expect(result.claimed).toBe(true);
+    expect(result.blocked).toBe(true);
+    expect(result.hit).toMatchObject({
+      componentId: "hud-root",
+      targetId: "hud-root:surface",
+      source: "screen"
+    });
+
+    host.detach();
+  });
+
   it("keeps a successful HUD press captured until release or clear", () => {
     const runtime = createRuntime({
       root: createDockLayout("hud-root", {

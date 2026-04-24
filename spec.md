@@ -213,6 +213,12 @@ Examples:
 - slider thumb
 - list row
 
+A component or container may also expose a generic surface target that covers its full bounds when
+the surrounding panel should absorb pointer interaction even if no leaf control is hit.
+
+This should be an explicit opt-in behavior rather than the default for all layout containers. A
+simple option such as `pointerOpaque?: boolean` is appropriate.
+
 ### 7. Event Handling
 
 The runtime sends normalized events to the relevant component or target.
@@ -433,6 +439,13 @@ Recommended minimum set:
 - overlay container
 
 These are more important than a large library of leaf widgets. Without containers, every application ends up reinventing composition rules.
+
+Layout containers may optionally expose a full-bounds hit target for panel chrome or tablet shells
+that should absorb pointer rays across their visible surface. A simple opt-in container prop such as
+`pointerOpaque?: boolean` fits this runtime well.
+
+The default should remain passthrough for empty container space unless the application explicitly
+opts into pointer opacity.
 
 For docked HUD layout:
 
@@ -754,8 +767,12 @@ coexist with an XR-only head-mounted mirror or status card.
 The HUD root may render no background of its own. In that configuration, only child components that
 explicitly draw chrome should be visible, and empty HUD pixels should remain visually transparent.
 
-Empty HUD pixels must not claim or block input. A pointer miss on the HUD should fall through to
-lower-priority world or panel interactions in the same frame.
+Empty HUD pixels must not claim or block input by default. A pointer miss on the HUD should fall
+through to lower-priority world or panel interactions in the same frame.
+
+When an application wants a whole visible panel to absorb pointer rays, it may opt the relevant
+container or root panel into pointer-opaque behavior instead of filling the panel with dummy
+interactive controls.
 
 Once a HUD control successfully receives a press, the HUD keeps pointer ownership until pointer-up,
 cancel, or forced pointer clear, even if the pointer later moves outside the original control
@@ -1296,6 +1313,10 @@ That layer should work in two modes:
 - interoperable: an app feeds its own ray/finger pointer into the same contract and gets back panel hit + claim/blocking results
 
 That fits the spec well: the core runtime stays display-space only, while hosts own ray/projection conversion and pointer blocking in [spec.md](/Users/kws/work/fis/touch-os/spec.md:558).
+
+This must remain true when the application supplies its own stub or production pointer source. The
+runtime decides whether a panel hit exists, including optional pointer-opaque surface hits, while
+the host or application decides how to use the returned claim/blocking result.
 
 **What To Implement First**
 

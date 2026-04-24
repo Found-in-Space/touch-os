@@ -1,3 +1,4 @@
+import type { ComponentHitTestContext, HitTarget } from "../core/component.js";
 import { createInsets, createRect, type Insets, type Rect, type Size } from "../core/geometry.js";
 
 export interface ChildCollection {
@@ -11,6 +12,10 @@ export interface ChildMeasureCollection extends ChildCollection {
 export interface ChildLayoutCollection extends ChildCollection {
   getMeasuredSize(childId: string): Size;
   setChildBounds(childId: string, rect: Rect): void;
+}
+
+export interface PointerOpaqueProps {
+  pointerOpaque?: boolean;
 }
 
 export function resolvePadding(
@@ -171,4 +176,21 @@ export function layoutFillChildren(
   }
 
   return inner;
+}
+
+export function resolvePointerOpaqueHit(
+  ctx: Pick<ComponentHitTestContext<PointerOpaqueProps, unknown>, "id" | "bounds" | "props">
+): HitTarget | null {
+  if (
+    ctx.props.pointerOpaque !== true ||
+    ctx.bounds.width <= 0 ||
+    ctx.bounds.height <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    targetId: `${ctx.id}:surface`,
+    role: "surface"
+  };
 }

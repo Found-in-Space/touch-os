@@ -1,7 +1,13 @@
 import { type DisplayComponent, type DisplayNode, createNode } from "../core/component.js";
-import { layoutHorizontalChildren, measureHorizontalChildren, resolvePadding } from "./shared.js";
+import {
+  layoutHorizontalChildren,
+  measureHorizontalChildren,
+  resolvePadding,
+  resolvePointerOpaqueHit,
+  type PointerOpaqueProps
+} from "./shared.js";
 
-export interface RowProps {
+export interface RowProps extends PointerOpaqueProps {
   children: readonly DisplayNode<unknown, unknown>[];
   gap?: number;
   padding?: number;
@@ -55,8 +61,8 @@ const RowComponent: DisplayComponent<RowProps> = {
         ]
       : [];
   },
-  hitTest() {
-    return null;
+  hitTest(ctx) {
+    return resolvePointerOpaqueHit(ctx);
   }
 };
 
