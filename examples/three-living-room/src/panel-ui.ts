@@ -124,6 +124,7 @@ export function createRoomPanelRoot(
             acceptsForwardedInput: false,
             fallbackLabel: "Mirror offline",
             preserveAspectRatio: true,
+            mirrorX: true,
             title: "Rear View"
           })
         },
@@ -204,7 +205,8 @@ export function createXrHudRoot(): DisplayNode<unknown> {
     interactive: false,
     acceptsForwardedInput: false,
     fallbackLabel: "Mirror offline",
-    preserveAspectRatio: true
+    preserveAspectRatio: true,
+    mirrorX: true
   });
 }
 
@@ -323,7 +325,8 @@ export function createWallMirrorRoot(): DisplayNode<unknown> {
     interactive: false,
     acceptsForwardedInput: false,
     fallbackLabel: "Wall mirror offline",
-    preserveAspectRatio: true
+    preserveAspectRatio: true,
+    mirrorX: true
   });
 }
 

@@ -78,6 +78,7 @@ export interface SurfaceDrawCommand extends DrawCommandBase {
   rect: Rect;
   handle: unknown;
   compositionMode?: SurfaceCompositionMode;
+  mirrorX?: boolean;
 }
 
 export type DrawCommand =

@@ -131,6 +131,7 @@ export interface EmbeddedSurfaceConfig {
   sourceId: string;
   interactive?: boolean;
   preserveAspectRatio?: boolean;
+  mirrorX?: boolean;
   desiredSourceType?: string;
   refreshPolicy?: "manual" | "always";
   acceptsForwardedInput?: boolean;
@@ -142,6 +143,7 @@ export interface EmbeddedSurfaceAttachment {
   sourceId: string;
   interactive: boolean;
   preserveAspectRatio: boolean;
+  mirrorX: boolean;
   desiredSourceType: string | undefined;
   refreshPolicy: "manual" | "always" | undefined;
   acceptsForwardedInput: boolean;

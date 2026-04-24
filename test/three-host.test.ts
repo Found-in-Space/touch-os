@@ -369,4 +369,128 @@ describe("three host adapters", () => {
 
     host.detach();
   });
+
+  it("mirrors embedded rear-view surfaces horizontally when requested", () => {
+    const surfaces = createEmbeddedSurfaceService();
+    const runtime = createRuntime({
+      root: createEmbeddedSurface("mirror", {
+        sourceId: "camera.rear",
+        mirrorX: true,
+        preserveAspectRatio: false
+      }),
+      surface: { width: 160, height: 100 },
+      theme: { padding: 0 },
+      services: { surfaces }
+    });
+    const image = { width: 64, height: 32 };
+    surfaces.setState("mirror", {
+      available: true,
+      handle: { image },
+      sourceWidth: 64,
+      sourceHeight: 32
+    });
+
+    const recordingCanvas = createRecordingCanvas({ width: 160, height: 100, pixelDensity: 1 });
+    const host = createScenePanelHost({
+      runtime,
+      surface: { width: 160, height: 100 },
+      panelWidth: 1,
+      panelHeight: 0.625,
+      createCanvas: () => recordingCanvas.canvas
+    });
+
+    host.attach();
+    host.render();
+
+    expect(recordingCanvas.operations).toContainEqual(["translate", 160, 0]);
+    expect(recordingCanvas.operations).toContainEqual(["scale", -1, 1]);
+    expect(recordingCanvas.operations).toContainEqual(["drawImage", image, 0, 0, 160, 100]);
+
+    host.detach();
+  });
 });
+
+function createRecordingCanvas(metrics: { width: number; height: number; pixelDensity: number }): {
+  canvas: ReturnType<typeof createFakeCanvas>;
+  operations: Array<readonly unknown[]>;
+} {
+  const operations: Array<readonly unknown[]> = [];
+  const context = {
+    fillStyle: "#000000" as string | CanvasGradient | CanvasPattern,
+    strokeStyle: "#000000" as string | CanvasGradient | CanvasPattern,
+    lineWidth: 1,
+    font: "14px sans-serif",
+    globalAlpha: 1,
+    textAlign: "left" as const,
+    textBaseline: "top" as const,
+    imageSmoothingEnabled: true,
+    save() {
+      operations.push(["save"]);
+    },
+    restore() {
+      operations.push(["restore"]);
+    },
+    setTransform(a: number, b: number, c: number, d: number, e: number, f: number) {
+      operations.push(["setTransform", a, b, c, d, e, f]);
+    },
+    translate(x: number, y: number) {
+      operations.push(["translate", x, y]);
+    },
+    scale(x: number, y: number) {
+      operations.push(["scale", x, y]);
+    },
+    clearRect(x: number, y: number, width: number, height: number) {
+      operations.push(["clearRect", x, y, width, height]);
+    },
+    beginPath() {
+      operations.push(["beginPath"]);
+    },
+    rect(x: number, y: number, width: number, height: number) {
+      operations.push(["rect", x, y, width, height]);
+    },
+    clip() {
+      operations.push(["clip"]);
+    },
+    fillRect(x: number, y: number, width: number, height: number) {
+      operations.push(["fillRect", x, y, width, height]);
+    },
+    strokeRect(x: number, y: number, width: number, height: number) {
+      operations.push(["strokeRect", x, y, width, height]);
+    },
+    moveTo(x: number, y: number) {
+      operations.push(["moveTo", x, y]);
+    },
+    lineTo(x: number, y: number) {
+      operations.push(["lineTo", x, y]);
+    },
+    stroke() {
+      operations.push(["stroke"]);
+    },
+    arc(x: number, y: number, radius: number, startAngle: number, endAngle: number) {
+      operations.push(["arc", x, y, radius, startAngle, endAngle]);
+    },
+    fill() {
+      operations.push(["fill"]);
+    },
+    fillText(text: string, x: number, y: number) {
+      operations.push(["fillText", text, x, y]);
+    },
+    measureText(text: string) {
+      return { width: text.length * 8 };
+    },
+    drawImage(image: unknown, x: number, y: number, width: number, height: number) {
+      operations.push(["drawImage", image, x, y, width, height]);
+    }
+  };
+
+  return {
+    canvas: {
+      width: metrics.width * metrics.pixelDensity,
+      height: metrics.height * metrics.pixelDensity,
+      getContext(type: "2d") {
+        return type === "2d" ? context : null;
+      }
+    },
+    operations
+  };
+}

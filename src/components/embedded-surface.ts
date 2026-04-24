@@ -12,6 +12,7 @@ export interface EmbeddedSurfaceProps {
   title?: string;
   interactive?: boolean;
   preserveAspectRatio?: boolean;
+  mirrorX?: boolean;
   acceptsForwardedInput?: boolean;
   desiredSourceType?: string;
   refreshPolicy?: "manual" | "always";
@@ -128,7 +129,8 @@ const EmbeddedSurfaceComponent: DisplayComponent<EmbeddedSurfaceProps, EmbeddedS
         role: "embedded-surface-viewport",
         rect: viewportRect,
         handle: ctx.services.surfaces.getHandle(ctx.id),
-        compositionMode: ctx.props.compositionMode ?? "copy"
+        compositionMode: ctx.props.compositionMode ?? "copy",
+        mirrorX: attachment?.mirrorX ?? ctx.props.mirrorX ?? false
       });
     } else {
       commands.push({
@@ -307,6 +309,7 @@ function createEmbeddedSurfaceConfig(props: EmbeddedSurfaceProps) {
     ...(props.preserveAspectRatio === undefined
       ? {}
       : { preserveAspectRatio: props.preserveAspectRatio }),
+    ...(props.mirrorX === undefined ? {} : { mirrorX: props.mirrorX }),
     ...(props.acceptsForwardedInput === undefined
       ? {}
       : { acceptsForwardedInput: props.acceptsForwardedInput }),

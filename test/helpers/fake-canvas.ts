@@ -17,6 +17,10 @@ class FakeCanvasContext implements CanvasContextLike {
 
   setTransform(): void {}
 
+  translate(): void {}
+
+  scale(): void {}
+
   clearRect(): void {}
 
   beginPath(): void {}

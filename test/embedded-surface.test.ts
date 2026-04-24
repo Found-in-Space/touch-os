@@ -27,7 +27,8 @@ describe("embedded surface", () => {
         sourceId: "camera.rear",
         title: "Rear Camera",
         interactive: true,
-        acceptsForwardedInput: true
+        acceptsForwardedInput: true,
+        mirrorX: true
       }),
       surface: { width: 320, height: 180 },
       services: { surfaces }
@@ -38,14 +39,18 @@ describe("embedded surface", () => {
       config: {
         sourceId: "camera.rear",
         interactive: true,
-        acceptsForwardedInput: true
+        acceptsForwardedInput: true,
+        mirrorX: true
       }
     });
 
     const snapshot = runtime.render();
     expect(
       snapshot.commands.some(
-        (command) => command.type === "surface" && command.role === "embedded-surface-viewport"
+        (command) =>
+          command.type === "surface" &&
+          command.role === "embedded-surface-viewport" &&
+          command.mirrorX === true
       )
     ).toBe(true);
 
@@ -54,7 +59,8 @@ describe("embedded surface", () => {
         sourceId: "camera.front",
         title: "Front Camera",
         interactive: false,
-        acceptsForwardedInput: false
+        acceptsForwardedInput: false,
+        mirrorX: false
       })
     );
     runtime.render();
@@ -64,7 +70,8 @@ describe("embedded surface", () => {
       config: {
         sourceId: "camera.front",
         interactive: false,
-        acceptsForwardedInput: false
+        acceptsForwardedInput: false,
+        mirrorX: false
       }
     });
 
@@ -173,6 +180,7 @@ describe("embedded surface", () => {
     }
 
     expect(viewport.compositionMode).toBe("composite");
+    expect(viewport.mirrorX).toBe(false);
     expect(surfaces.getAttachment("monitor")).toMatchObject({
       sourceWidth: 640,
       sourceHeight: 480,
@@ -215,6 +223,31 @@ describe("embedded surface", () => {
     expect(viewport.rect.height).toBeCloseTo(156, 5);
     expect(viewport.rect.x).toBeCloseTo(21.3333333333, 5);
     expect(viewport.rect.y).toBeCloseTo(12, 5);
+  });
+
+  it("marks a surface viewport as horizontally mirrored when requested", () => {
+    const surfaces = createMockEmbeddedSurfaceService({
+      available: true,
+      handle: { kind: "mock-surface" }
+    });
+
+    const runtime = createRuntime({
+      root: createEmbeddedSurface("mirror", {
+        sourceId: "camera.rear",
+        mirrorX: true
+      }),
+      surface: { width: 320, height: 180 },
+      services: { surfaces }
+    });
+
+    const snapshot = runtime.render();
+    const viewport = findCommandByRole(snapshot.commands, "embedded-surface-viewport");
+    if (viewport.type !== "surface") {
+      throw new Error("Expected the embedded viewport to render as a surface command.");
+    }
+
+    expect(viewport.mirrorX).toBe(true);
+    expect(surfaces.getAttachment("mirror")?.mirrorX).toBe(true);
   });
 
   it("does not claim or forward input for a non-interactive mirror", () => {
@@ -267,6 +300,7 @@ function createMockEmbeddedSurfaceService(options?: {
       sourceId: fallback?.sourceId ?? componentId,
       interactive: fallback?.interactive ?? false,
       preserveAspectRatio: fallback?.preserveAspectRatio ?? true,
+      mirrorX: fallback?.mirrorX ?? false,
       desiredSourceType: fallback?.desiredSourceType,
       refreshPolicy: fallback?.refreshPolicy,
       acceptsForwardedInput: fallback?.acceptsForwardedInput ?? false,
@@ -295,6 +329,7 @@ function createMockEmbeddedSurfaceService(options?: {
       ...config,
       interactive: config.interactive ?? attachment.interactive,
       preserveAspectRatio: config.preserveAspectRatio ?? attachment.preserveAspectRatio,
+      mirrorX: config.mirrorX ?? attachment.mirrorX,
       acceptsForwardedInput: config.acceptsForwardedInput ?? attachment.acceptsForwardedInput,
       compositionMode: config.compositionMode ?? attachment.compositionMode,
       forwardedEvents: attachment.forwardedEvents

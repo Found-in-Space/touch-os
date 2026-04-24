@@ -34,6 +34,8 @@ class RecordingCanvasContext implements CanvasContextLike {
   save(): void {}
   restore(): void {}
   setTransform(): void {}
+  translate(): void {}
+  scale(): void {}
   clearRect(): void {}
   beginPath(): void {}
   rect(): void {}

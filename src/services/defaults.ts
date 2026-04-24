@@ -462,6 +462,7 @@ export function createEmbeddedSurfaceService(onChange?: ChangeListener): Embedde
       sourceId: fallback?.sourceId ?? componentId,
       interactive: fallback?.interactive ?? false,
       preserveAspectRatio: fallback?.preserveAspectRatio ?? true,
+      mirrorX: fallback?.mirrorX ?? false,
       desiredSourceType: fallback?.desiredSourceType,
       refreshPolicy: fallback?.refreshPolicy,
       acceptsForwardedInput: fallback?.acceptsForwardedInput ?? false,
@@ -490,6 +491,7 @@ export function createEmbeddedSurfaceService(onChange?: ChangeListener): Embedde
       ...config,
       interactive: config.interactive ?? attachment.interactive,
       preserveAspectRatio: config.preserveAspectRatio ?? attachment.preserveAspectRatio,
+      mirrorX: config.mirrorX ?? attachment.mirrorX,
       acceptsForwardedInput: config.acceptsForwardedInput ?? attachment.acceptsForwardedInput,
       compositionMode: config.compositionMode ?? attachment.compositionMode,
       forwardedEvents: attachment.forwardedEvents

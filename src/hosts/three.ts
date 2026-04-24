@@ -36,6 +36,8 @@ export interface CanvasContextLike {
   save(): void;
   restore(): void;
   setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void;
+  translate(x: number, y: number): void;
+  scale(x: number, y: number): void;
   clearRect(x: number, y: number, width: number, height: number): void;
   beginPath(): void;
   rect(x: number, y: number, width: number, height: number): void;
@@ -1124,18 +1126,43 @@ function drawSurfaceCommand(context: CanvasContextLike, command: SurfaceDrawComm
     return;
   }
 
+  const drawRect = command.mirrorX
+    ? { x: 0, y: 0, width: command.rect.width, height: command.rect.height }
+    : command.rect;
+
+  if (command.mirrorX) {
+    context.save();
+    context.translate(command.rect.x + command.rect.width, command.rect.y);
+    context.scale(-1, 1);
+  }
+
   if (isThreeSurfaceRenderHandle(command.handle)) {
-    command.handle.draw(context, command.rect);
+    command.handle.draw(context, drawRect);
+    if (command.mirrorX) {
+      context.restore();
+    }
     return;
   }
 
   if (typeof context.drawImage === "function" && isDrawImageHandle(command.handle)) {
-    context.drawImage(command.handle.image, command.rect.x, command.rect.y, command.rect.width, command.rect.height);
+    context.drawImage(
+      command.handle.image,
+      drawRect.x,
+      drawRect.y,
+      drawRect.width,
+      drawRect.height
+    );
+    if (command.mirrorX) {
+      context.restore();
+    }
     return;
   }
 
   context.fillStyle = "#111827";
-  context.fillRect(command.rect.x, command.rect.y, command.rect.width, command.rect.height);
+  context.fillRect(drawRect.x, drawRect.y, drawRect.width, drawRect.height);
+  if (command.mirrorX) {
+    context.restore();
+  }
 }
 
 function isThreeSurfaceRenderHandle(handle: unknown): handle is ThreeSurfaceRenderHandle {
