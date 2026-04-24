@@ -1,6 +1,6 @@
 {
   "name": "@foundinspace/touch-os",
-  "version": "0.1.0",
+  "version": "0.2.0-dev.0",
   "description": "A virtual-device UI runtime for shared surfaces in games, XR, simulations, and 3D apps.",
   "license": "MIT",
   "type": "module",
