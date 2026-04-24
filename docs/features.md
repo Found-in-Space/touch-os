@@ -6,7 +6,7 @@ It is intentionally scoped to what exists in the package today. Future work live
 
 ## Core Runtime
 
-Shipped in `@foundinspace/touch-os` and `@foundinspace/touch-os/core`:
+Shipped in `@found-in-space/touch-os` and `@found-in-space/touch-os/core`:
 
 - `createRuntime` for mounting a `DisplayNode` tree and producing render snapshots
 - explicit component lifecycle support: mount, update, measure, layout, render, hit test, event handling, dispose
@@ -31,7 +31,7 @@ Shipped in `@foundinspace/touch-os` and `@foundinspace/touch-os/core`:
 
 ## Built-In Components
 
-Shipped in `@foundinspace/touch-os/components`:
+Shipped in `@found-in-space/touch-os/components`:
 
 - `createButton`
   Generic action button.
@@ -64,7 +64,7 @@ Shipped in `@foundinspace/touch-os/components`:
 
 ## Built-In Containers
 
-Shipped in `@foundinspace/touch-os/containers`:
+Shipped in `@found-in-space/touch-os/containers`:
 
 - `createRow`
 - `createColumn`
@@ -79,7 +79,7 @@ These cover the core runtime composition patterns needed for panels, forms, HUD 
 
 ## Runtime Services
 
-Shipped in `@foundinspace/touch-os/services`:
+Shipped in `@found-in-space/touch-os/services`:
 
 - layout service
 - navigation service
@@ -132,7 +132,7 @@ The current implementation already supports multi-presentation publication by so
 
 ### Generic Host Contracts
 
-Shipped in `@foundinspace/touch-os/hosts` and re-exported as types from the root package:
+Shipped in `@found-in-space/touch-os/hosts` and re-exported as types from the root package:
 
 - `HostFrame`
 - `HostAdapter`
@@ -141,7 +141,7 @@ These let custom hosts drive the runtime without importing Three.js-specific cod
 
 ### Three.js Host Package
 
-Shipped in `@foundinspace/touch-os/hosts/three`:
+Shipped in `@found-in-space/touch-os/hosts/three`:
 
 - `createScenePanelHost`
 - `createPoseAnchoredPanelHost`
@@ -168,7 +168,7 @@ Current Three.js host coverage includes:
 
 ## Declarative Schema Adapter
 
-Shipped in `@foundinspace/touch-os/adapters/schema`:
+Shipped in `@found-in-space/touch-os/adapters/schema`:
 
 - `createSchemaAdapter`
 - schema document, page, item, and registration contracts

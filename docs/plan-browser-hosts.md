@@ -155,8 +155,8 @@ Its role should not be:
 
 Recommended public shape:
 
-- `@foundinspace/touch-os/hosts/browser`
-- optional `@foundinspace/touch-os/hosts/dom`
+- `@found-in-space/touch-os/hosts/browser`
+- optional `@found-in-space/touch-os/hosts/dom`
 
 Recommended primary factory:
 

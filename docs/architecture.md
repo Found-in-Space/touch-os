@@ -24,21 +24,21 @@ It must remain:
 
 The published surface is intentionally small and explicit:
 
-- `@foundinspace/touch-os`
+- `@found-in-space/touch-os`
   Headless root entrypoint for the core runtime, built-in components, containers, services, and generic host contract types.
-- `@foundinspace/touch-os/core`
+- `@found-in-space/touch-os/core`
   Runtime contracts, geometry, normalized events, draw commands, and `createRuntime`.
-- `@foundinspace/touch-os/components`
+- `@found-in-space/touch-os/components`
   Built-in generic components.
-- `@foundinspace/touch-os/containers`
+- `@found-in-space/touch-os/containers`
   Built-in composition primitives.
-- `@foundinspace/touch-os/services`
+- `@found-in-space/touch-os/services`
   Service contracts and default implementations.
-- `@foundinspace/touch-os/hosts`
+- `@found-in-space/touch-os/hosts`
   Generic host contract types only.
-- `@foundinspace/touch-os/hosts/three`
+- `@found-in-space/touch-os/hosts/three`
   Three.js-specific host adapters and pointer interop helpers.
-- `@foundinspace/touch-os/adapters/schema`
+- `@found-in-space/touch-os/adapters/schema`
   Optional declarative schema adapter.
 
 The root package stays headless by design. Host-specific runtime code belongs behind explicit host subpaths.
@@ -198,7 +198,7 @@ Architectural rules for host code:
 - host adapters may translate native input into normalized runtime input
 - host adapters may expose higher-level helper contracts when those helpers stay host-scoped
 
-The current Three.js package follows this boundary by keeping panel placement, raycasting, pointer sources, and panel interop in `@foundinspace/touch-os/hosts/three`.
+The current Three.js package follows this boundary by keeping panel placement, raycasting, pointer sources, and panel interop in `@found-in-space/touch-os/hosts/three`.
 
 ## Declarative Schema Layer
 

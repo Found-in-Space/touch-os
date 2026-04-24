@@ -25,14 +25,14 @@ The runtime stays headless and display-space-only. Hosts own environment-specifi
 
 | Entrypoint | Purpose |
 | --- | --- |
-| `@foundinspace/touch-os` | Headless root package. Re-exports core runtime, components, containers, services, and generic host contract types. |
-| `@foundinspace/touch-os/core` | Core runtime types, geometry helpers, events, draw commands, and `createRuntime`. |
-| `@foundinspace/touch-os/components` | Built-in leaf components such as buttons, sliders, choice groups, graphs, and embedded surfaces. |
-| `@foundinspace/touch-os/containers` | Built-in containers such as row, column, stack, overlay, scroll, page, section, and dock layout. |
-| `@foundinspace/touch-os/services` | Runtime service contracts plus default in-memory implementations. |
-| `@foundinspace/touch-os/hosts` | Generic host contract types only. |
-| `@foundinspace/touch-os/hosts/three` | Three.js host adapters, panel drivers, pointer sources, and panel interactor helpers. |
-| `@foundinspace/touch-os/adapters/schema` | Optional declarative schema adapter. |
+| `@found-in-space/touch-os` | Headless root package. Re-exports core runtime, components, containers, services, and generic host contract types. |
+| `@found-in-space/touch-os/core` | Core runtime types, geometry helpers, events, draw commands, and `createRuntime`. |
+| `@found-in-space/touch-os/components` | Built-in leaf components such as buttons, sliders, choice groups, graphs, and embedded surfaces. |
+| `@found-in-space/touch-os/containers` | Built-in containers such as row, column, stack, overlay, scroll, page, section, and dock layout. |
+| `@found-in-space/touch-os/services` | Runtime service contracts plus default in-memory implementations. |
+| `@found-in-space/touch-os/hosts` | Generic host contract types only. |
+| `@found-in-space/touch-os/hosts/three` | Three.js host adapters, panel drivers, pointer sources, and panel interactor helpers. |
+| `@found-in-space/touch-os/adapters/schema` | Optional declarative schema adapter. |
 
 The root package intentionally stays headless. The Three.js adapter is an explicit subpath so consumers who only need the runtime do not pull `three` unintentionally.
 
@@ -41,13 +41,13 @@ The root package intentionally stays headless. The Three.js adapter is an explic
 Core runtime only:
 
 ```sh
-npm install @foundinspace/touch-os
+npm install @found-in-space/touch-os
 ```
 
 Core runtime plus the Three.js host:
 
 ```sh
-npm install @foundinspace/touch-os three
+npm install @found-in-space/touch-os three
 ```
 
 ## Quick Start
@@ -57,7 +57,7 @@ import {
   createButton,
   createColumn,
   createRuntime
-} from "@foundinspace/touch-os";
+} from "@found-in-space/touch-os";
 
 const root = createColumn("root", {
   gap: 12,
@@ -110,15 +110,15 @@ The normal integration loop is:
 
 ## Three.js Host Support
 
-The current shipping host integration is `@foundinspace/touch-os/hosts/three`.
+The current shipping host integration is `@found-in-space/touch-os/hosts/three`.
 
 ```ts
 import * as THREE from "three";
 import {
   createButton,
   createRuntime
-} from "@foundinspace/touch-os";
-import { createScenePanelHost } from "@foundinspace/touch-os/hosts/three";
+} from "@found-in-space/touch-os";
+import { createScenePanelHost } from "@found-in-space/touch-os/hosts/three";
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera();

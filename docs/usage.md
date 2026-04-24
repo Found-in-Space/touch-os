@@ -19,7 +19,7 @@ import {
   createColumn,
   createRuntime,
   createSlider
-} from "@foundinspace/touch-os";
+} from "@found-in-space/touch-os";
 
 const root = createColumn("settings", {
   gap: 12,
@@ -123,7 +123,7 @@ import {
   createNode,
   type DisplayComponent,
   type DisplayNode
-} from "@foundinspace/touch-os/core";
+} from "@found-in-space/touch-os/core";
 
 interface StatusChipProps {
   text: string;
@@ -185,7 +185,7 @@ import {
   createEmbeddedSurface,
   createEmbeddedSurfaceService,
   createRuntime
-} from "@foundinspace/touch-os";
+} from "@found-in-space/touch-os";
 
 const surfaces = createEmbeddedSurfaceService();
 
@@ -217,8 +217,8 @@ One published `sourceId` may be referenced by more than one presentation. The cu
 The schema adapter compiles a document to a normal runtime root plus a controller API.
 
 ```ts
-import { createRuntime } from "@foundinspace/touch-os";
-import { createSchemaAdapter } from "@foundinspace/touch-os/adapters/schema";
+import { createRuntime } from "@found-in-space/touch-os";
+import { createSchemaAdapter } from "@found-in-space/touch-os/adapters/schema";
 
 const adapter = createSchemaAdapter("settings-shell", {
   pages: [
@@ -266,7 +266,7 @@ import type {
   DisplayRuntime,
   HostAdapter,
   HostFrame
-} from "@foundinspace/touch-os";
+} from "@found-in-space/touch-os";
 
 function createHost(runtime: DisplayRuntime): HostAdapter {
   return {
@@ -290,12 +290,12 @@ That is enough for a canvas host, a texture-backed scene host, or a test harness
 
 ## Use The Three.js Host Package
 
-The current first-class host integration is `@foundinspace/touch-os/hosts/three`.
+The current first-class host integration is `@found-in-space/touch-os/hosts/three`.
 
 ```ts
 import * as THREE from "three";
-import { createRuntime, createTextLabel } from "@foundinspace/touch-os";
-import { createScenePanelHost } from "@foundinspace/touch-os/hosts/three";
+import { createRuntime, createTextLabel } from "@found-in-space/touch-os";
+import { createScenePanelHost } from "@found-in-space/touch-os/hosts/three";
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera();

@@ -32,14 +32,14 @@
 
 Recommended package shape:
 
-- `@foundinspace/touch-os`
-- `@foundinspace/touch-os/core`
-- `@foundinspace/touch-os/components`
-- `@foundinspace/touch-os/containers`
-- `@foundinspace/touch-os/services`
-- `@foundinspace/touch-os/hosts`
-- `@foundinspace/touch-os/hosts/three`
-- `@foundinspace/touch-os/adapters/schema`
+- `@found-in-space/touch-os`
+- `@found-in-space/touch-os/core`
+- `@found-in-space/touch-os/components`
+- `@found-in-space/touch-os/containers`
+- `@found-in-space/touch-os/services`
+- `@found-in-space/touch-os/hosts`
+- `@found-in-space/touch-os/hosts/three`
+- `@found-in-space/touch-os/adapters/schema`
 
 ## Architecture Boundaries
 
