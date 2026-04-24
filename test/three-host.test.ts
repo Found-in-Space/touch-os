@@ -182,6 +182,7 @@ describe("three host adapters", () => {
     expect(host.mesh.position.x).toBeCloseTo(0.1);
     expect(host.mesh.position.y).toBeCloseTo(-0.05);
     expect(host.mesh.position.z).toBeCloseTo(-0.75);
+    expect(host.mesh.renderOrder).toBe(10);
     expect(runtime.takeOutputs()).toContainEqual({
       type: "action",
       actionId: "fixture.confirm",

@@ -667,7 +667,8 @@ export function createHudHost(options: HudHostOptions): ThreePanelHost {
       z: -distance
     },
     sizing: options.sizing ?? "fixed",
-    depthTest: options.depthTest ?? false
+    depthTest: options.depthTest ?? false,
+    renderOrder: options.renderOrder ?? 10
   });
 }
 

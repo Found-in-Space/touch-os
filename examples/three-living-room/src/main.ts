@@ -145,7 +145,7 @@ wallMirrorDriverBinding.driver.attach();
 wallPictureDriverBinding.driver.attach();
 
 const shaderPictureSource = createShaderPictureSource();
-const shaderPicturePresenter = createShaderPicturePresenter(wallPictureDriverBinding.driver.host.mesh);
+const shaderPicturePresenter = createShaderPicturePresenter(wallPictureDriverBinding.driver.host);
 
 const pressedKeys = new Set<string>();
 let lookActive = false;

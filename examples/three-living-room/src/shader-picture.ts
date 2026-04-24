@@ -124,9 +124,27 @@ export function createShaderPictureSource(options?: {
     render(renderer, timestamp) {
       uniforms.time.value = timestamp / 1000;
       const previousTarget = renderer.getRenderTarget();
+      const previousViewport = renderer.getViewport(new THREE.Vector4());
+      const previousScissor = renderer.getScissor(new THREE.Vector4());
+      const previousScissorTest = renderer.getScissorTest();
+      const previousXrEnabled = renderer.xr.enabled;
+
+      // Render the offscreen picture in a plain mono pass so XR view state
+      // does not leak into the composite source texture.
+      renderer.xr.enabled = false;
       renderer.setRenderTarget(target);
-      renderer.render(scene, camera);
-      renderer.setRenderTarget(previousTarget);
+      renderer.setViewport(0, 0, size.width, size.height);
+      renderer.setScissor(0, 0, size.width, size.height);
+      renderer.setScissorTest(false);
+      try {
+        renderer.render(scene, camera);
+      } finally {
+        renderer.setRenderTarget(previousTarget);
+        renderer.setViewport(previousViewport);
+        renderer.setScissor(previousScissor);
+        renderer.setScissorTest(previousScissorTest);
+        renderer.xr.enabled = previousXrEnabled;
+      }
     },
     publish(surfaces, timestamp) {
       surfaces.publish(WALL_PICTURE_SOURCE_ID, {
@@ -150,25 +168,35 @@ export function createShaderPictureSource(options?: {
   };
 }
 
-export function createShaderPicturePresenter(parent: THREE.Object3D): ShaderPicturePresenter {
+export function createShaderPicturePresenter(host: ThreePanelHost): ShaderPicturePresenter {
   const geometry = new THREE.PlaneGeometry(1, 1);
   const material = new THREE.MeshBasicMaterial({
     color: "#ffffff",
     side: THREE.DoubleSide,
     toneMapped: false,
     transparent: true,
-    depthTest: false,
-    depthWrite: false
+    depthTest: true,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.z = 0.01;
   mesh.visible = false;
-  parent.add(mesh);
+  host.mesh.add(mesh);
   let currentTexture: THREE.Texture | undefined;
 
+  if (host.material.depthWrite) {
+    // The carrier panel provides frame pixels, but the composite child
+    // should own visible depth within the picture area.
+    host.material.depthWrite = false;
+    host.material.needsUpdate = true;
+  }
+
   return {
-    update(host) {
-      const placement = resolveCompositeSurfacePlacements(host).find(
+    update(currentHost) {
+      const placement = resolveCompositeSurfacePlacements(currentHost).find(
         (entry) => entry.componentId === WALL_PICTURE_COMPONENT_ID
       );
       if (!placement || !isShaderPictureSurfaceHandle(placement.command.handle)) {
@@ -182,7 +210,7 @@ export function createShaderPicturePresenter(parent: THREE.Object3D): ShaderPict
         material.map = nextTexture;
         material.needsUpdate = true;
       }
-      mesh.renderOrder = host.mesh.renderOrder + 1;
+      mesh.renderOrder = currentHost.mesh.renderOrder + 1;
       mesh.position.set(placement.localCenter.x, placement.localCenter.y, 0.01);
       mesh.scale.set(
         placement.mirrorX ? -placement.size.width : placement.size.width,
@@ -192,7 +220,7 @@ export function createShaderPicturePresenter(parent: THREE.Object3D): ShaderPict
       mesh.visible = true;
     },
     dispose() {
-      parent.remove(mesh);
+      host.mesh.remove(mesh);
       geometry.dispose();
       material.dispose();
     }

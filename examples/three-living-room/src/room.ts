@@ -192,13 +192,13 @@ export function createLivingRoomScene(): LivingRoomScene {
   room.add(pictureFrame);
 
   const pictureBacking = new THREE.Mesh(
-    new THREE.BoxGeometry(1.18, 0.76, 0.02),
+    new THREE.BoxGeometry(1.18, 0.76, 0.012),
     new THREE.MeshStandardMaterial({
       color: "#140f0c",
       roughness: 0.82
     })
   );
-  pictureBacking.position.set(0, 1.58, 2.995);
+  pictureBacking.position.set(0, 1.58, 3.012);
   room.add(pictureBacking);
 
   const lampBase = new THREE.Mesh(
