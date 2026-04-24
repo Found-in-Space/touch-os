@@ -1,5 +1,6 @@
 import { type DisplayComponent, type DisplayNode, createNode } from "../core/component.js";
 import { createRect, rectContainsPoint } from "../core/geometry.js";
+import { clearFocusableRegistration, syncFocusableRegistration } from "./focusable.js";
 
 export interface ToggleProps {
   label: string;
@@ -9,6 +10,12 @@ export interface ToggleProps {
 
 const ToggleComponent: DisplayComponent<ToggleProps> = {
   kind: "toggle",
+  mount(ctx) {
+    syncFocusableRegistration(ctx, true, `${ctx.id}:switch`);
+  },
+  update(ctx) {
+    syncFocusableRegistration(ctx, true, `${ctx.id}:switch`);
+  },
   measure(ctx) {
     const theme = ctx.services.theme.getTokens();
     return {
@@ -91,6 +98,9 @@ const ToggleComponent: DisplayComponent<ToggleProps> = {
       field: ctx.props.field ?? "value",
       value: !ctx.props.value
     });
+  },
+  dispose(ctx) {
+    clearFocusableRegistration(ctx);
   }
 };
 

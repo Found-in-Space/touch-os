@@ -1,6 +1,7 @@
 import { type DisplayComponent, type DisplayNode, createNode } from "../core/component.js";
 import { clamp, createRect, rectContainsPoint } from "../core/geometry.js";
 import type { ThemeTokens } from "../services/contracts.js";
+import { clearFocusableRegistration, syncFocusableRegistration } from "./focusable.js";
 import {
   normalizeSliderValue,
   normalizeSliderProps,
@@ -18,7 +19,12 @@ interface SliderState {
 
 const SliderComponent: DisplayComponent<SliderProps, SliderState> = {
   kind: "slider",
-  mount() {
+  mount(ctx) {
+    syncFocusableRegistration(
+      ctx,
+      !(normalizeSliderProps(ctx.props, `Slider "${ctx.id}"`).disabled ?? false),
+      `${ctx.id}:thumb`
+    );
     return {
       dragging: false,
       hovered: false,
@@ -27,6 +33,7 @@ const SliderComponent: DisplayComponent<SliderProps, SliderState> = {
   },
   update(ctx) {
     const props = normalizeSliderProps(ctx.props, `Slider "${ctx.id}"`);
+    syncFocusableRegistration(ctx, !(props.disabled ?? false), `${ctx.id}:thumb`);
     if (!props.disabled) {
       return;
     }
@@ -34,9 +41,6 @@ const SliderComponent: DisplayComponent<SliderProps, SliderState> = {
     ctx.state.dragging = false;
     ctx.state.hovered = false;
     ctx.state.lastEmittedValue = undefined;
-    if (ctx.interaction.focusedComponentId === ctx.id) {
-      ctx.services.focus.clearFocus();
-    }
   },
   measure(ctx) {
     const theme = ctx.services.theme.getTokens();
@@ -166,6 +170,9 @@ const SliderComponent: DisplayComponent<SliderProps, SliderState> = {
         emitSliderValue(ctx, props, ctx.event.localX);
         break;
     }
+  },
+  dispose(ctx) {
+    clearFocusableRegistration(ctx);
   }
 };
 

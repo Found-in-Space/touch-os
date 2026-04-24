@@ -1,6 +1,7 @@
 import { type DisplayComponent, type DisplayNode, createNode } from "../core/component.js";
 import type { DrawCommand } from "../core/draw.js";
 import { createRect, rectContainsPoint, type Rect } from "../core/geometry.js";
+import { clearFocusableRegistration, syncFocusableRegistration } from "./focusable.js";
 
 export interface DPadDirectionBinding {
   actionId: string;
@@ -29,13 +30,23 @@ const DIRECTION_ORDER: readonly DPadDirection[] = ["up", "left", "right", "down"
 
 const DPadComponent: DisplayComponent<DPadProps, DPadState> = {
   kind: "d-pad",
-  mount() {
+  mount(ctx) {
+    syncFocusableRegistration(
+      ctx,
+      isDPadFocusable(ctx.props),
+      resolveDefaultDirectionTargetId(ctx.id, ctx.props)
+    );
     return {
       hoveredTargetId: undefined,
       activeDirection: undefined
     };
   },
   update(ctx) {
+    syncFocusableRegistration(
+      ctx,
+      isDPadFocusable(ctx.props),
+      resolveDefaultDirectionTargetId(ctx.id, ctx.props)
+    );
     if (!ctx.state.activeDirection) {
       return;
     }
@@ -186,6 +197,7 @@ const DPadComponent: DisplayComponent<DPadProps, DPadState> = {
     }
   },
   dispose(ctx) {
+    clearFocusableRegistration(ctx);
     stopDirection(ctx);
   }
 };
@@ -232,6 +244,29 @@ function getDirectionBinding(
     case "right":
       return props.right;
   }
+}
+
+function isDPadFocusable(props: DPadProps): boolean {
+  if (props.disabled) {
+    return false;
+  }
+
+  return DIRECTION_ORDER.some((direction) => {
+    const binding = getDirectionBinding(props, direction);
+    return Boolean(binding && !binding.disabled);
+  });
+}
+
+function resolveDefaultDirectionTargetId(
+  componentId: string,
+  props: DPadProps
+): string | undefined {
+  const direction = DIRECTION_ORDER.find((entry) => {
+    const binding = getDirectionBinding(props, entry);
+    return Boolean(binding && !binding.disabled);
+  });
+
+  return direction ? getDirectionTargetId(componentId, direction) : undefined;
 }
 
 function getDirectionRect(bounds: Rect, direction: DPadDirection): Rect {

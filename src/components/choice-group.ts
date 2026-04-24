@@ -7,6 +7,7 @@ import {
 import type { DrawCommand } from "../core/draw.js";
 import { createRect, rectContainsPoint, type Rect } from "../core/geometry.js";
 import type { ThemeTokens } from "../services/contracts.js";
+import { clearFocusableRegistration, syncFocusableRegistration } from "./focusable.js";
 import {
   getChoiceGroupField,
   getChoiceGroupSelectedValues,
@@ -36,7 +37,13 @@ const INDICATOR_SIZE = 16;
 
 const ChoiceGroupComponent: DisplayComponent<ChoiceGroupProps<string>, ChoiceGroupState> = {
   kind: "choice-group",
-  mount() {
+  mount(ctx) {
+    const props = normalizeChoiceGroupProps(ctx.props, `Choice group "${ctx.id}"`);
+    syncFocusableRegistration(
+      ctx,
+      isChoiceGroupFocusable(props),
+      resolveChoiceGroupDefaultTargetId(ctx.id, props)
+    );
     return {
       hoveredTargetId: undefined,
       pressedTargetId: undefined
@@ -44,15 +51,17 @@ const ChoiceGroupComponent: DisplayComponent<ChoiceGroupProps<string>, ChoiceGro
   },
   update(ctx) {
     const props = normalizeChoiceGroupProps(ctx.props, `Choice group "${ctx.id}"`);
+    syncFocusableRegistration(
+      ctx,
+      isChoiceGroupFocusable(props),
+      resolveChoiceGroupDefaultTargetId(ctx.id, props)
+    );
     if (!props.disabled) {
       return;
     }
 
     ctx.state.hoveredTargetId = undefined;
     ctx.state.pressedTargetId = undefined;
-    if (ctx.interaction.focusedComponentId === ctx.id) {
-      ctx.services.focus.clearFocus();
-    }
   },
   measure(ctx) {
     const props = normalizeChoiceGroupProps(ctx.props, `Choice group "${ctx.id}"`);
@@ -306,6 +315,9 @@ const ChoiceGroupComponent: DisplayComponent<ChoiceGroupProps<string>, ChoiceGro
         break;
       }
     }
+  },
+  dispose(ctx) {
+    clearFocusableRegistration(ctx);
   }
 };
 
@@ -373,4 +385,26 @@ function getChoiceGroupTargetId<TValue extends string>(
   option: ChoiceOption<TValue>
 ): string {
   return `${componentId}:option:${option.value}`;
+}
+
+function isChoiceGroupFocusable<TValue extends string>(
+  props: ChoiceGroupProps<TValue>
+): boolean {
+  if (props.disabled) {
+    return false;
+  }
+
+  return props.options.some((option) => !option.disabled);
+}
+
+function resolveChoiceGroupDefaultTargetId<TValue extends string>(
+  componentId: string,
+  props: ChoiceGroupProps<TValue>
+): string | undefined {
+  const selectedValues = new Set(getChoiceGroupSelectedValues(props));
+  const defaultOption =
+    props.options.find((option) => !option.disabled && selectedValues.has(option.value)) ??
+    props.options.find((option) => !option.disabled);
+
+  return defaultOption ? getChoiceGroupTargetId(componentId, defaultOption) : undefined;
 }

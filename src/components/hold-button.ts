@@ -1,5 +1,6 @@
 import { type DisplayComponent, type DisplayNode, createNode } from "../core/component.js";
 import { rectContainsPoint } from "../core/geometry.js";
+import { clearFocusableRegistration, syncFocusableRegistration } from "./focusable.js";
 
 export interface HoldButtonProps {
   label: string;
@@ -17,7 +18,8 @@ interface HoldButtonState {
 
 const HoldButtonComponent: DisplayComponent<HoldButtonProps, HoldButtonState> = {
   kind: "hold-button",
-  mount() {
+  mount(ctx) {
+    syncFocusableRegistration(ctx, !(ctx.props.disabled ?? false), `${ctx.id}:face`);
     return {
       hovered: false,
       pressed: false,
@@ -25,6 +27,7 @@ const HoldButtonComponent: DisplayComponent<HoldButtonProps, HoldButtonState> = 
     };
   },
   update(ctx) {
+    syncFocusableRegistration(ctx, !(ctx.props.disabled ?? false), `${ctx.id}:face`);
     if (!ctx.props.disabled || !ctx.state.active) {
       return;
     }
@@ -118,6 +121,7 @@ const HoldButtonComponent: DisplayComponent<HoldButtonProps, HoldButtonState> = 
     }
   },
   dispose(ctx) {
+    clearFocusableRegistration(ctx);
     if (ctx.state.active) {
       stopHold(ctx);
     }

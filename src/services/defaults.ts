@@ -16,6 +16,7 @@ import type {
   EmbeddedSurfaceAttachment,
   EmbeddedSurfaceConfig,
   EmbeddedSurfaceService,
+  FocusRegistrationOptions,
   FocusService,
   MutableLayoutService,
   NavigationService,
@@ -30,6 +31,11 @@ import type {
 } from "./contracts.js";
 
 type ChangeListener = () => void;
+type FocusTraversalResolver = (
+  direction: 1 | -1,
+  focusedComponentId: string | undefined,
+  orderedFocusableIds: readonly string[]
+) => string | undefined;
 
 interface MemoryNavigationEntry {
   activePageId: string | undefined;
@@ -246,10 +252,92 @@ export function createMemoryScrollService(onChange?: ChangeListener): ScrollServ
   };
 }
 
-export function createMemoryFocusService(onChange?: ChangeListener): FocusService {
+export function createMemoryFocusService(
+  onChange?: ChangeListener,
+  resolveTraversal?: FocusTraversalResolver
+): FocusService {
   let focusedComponentId: string | undefined;
+  let registrationOrder = 0;
+  const focusableEntries = new Map<
+    string,
+    {
+      defaultTargetId: string | undefined;
+      order: number;
+    }
+  >();
+
+  function getOrderedFocusableIds(): string[] {
+    return [...focusableEntries.entries()]
+      .sort((left, right) => left[1].order - right[1].order)
+      .map(([componentId]) => componentId);
+  }
+
+  function moveFocus(step: 1 | -1): string | undefined {
+    const orderedIds = getOrderedFocusableIds();
+    if (orderedIds.length === 0) {
+      return undefined;
+    }
+
+    const currentIndex = focusedComponentId
+      ? orderedIds.indexOf(focusedComponentId)
+      : -1;
+    const nextComponentId =
+      resolveTraversal?.(step, focusedComponentId, orderedIds) ??
+      orderedIds[
+        currentIndex === -1
+          ? step > 0
+            ? 0
+            : orderedIds.length - 1
+          : (currentIndex + step + orderedIds.length) % orderedIds.length
+      ];
+    if (!nextComponentId || nextComponentId === focusedComponentId) {
+      return focusedComponentId;
+    }
+
+    focusedComponentId = nextComponentId;
+    emit(onChange);
+    return focusedComponentId;
+  }
+
+  function register(componentId: string, options: FocusRegistrationOptions | undefined): void {
+    const existing = focusableEntries.get(componentId);
+    const nextDefaultTargetId = options?.defaultTargetId;
+    if (existing) {
+      if (existing.defaultTargetId === nextDefaultTargetId) {
+        return;
+      }
+
+      focusableEntries.set(componentId, {
+        ...existing,
+        defaultTargetId: nextDefaultTargetId
+      });
+      emit(onChange);
+      return;
+    }
+
+    focusableEntries.set(componentId, {
+      defaultTargetId: nextDefaultTargetId,
+      order: registrationOrder
+    });
+    registrationOrder += 1;
+    emit(onChange);
+  }
 
   return {
+    registerFocusable(componentId, options) {
+      register(componentId, options);
+    },
+    unregisterFocusable(componentId) {
+      const wasFocused = focusedComponentId === componentId;
+      if (!focusableEntries.delete(componentId) && !wasFocused) {
+        return;
+      }
+
+      if (wasFocused) {
+        focusedComponentId = undefined;
+      }
+      emit(onChange);
+    },
     requestFocus(componentId) {
       if (focusedComponentId === componentId) {
         return;
@@ -266,6 +354,21 @@ export function createMemoryFocusService(onChange?: ChangeListener): FocusServic
     },
     getFocusedComponentId() {
       return focusedComponentId;
+    },
+    getFocusableComponentIds() {
+      return getOrderedFocusableIds();
+    },
+    getDefaultTargetId(componentId) {
+      const resolvedComponentId = componentId ?? focusedComponentId;
+      return resolvedComponentId
+        ? focusableEntries.get(resolvedComponentId)?.defaultTargetId
+        : undefined;
+    },
+    focusNext() {
+      return moveFocus(1);
+    },
+    focusPrevious() {
+      return moveFocus(-1);
     }
   };
 }

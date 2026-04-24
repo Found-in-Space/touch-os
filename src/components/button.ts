@@ -1,5 +1,6 @@
 import { type DisplayComponent, type DisplayNode, createNode } from "../core/component.js";
 import { rectContainsPoint } from "../core/geometry.js";
+import { clearFocusableRegistration, syncFocusableRegistration } from "./focusable.js";
 
 export interface ButtonProps {
   label: string;
@@ -14,11 +15,15 @@ interface ButtonState {
 
 const ButtonComponent: DisplayComponent<ButtonProps, ButtonState> = {
   kind: "button",
-  mount() {
+  mount(ctx) {
+    syncFocusableRegistration(ctx, !(ctx.props.disabled ?? false), `${ctx.id}:face`);
     return {
       hovered: false,
       pressed: false
     };
+  },
+  update(ctx) {
+    syncFocusableRegistration(ctx, !(ctx.props.disabled ?? false), `${ctx.id}:face`);
   },
   measure(ctx) {
     const theme = ctx.services.theme.getTokens();
@@ -66,7 +71,7 @@ const ButtonComponent: DisplayComponent<ButtonProps, ButtonState> = {
     ];
   },
   hitTest(ctx) {
-    if (!rectContainsPoint(ctx.bounds, ctx.point)) {
+    if ((ctx.props.disabled ?? false) || !rectContainsPoint(ctx.bounds, ctx.point)) {
       return null;
     }
     return { targetId: `${ctx.id}:face`, role: "button-face" };
@@ -100,6 +105,9 @@ const ButtonComponent: DisplayComponent<ButtonProps, ButtonState> = {
         });
         break;
     }
+  },
+  dispose(ctx) {
+    clearFocusableRegistration(ctx);
   }
 };
 

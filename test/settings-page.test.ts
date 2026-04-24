@@ -136,7 +136,7 @@ describe("settings page fixture", () => {
     expect(runtime.getServices().scroll.getState("settings-scroll").offsetY).toBeGreaterThan(0);
   });
 
-  it("clears focus when navigation hides the focused control", () => {
+  it("hands focus to the next visible control when navigation hides the focused control", () => {
     const runtime = createRuntime({
       root: createSettingsPageFixture({
         showLabels: true,
@@ -154,6 +154,6 @@ describe("settings page fixture", () => {
     applyNavigationOutputs(runtime, result.outputs);
     runtime.render();
 
-    expect(runtime.getInteraction().focusedComponentId).toBeUndefined();
+    expect(runtime.getInteraction().focusedComponentId).toBe("audio-page-back");
   });
 });

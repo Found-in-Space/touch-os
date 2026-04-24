@@ -51,10 +51,20 @@ export interface ScrollService {
   scrollBy(containerId: string, deltaX: number, deltaY: number): void;
 }
 
+export interface FocusRegistrationOptions {
+  defaultTargetId?: string;
+}
+
 export interface FocusService {
+  registerFocusable(componentId: string, options?: FocusRegistrationOptions): void;
+  unregisterFocusable(componentId: string): void;
   requestFocus(componentId: string): void;
   clearFocus(): void;
   getFocusedComponentId(): string | undefined;
+  getFocusableComponentIds(): readonly string[];
+  getDefaultTargetId(componentId?: string): string | undefined;
+  focusNext(): string | undefined;
+  focusPrevious(): string | undefined;
 }
 
 export interface ThemeTypography {

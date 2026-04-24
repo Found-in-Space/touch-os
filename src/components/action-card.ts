@@ -11,6 +11,7 @@ import {
   resolveActionCardContent,
   type ActionCardProps
 } from "./action-card-contract.js";
+import { clearFocusableRegistration, syncFocusableRegistration } from "./focusable.js";
 
 export type { ActionCardProps } from "./action-card-contract.js";
 
@@ -21,11 +22,23 @@ interface ActionCardState {
 
 const ActionCardComponent: DisplayComponent<ActionCardProps, ActionCardState> = {
   kind: "action-card",
-  mount() {
+  mount(ctx) {
+    syncFocusableRegistration(
+      ctx,
+      isActionCardFocusable(ctx.props),
+      resolveActionCardDefaultTargetId(ctx.id, ctx.props)
+    );
     return {
       hoveredTargetId: undefined,
       pressedTargetId: undefined
     };
+  },
+  update(ctx) {
+    syncFocusableRegistration(
+      ctx,
+      isActionCardFocusable(ctx.props),
+      resolveActionCardDefaultTargetId(ctx.id, ctx.props)
+    );
   },
   measure(ctx) {
     const theme = ctx.services.theme.getTokens();
@@ -231,6 +244,9 @@ const ActionCardComponent: DisplayComponent<ActionCardProps, ActionCardState> = 
         ctx.state.pressedTargetId = undefined;
         break;
     }
+  },
+  dispose(ctx) {
+    clearFocusableRegistration(ctx);
   }
 };
 
@@ -286,4 +302,19 @@ function getDismissRect(
   }
 
   return createRect(bounds.x + bounds.width - padding - 18, bounds.y + padding, 18, 18);
+}
+
+function isActionCardFocusable(props: ActionCardProps): boolean {
+  return Boolean(props.primaryActionId || props.dismissActionId);
+}
+
+function resolveActionCardDefaultTargetId(
+  componentId: string,
+  props: ActionCardProps
+): string | undefined {
+  if (props.primaryActionId) {
+    return `${componentId}:primary`;
+  }
+
+  return props.dismissActionId ? `${componentId}:dismiss` : undefined;
 }

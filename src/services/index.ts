@@ -6,6 +6,7 @@ export type {
   EmbeddedSurfaceConfig,
   EmbeddedSurfaceStateUpdate,
   EmbeddedSurfaceService,
+  FocusRegistrationOptions,
   FocusService,
   LayoutService,
   MutableLayoutService,

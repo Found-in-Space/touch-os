@@ -6,6 +6,7 @@ import {
 } from "../core/component.js";
 import type { DrawCommand } from "../core/draw.js";
 import { createRect, rectContainsPoint, type Rect } from "../core/geometry.js";
+import { clearFocusableRegistration, syncFocusableRegistration } from "./focusable.js";
 
 export interface EmbeddedSurfaceProps {
   sourceId: string;
@@ -30,6 +31,11 @@ interface EmbeddedSurfaceState {
 const EmbeddedSurfaceComponent: DisplayComponent<EmbeddedSurfaceProps, EmbeddedSurfaceState> = {
   kind: "embedded-surface",
   mount(ctx) {
+    syncFocusableRegistration(
+      ctx,
+      isEmbeddedSurfaceFocusable(ctx.props),
+      resolveEmbeddedSurfaceDefaultTargetId(ctx.id, ctx.props)
+    );
     ctx.services.surfaces.attach(ctx.id, createEmbeddedSurfaceConfig(ctx.props));
 
     return {
@@ -38,6 +44,11 @@ const EmbeddedSurfaceComponent: DisplayComponent<EmbeddedSurfaceProps, EmbeddedS
     };
   },
   update(ctx) {
+    syncFocusableRegistration(
+      ctx,
+      isEmbeddedSurfaceFocusable(ctx.props),
+      resolveEmbeddedSurfaceDefaultTargetId(ctx.id, ctx.props)
+    );
     ctx.services.surfaces.configure(ctx.id, createEmbeddedSurfaceConfig(ctx.props));
   },
   measure(ctx) {
@@ -248,6 +259,7 @@ const EmbeddedSurfaceComponent: DisplayComponent<EmbeddedSurfaceProps, EmbeddedS
     }
   },
   dispose(ctx) {
+    clearFocusableRegistration(ctx);
     ctx.services.surfaces.release(ctx.id);
   }
 };
@@ -300,6 +312,21 @@ function getViewportRect(
 
 function getDismissRect(bounds: Rect, padding: number): Rect {
   return createRect(bounds.x + bounds.width - padding - 18, bounds.y + 6, 18, 18);
+}
+
+function isEmbeddedSurfaceFocusable(props: EmbeddedSurfaceProps): boolean {
+  return Boolean(props.dismissible || props.interactive);
+}
+
+function resolveEmbeddedSurfaceDefaultTargetId(
+  componentId: string,
+  props: EmbeddedSurfaceProps
+): string | undefined {
+  if (props.interactive) {
+    return `${componentId}:viewport`;
+  }
+
+  return props.dismissible ? `${componentId}:dismiss` : undefined;
 }
 
 function createEmbeddedSurfaceConfig(props: EmbeddedSurfaceProps) {

@@ -1,5 +1,6 @@
 import { type DisplayComponent, type DisplayNode, createNode } from "../core/component.js";
 import { rectContainsPoint } from "../core/geometry.js";
+import { clearFocusableRegistration, syncFocusableRegistration } from "./focusable.js";
 
 export interface RepeatButtonProps {
   label: string;
@@ -19,7 +20,8 @@ interface RepeatButtonState {
 
 const RepeatButtonComponent: DisplayComponent<RepeatButtonProps, RepeatButtonState> = {
   kind: "repeat-button",
-  mount() {
+  mount(ctx) {
+    syncFocusableRegistration(ctx, !(ctx.props.disabled ?? false), `${ctx.id}:face`);
     return {
       hovered: false,
       pressed: false,
@@ -28,6 +30,7 @@ const RepeatButtonComponent: DisplayComponent<RepeatButtonProps, RepeatButtonSta
     };
   },
   update(ctx) {
+    syncFocusableRegistration(ctx, !(ctx.props.disabled ?? false), `${ctx.id}:face`);
     if (!ctx.props.disabled) {
       return;
     }
@@ -135,6 +138,7 @@ const RepeatButtonComponent: DisplayComponent<RepeatButtonProps, RepeatButtonSta
     }
   },
   dispose(ctx) {
+    clearFocusableRegistration(ctx);
     deactivateRepeat(ctx);
   }
 };

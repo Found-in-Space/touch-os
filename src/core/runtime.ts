@@ -155,7 +155,13 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
     navigation:
       options.services?.navigation ?? createMemoryNavigationService(() => invalidateLayout()),
     scroll: options.services?.scroll ?? createMemoryScrollService(() => invalidateRender()),
-    focus: options.services?.focus ?? createMemoryFocusService(() => invalidateRender()),
+    focus:
+      options.services?.focus ??
+      createMemoryFocusService(
+        () => invalidateRender(),
+        (direction, currentFocusId, focusableIds) =>
+          resolveVisibleFocusableForTraversal(direction, currentFocusId, focusableIds)
+      ),
     theme: options.services?.theme ?? createThemeService(options.theme, () => invalidateRender()),
     timing:
       options.services?.timing ??
@@ -172,8 +178,9 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
   let rootDescriptor = options.root;
   let rootNode: RuntimeNodeState | undefined;
   const nodeLookup = new Map<string, RuntimeNodeState>();
-  let hoveredMatch: HitTestMatch | undefined;
-  let activePointer: ActivePointerState | undefined;
+  const hoveredMatches = new Map<string, HitTestMatch>();
+  const activePointers = new Map<string, ActivePointerState>();
+  let latestPointerId: string | undefined;
   let focusedComponentId = focusService.getFocusedComponentId();
 
   rootNode = mountNode(rootDescriptor, undefined);
@@ -248,11 +255,23 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
   }
 
   function createInteractionSnapshot(): RuntimeInteractionSnapshot {
+    const hoveredPointerId = resolveTrackedPointerId(hoveredMatches);
+    const activePointerId = resolveTrackedPointerId(activePointers);
+    const hoveredMatch = hoveredPointerId ? hoveredMatches.get(hoveredPointerId) : undefined;
+    const activePointer = activePointerId ? activePointers.get(activePointerId) : undefined;
     return {
       hoveredTargetId: hoveredMatch?.targetId,
       pressedTargetId: activePointer?.targetId,
       focusedComponentId
     };
+  }
+
+  function resolveTrackedPointerId<TValue>(entries: Map<string, TValue>): string | undefined {
+    if (latestPointerId && entries.has(latestPointerId)) {
+      return latestPointerId;
+    }
+
+    return [...entries.keys()].at(-1);
   }
 
   function estimateTextWidth(text: string, fontSize?: number): number {
@@ -620,8 +639,64 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
       return;
     }
 
+    const replacementFocus = resolveVisibleFocusableComponentId(currentFocus);
+    if (replacementFocus) {
+      focusService.requestFocus(replacementFocus);
+      syncFocusEvents();
+      return;
+    }
+
     focusService.clearFocus();
     syncFocusEvents();
+  }
+
+  function resolveVisibleFocusableComponentId(hiddenComponentId?: string): string | undefined {
+    const focusableIds = focusService.getFocusableComponentIds();
+    if (focusableIds.length === 0) {
+      return undefined;
+    }
+
+    const hiddenIndex = hiddenComponentId ? focusableIds.indexOf(hiddenComponentId) : -1;
+    const orderedCandidates =
+      hiddenIndex === -1
+        ? focusableIds
+        : [
+            ...focusableIds.slice(hiddenIndex + 1),
+            ...focusableIds.slice(0, hiddenIndex)
+          ];
+
+    return orderedCandidates.find((componentId) => {
+      const bounds = layout.getBounds(componentId);
+      return Boolean(bounds && bounds.width > 0 && bounds.height > 0);
+    });
+  }
+
+  function resolveVisibleFocusableForTraversal(
+    direction: 1 | -1,
+    currentFocusId: string | undefined,
+    focusableIds: readonly string[]
+  ): string | undefined {
+    ensureLayout();
+    const visibleFocusableIds = focusableIds.filter((componentId) => {
+      const bounds = layout.getBounds(componentId);
+      return Boolean(bounds && bounds.width > 0 && bounds.height > 0);
+    });
+    if (visibleFocusableIds.length === 0) {
+      return undefined;
+    }
+
+    const currentIndex = currentFocusId
+      ? visibleFocusableIds.indexOf(currentFocusId)
+      : -1;
+    if (currentIndex === -1) {
+      return direction > 0
+        ? visibleFocusableIds[0]
+        : visibleFocusableIds[visibleFocusableIds.length - 1];
+    }
+
+    return visibleFocusableIds[
+      (currentIndex + direction + visibleFocusableIds.length) % visibleFocusableIds.length
+    ];
   }
 
   function dispatchFocusLikeEvent(type: "focus" | "blur", componentId: string): void {
@@ -767,34 +842,65 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
     };
   }
 
-  function updateHover(point: Point, timestamp: number, pointerState?: ActivePointerState): void {
+  function updateHover(
+    point: Point,
+    timestamp: number,
+    pointerId: string,
+    pointerState?: ActivePointerState
+  ): void {
     const nextMatch = hitTest(point);
-    if (hoveredMatch?.targetId === nextMatch?.targetId && hoveredMatch?.componentId === nextMatch?.componentId) {
+    const currentHover = hoveredMatches.get(pointerId);
+    if (
+      currentHover?.targetId === nextMatch?.targetId &&
+      currentHover?.componentId === nextMatch?.componentId
+    ) {
       return;
     }
 
-    const previousHover = hoveredMatch;
+    const previousHover = currentHover;
     if (previousHover) {
       dispatchToPath(previousHover.pathIds, previousHover.targetId, (node) =>
-        createPointerDisplayEvent("pointer-leave", node, point, timestamp, previousHover.targetId, pointerState)
+        createPointerDisplayEvent(
+          "pointer-leave",
+          node,
+          point,
+          timestamp,
+          previousHover.targetId,
+          pointerState
+        )
       );
     }
 
-    hoveredMatch = nextMatch;
+    if (nextMatch) {
+      hoveredMatches.set(pointerId, nextMatch);
+    } else {
+      hoveredMatches.delete(pointerId);
+    }
 
     if (nextMatch) {
       dispatchToPath(nextMatch.pathIds, nextMatch.targetId, (node) =>
-        createPointerDisplayEvent("pointer-enter", node, point, timestamp, nextMatch.targetId, pointerState)
+        createPointerDisplayEvent(
+          "pointer-enter",
+          node,
+          point,
+          timestamp,
+          nextMatch.targetId,
+          pointerState
+        )
       );
     }
   }
 
   function clearRemovedInteractionReferences(): void {
-    if (hoveredMatch && !nodeLookup.has(hoveredMatch.componentId)) {
-      hoveredMatch = undefined;
+    for (const [pointerId, hoveredMatch] of hoveredMatches.entries()) {
+      if (!nodeLookup.has(hoveredMatch.componentId)) {
+        hoveredMatches.delete(pointerId);
+      }
     }
-    if (activePointer && !nodeLookup.has(activePointer.componentId)) {
-      activePointer = undefined;
+    for (const [pointerId, activePointer] of activePointers.entries()) {
+      if (!nodeLookup.has(activePointer.componentId)) {
+        activePointers.delete(pointerId);
+      }
     }
     const currentFocus = focusService.getFocusedComponentId();
     if (currentFocus && !nodeLookup.has(currentFocus)) {
@@ -820,10 +926,12 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
 
     switch (event.type) {
       case "pointer-move": {
+        const pointerId = event.pointerId ?? "default";
+        latestPointerId = pointerId;
         const point = createPoint(event.surfaceX, event.surfaceY);
-        updateHover(point, event.timestamp, activePointer);
-        const pointer = activePointer;
-        if (pointer && pointer.pointerId === (event.pointerId ?? pointer.pointerId)) {
+        const pointer = activePointers.get(pointerId);
+        updateHover(point, event.timestamp, pointerId, pointer);
+        if (pointer) {
           const deltaX = point.x - pointer.startPoint.x;
           const deltaY = point.y - pointer.startPoint.y;
           if (!pointer.dragging && Math.hypot(deltaX, deltaY) >= dragThreshold) {
@@ -854,41 +962,48 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
             );
             componentId = pointer.componentId;
             targetId = pointer.targetId;
-          } else if (hoveredMatch) {
-            const currentHover = hoveredMatch;
+          } else {
+            const currentHover = hoveredMatches.get(pointerId);
+            if (currentHover) {
+              handled = dispatchToPath(currentHover.pathIds, currentHover.targetId, (node) =>
+                createPointerDisplayEvent(
+                  "pointer-move",
+                  node,
+                  point,
+                  event.timestamp,
+                  currentHover.targetId,
+                  pointer
+                )
+              );
+              componentId = currentHover.componentId;
+              targetId = currentHover.targetId;
+            }
+          }
+          pointer.lastPoint = point;
+          activePointers.set(pointerId, pointer);
+        } else {
+          const currentHover = hoveredMatches.get(pointerId);
+          if (currentHover) {
             handled = dispatchToPath(currentHover.pathIds, currentHover.targetId, (node) =>
-              createPointerDisplayEvent(
-                "pointer-move",
-                node,
-                point,
-                event.timestamp,
-                currentHover.targetId,
-                pointer
-              )
+              createPointerDisplayEvent("pointer-move", node, point, event.timestamp, currentHover.targetId)
             );
             componentId = currentHover.componentId;
             targetId = currentHover.targetId;
           }
-          pointer.lastPoint = point;
-        } else if (hoveredMatch) {
-          const currentHover = hoveredMatch;
-          handled = dispatchToPath(currentHover.pathIds, currentHover.targetId, (node) =>
-            createPointerDisplayEvent("pointer-move", node, point, event.timestamp, currentHover.targetId)
-          );
-          componentId = currentHover.componentId;
-          targetId = currentHover.targetId;
         }
         break;
       }
 
       case "pointer-down": {
+        const pointerId = event.pointerId ?? "default";
+        latestPointerId = pointerId;
         const point = createPoint(event.surfaceX, event.surfaceY);
         const match = hitTest(point);
-        updateHover(point, event.timestamp);
+        updateHover(point, event.timestamp, pointerId);
         if (match) {
           const modifiers = event.modifiers ?? DEFAULT_MODIFIERS;
-          activePointer = {
-            pointerId: event.pointerId ?? "default",
+          const activePointer: ActivePointerState = {
+            pointerId,
             pointerType: event.pointerType ?? "unknown",
             pressure: event.pressure,
             modifiers,
@@ -901,6 +1016,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
             longPressFired: false,
             downTimestamp: event.timestamp
           };
+          activePointers.set(pointerId, activePointer);
           focusService.requestFocus(match.componentId);
           syncFocusEvents();
           handled = dispatchToPath(match.pathIds, match.targetId, (node) =>
@@ -913,12 +1029,14 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
       }
 
       case "pointer-up": {
+        const pointerId = event.pointerId ?? "default";
+        latestPointerId = pointerId;
         const point = createPoint(event.surfaceX, event.surfaceY);
-        const releaseMatch = activePointer;
+        const releaseMatch = activePointers.get(pointerId);
         if (releaseMatch && !matchesActivePointer(releaseMatch, event.pointerId)) {
           break;
         }
-        updateHover(point, event.timestamp, activePointer);
+        updateHover(point, event.timestamp, pointerId, releaseMatch);
         if (releaseMatch) {
           const deltaX = point.x - releaseMatch.startPoint.x;
           const deltaY = point.y - releaseMatch.startPoint.y;
@@ -951,29 +1069,34 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
           }
           componentId = releaseMatch.componentId;
           targetId = releaseMatch.targetId;
-          activePointer = undefined;
+          activePointers.delete(pointerId);
         }
         break;
       }
 
       case "cancel": {
+        const pointerId = event.pointerId ?? "default";
+        latestPointerId = pointerId;
         const point = createPoint(event.surfaceX, event.surfaceY);
-        const pointer = activePointer;
+        const pointer = activePointers.get(pointerId);
         if (pointer && matchesActivePointer(pointer, event.pointerId)) {
           handled = dispatchToPath(pointer.pathIds, pointer.targetId, (node) =>
             createPointerDisplayEvent("cancel", node, point, event.timestamp, pointer.targetId, pointer)
           );
           componentId = pointer.componentId;
           targetId = pointer.targetId;
-          activePointer = undefined;
+          activePointers.delete(pointerId);
         }
         break;
       }
 
       case "scroll": {
+        const pointerId = event.pointerId ?? "default";
+        latestPointerId = pointerId;
         const point = createPoint(event.surfaceX, event.surfaceY);
         const match = hitTest(point);
-        updateHover(point, event.timestamp, activePointer);
+        const activePointer = activePointers.get(pointerId);
+        updateHover(point, event.timestamp, pointerId, activePointer);
         if (match) {
           handled = dispatchToPath(match.pathIds, match.targetId, (node) =>
             createPointerDisplayEvent(
@@ -1023,35 +1146,36 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
   function tick(timestamp: number): void {
     timingService.advanceTo(timestamp);
     syncFocusEvents();
-    const pointer = activePointer;
-    if (!pointer) {
+    if (activePointers.size === 0) {
       return;
     }
 
-    dispatchToPath(pointer.pathIds, pointer.targetId, () => ({
-      type: "tick",
-      timestamp
-    }));
+    for (const pointer of activePointers.values()) {
+      dispatchToPath(pointer.pathIds, pointer.targetId, () => ({
+        type: "tick",
+        timestamp
+      }));
 
-    if (pointer.dragging || pointer.longPressFired) {
-      return;
+      if (pointer.dragging || pointer.longPressFired) {
+        continue;
+      }
+
+      if (timestamp - pointer.downTimestamp < timingService.getLongPressDelay()) {
+        continue;
+      }
+
+      pointer.longPressFired = true;
+      dispatchToPath(pointer.pathIds, pointer.targetId, (node) =>
+        createPointerDisplayEvent(
+          "long-press",
+          node,
+          pointer.lastPoint,
+          timestamp,
+          pointer.targetId,
+          pointer
+        )
+      );
     }
-
-    if (timestamp - pointer.downTimestamp < timingService.getLongPressDelay()) {
-      return;
-    }
-
-    pointer.longPressFired = true;
-    dispatchToPath(pointer.pathIds, pointer.targetId, (node) =>
-      createPointerDisplayEvent(
-        "long-press",
-        node,
-        pointer.lastPoint,
-        timestamp,
-        pointer.targetId,
-        pointer
-      )
-    );
   }
 
   function setRoot(root: DisplayNode<unknown>): void {
@@ -1080,8 +1204,9 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
       disposeNode(rootNode);
       rootNode = undefined;
     }
-    hoveredMatch = undefined;
-    activePointer = undefined;
+    hoveredMatches.clear();
+    activePointers.clear();
+    latestPointerId = undefined;
     outputs = [];
     pendingEmissions.length = 0;
     commands = [];
