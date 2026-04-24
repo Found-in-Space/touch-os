@@ -4,6 +4,7 @@ import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
 import {
   createEmbeddedSurfaceService,
   createHudPanelDriver,
+  createPanelDragController,
   createPoseAnchoredPanelDriver,
   createRuntime,
   createScenePanelDriver,
@@ -104,6 +105,7 @@ interface DriverBinding {
   key: "desktop-hud" | "xr-hud" | "tv" | "arm";
   runtime: DisplayRuntime;
   driver: ThreePanelDriver;
+  dragController?: ReturnType<typeof createPanelDragController>;
   enabled: boolean;
   update(frame: THREEFrame): void;
   render(): void;
@@ -554,7 +556,18 @@ function createTvDriverBinding(runtime: DisplayRuntime): DriverBinding {
     quaternion: room.tvAnchor.quaternion
   });
 
-  return createDriverBinding("tv", driver, runtime);
+  return createDriverBinding("tv", driver, runtime, {
+    dragController: createPanelDragController({
+      mesh: driver.host.mesh,
+      bounds: {
+        minX: -0.46,
+        maxX: 0.46,
+        minY: -0.3,
+        maxY: 0.34
+      },
+      dragTargetIds: ["tv-drag:drag-handle"]
+    })
+  });
 }
 
 function createWallMirrorRuntimeBinding(): StaticRuntimeBinding {
@@ -604,12 +617,14 @@ function createArmDriverBinding(runtime: DisplayRuntime): DriverBinding {
 function createDriverBinding(
   key: "desktop-hud" | "xr-hud" | "tv" | "arm",
   driver: ThreePanelDriver,
-  runtime: DisplayRuntime
+  runtime: DisplayRuntime,
+  options?: { dragController?: ReturnType<typeof createPanelDragController> }
 ): DriverBinding {
   return {
     key,
     runtime,
     driver,
+    dragController: options?.dragController,
     enabled: true,
     update(frame) {
       if (!this.enabled) {
@@ -636,6 +651,7 @@ function createDriverBinding(
     },
     hide() {
       driver.clearPointer();
+      this.dragController?.clear();
       driver.host.mesh.visible = false;
     }
   };
@@ -650,20 +666,23 @@ function toCoordinatedPanel<TSample extends ThreePointerSample>(
       return binding.enabled;
     },
     process(sample, frame) {
-      const result = binding.driver.interactor.process(sample, {
+      const hostFrame = {
         scene: frame.scene,
         camera: frame.camera,
         ...(frame.anchorPose ? { anchorPose: frame.anchorPose } : {}),
         ...(frame.surfaceMetrics ? { surfaceMetrics: frame.surfaceMetrics } : {})
-      });
+      };
+      const result = binding.driver.interactor.process(sample, hostFrame);
+      const dragState = binding.dragController?.process(sample, hostFrame, result);
       flushRuntimeOutputs(binding.runtime);
       return {
-        claimed: result.claimed,
-        blocked: result.blocked
+        claimed: (dragState?.active ?? false) || result.claimed,
+        blocked: (dragState?.active ?? false) || result.blocked
       };
     },
     clearPointer(pointerId) {
       binding.driver.clearPointer(pointerId);
+      binding.dragController?.clear(pointerId);
     }
   };
 }

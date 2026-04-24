@@ -1,5 +1,6 @@
 import {
   createDPad,
+  createDragHandle,
   createEmbeddedSurface,
   createHoldButton,
   createRepeatButton,
@@ -13,6 +14,8 @@ import {
 import {
   createColumn,
   createDockLayout,
+  createMovableWindow,
+  createOverlay,
   createSection
 } from "../../../src/index.js";
 import {
@@ -33,8 +36,12 @@ export function createRoomPanelRoot(
       return createColumn("tv-root", {
         padding: 12,
         gap: 8,
+        pointerOpaque: true,
         backgroundColor: "#08111d",
         children: [
+          createDragHandle("tv-drag", {
+            label: "Move TV"
+          }),
           createToggle("tv-light-toggle", {
             label: "Lamp",
             value: state.lightOn,
@@ -85,117 +92,124 @@ export function createRoomPanelRoot(
       });
     case "hud":
     default:
-      return createDockLayout("hud-root", {
+      return createOverlay("hud-root", {
         padding: 0,
-        topLeft: {
-          maxWidth: 340,
-          child: createSection("hud-overview", {
-            title: "Touch OS Living Room",
-            backgroundColor: "#0f1b2d",
-            children: [
-              createTextLabel("hud-help-line-1", {
-                text: "WASD moves. Shift-drag or RMB looks.",
-                tone: "muted"
-              }),
-              createTextLabel("hud-help-line-2", {
-                text: "Hold the HUD controls to drive motion.",
-                tone: "muted"
-              }),
-              createTextLabel("hud-help-line-3", {
-                text: "The XR button is the only DOM overlay.",
-                tone: "muted"
-              }),
-              createToggle("hud-light-toggle", {
-                label: "Main Light",
-                value: state.lightOn,
-                field: "lightOn"
-              }),
-              createValueReadout("hud-mode-readout", {
-                label: "Mode",
-                value: state.xrActive ? "XR" : "Desktop"
+        children: [
+          createDockLayout("hud-static-layout", {
+            padding: 0,
+            topLeft: {
+              maxWidth: 340,
+              child: createSection("hud-overview", {
+                title: "Touch OS Living Room",
+                backgroundColor: "#0f1b2d",
+                children: [
+                  createTextLabel("hud-help-line-1", {
+                    text: "WASD moves. Shift-drag or RMB looks.",
+                    tone: "muted"
+                  }),
+                  createTextLabel("hud-help-line-2", {
+                    text: "Drag HUD panels by their move bars.",
+                    tone: "muted"
+                  }),
+                  createTextLabel("hud-help-line-3", {
+                    text: "The XR button is the only DOM overlay.",
+                    tone: "muted"
+                  }),
+                  createToggle("hud-light-toggle", {
+                    label: "Main Light",
+                    value: state.lightOn,
+                    field: "lightOn"
+                  }),
+                  createValueReadout("hud-mode-readout", {
+                    label: "Mode",
+                    value: state.xrActive ? "XR" : "Desktop"
+                  })
+                ]
               })
-            ]
-          })
-        },
-        bottomCenter: {
-          maxWidth: 320,
-          child: createEmbeddedSurface(MIRROR_COMPONENT_ID, {
-            sourceId: "camera.rear",
-            interactive: false,
-            acceptsForwardedInput: false,
-            fallbackLabel: "Mirror offline",
-            preserveAspectRatio: true,
-            mirrorX: true,
-            title: "Rear View"
-          })
-        },
-        topRight: {
-          maxWidth: 260,
-          child: createSection("hud-status", {
-            title: "Status",
-            backgroundColor: "#0f1b2d",
-            children: [
-              createValueReadout("hud-light-readout", {
-                label: "Lamp",
-                value: state.lightOn ? "On" : "Off"
-              }),
-              createValueReadout("hud-speed-readout", {
-                label: "Speed",
-                value: formatSpeed(state.moveSpeed)
-              }),
-              createValueReadout("hud-intent-readout", {
-                label: "Intent",
-                value: getMovementSummary(state)
+            },
+            bottomLeft: {
+              maxWidth: 240,
+              child: createSection("hud-move", {
+                title: "Move",
+                backgroundColor: "#0f1b2d",
+                children: [
+                  createDPad("hud-move-dpad", {
+                    up: createMovementBinding("forward", "Fwd"),
+                    down: createMovementBinding("back", "Back"),
+                    left: createMovementBinding("strafeLeft", "Left"),
+                    right: createMovementBinding("strafeRight", "Right")
+                  })
+                ]
               })
-            ]
-          })
-        },
-        bottomLeft: {
-          maxWidth: 240,
-          child: createSection("hud-move", {
-            title: "Move",
-            backgroundColor: "#0f1b2d",
-            children: [
-              createDPad("hud-move-dpad", {
-                up: createMovementBinding("forward", "Fwd"),
-                down: createMovementBinding("back", "Back"),
-                left: createMovementBinding("strafeLeft", "Left"),
-                right: createMovementBinding("strafeRight", "Right")
+            },
+            bottomRight: {
+              maxWidth: 220,
+              child: createSection("hud-turn", {
+                title: "Turn + Speed",
+                backgroundColor: "#0f1b2d",
+                children: [
+                  createHoldButton("hud-turn-left", {
+                    label: "Turn Left",
+                    actionId: "movement.set",
+                    startPayload: { intent: "turnLeft", active: true },
+                    stopPayload: { intent: "turnLeft", active: false }
+                  }),
+                  createHoldButton("hud-turn-right", {
+                    label: "Turn Right",
+                    actionId: "movement.set",
+                    startPayload: { intent: "turnRight", active: true },
+                    stopPayload: { intent: "turnRight", active: false }
+                  }),
+                  createRepeatButton("hud-speed-down", {
+                    label: "Slower",
+                    actionId: "moveSpeed.adjust",
+                    payload: { delta: -0.2 }
+                  }),
+                  createRepeatButton("hud-speed-up", {
+                    label: "Faster",
+                    actionId: "moveSpeed.adjust",
+                    payload: { delta: 0.2 }
+                  })
+                ]
               })
-            ]
+            }
+          }),
+          createMovableWindow("hud-status-window", {
+            initialRect: { x: 994, y: 34, width: 252, height: 188 },
+            handleLabel: "Status",
+            child: createSection("hud-status", {
+              title: "Status",
+              backgroundColor: "#0f1b2d",
+              children: [
+                createValueReadout("hud-light-readout", {
+                  label: "Lamp",
+                  value: state.lightOn ? "On" : "Off"
+                }),
+                createValueReadout("hud-speed-readout", {
+                  label: "Speed",
+                  value: formatSpeed(state.moveSpeed)
+                }),
+                createValueReadout("hud-intent-readout", {
+                  label: "Intent",
+                  value: getMovementSummary(state)
+                })
+              ]
+            })
+          }),
+          createMovableWindow("hud-mirror-window", {
+            initialRect: { x: 478, y: 482, width: 324, height: 206 },
+            handleLabel: "Rear View",
+            child: createEmbeddedSurface(MIRROR_COMPONENT_ID, {
+              sourceId: "camera.rear",
+              interactive: false,
+              acceptsForwardedInput: false,
+              fallbackLabel: "Mirror offline",
+              preserveAspectRatio: true,
+              mirrorX: true,
+              title: "Rear View"
+            })
           })
-        },
-        bottomRight: {
-          maxWidth: 220,
-          child: createSection("hud-turn", {
-            title: "Turn + Speed",
-            backgroundColor: "#0f1b2d",
-            children: [
-              createHoldButton("hud-turn-left", {
-                label: "Turn Left",
-                actionId: "movement.set",
-                startPayload: { intent: "turnLeft", active: true },
-                stopPayload: { intent: "turnLeft", active: false }
-              }),
-              createHoldButton("hud-turn-right", {
-                label: "Turn Right",
-                actionId: "movement.set",
-                startPayload: { intent: "turnRight", active: true },
-                stopPayload: { intent: "turnRight", active: false }
-              }),
-              createRepeatButton("hud-speed-down", {
-                label: "Slower",
-                actionId: "moveSpeed.adjust",
-                payload: { delta: -0.2 }
-              }),
-              createRepeatButton("hud-speed-up", {
-                label: "Faster",
-                actionId: "moveSpeed.adjust",
-                payload: { delta: 0.2 }
-              })
-            ]
-          })
-        }
+        ]
       });
   }
 }

@@ -24,3 +24,5 @@ export type { ToggleProps } from "./toggle.js";
 export { createToggle } from "./toggle.js";
 export type { ValueReadoutProps } from "./value-readout.js";
 export { createValueReadout } from "./value-readout.js";
+export type { DragHandleProps } from "./drag-handle.js";
+export { createDragHandle } from "./drag-handle.js";

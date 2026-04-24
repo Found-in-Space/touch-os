@@ -16,7 +16,7 @@ import {
   type ModifierState,
   type PointerType
 } from "../core/events.js";
-import type { Rect } from "../core/geometry.js";
+import { clamp, type Rect } from "../core/geometry.js";
 import type { SurfaceMetrics } from "../services/contracts.js";
 import type { HostAdapter } from "./contracts.js";
 
@@ -307,6 +307,30 @@ export interface ThreePanelDriver extends HostAdapter<ThreePanelHostFrame> {
 }
 
 export type ThreePanelMesh = THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+
+export interface PanelDragBounds {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
+export interface PanelDragController {
+  process(
+    sample: ThreePointerSample,
+    frame: ThreePanelHostFrame,
+    interaction?: PanelInteractionResult
+  ): { active: boolean; moved: boolean; pointerId?: string };
+  clear(pointerId?: string): void;
+  isActive(pointerId?: string): boolean;
+}
+
+export interface PanelDragControllerOptions {
+  mesh: ThreePanelMesh;
+  bounds: PanelDragBounds;
+  /** Optional target ids required to start a drag. Empty means any panel hit target can start drag. */
+  dragTargetIds?: readonly string[];
+}
 
 interface InteractorPointerState extends PointerPresentationState {
   captured: boolean;
@@ -838,6 +862,111 @@ export function createPanelInteractor(options: {
   };
 }
 
+export function createPanelDragController(
+  options: PanelDragControllerOptions
+): PanelDragController {
+  const raycaster = new THREE.Raycaster();
+  let active:
+    | {
+        pointerId: string;
+        plane: THREE.Plane;
+        planeOrigin: THREE.Vector3;
+        startPoint: THREE.Vector3;
+        rightAxis: THREE.Vector3;
+        upAxis: THREE.Vector3;
+        parent: THREE.Object3D | null;
+      }
+    | undefined;
+
+  const targetFilter = options.dragTargetIds ? new Set(options.dragTargetIds) : undefined;
+
+  function clear(pointerId?: string): void {
+    if (!active) {
+      return;
+    }
+    if (pointerId !== undefined && active.pointerId !== pointerId) {
+      return;
+    }
+    active = undefined;
+  }
+
+  return {
+    process(sample, frame, interaction) {
+      if (sample.phase === "cancel" || sample.phase === "up") {
+        const wasActive = active?.pointerId === sample.pointerId;
+        clear(sample.pointerId);
+        return { active: false, moved: false, ...(wasActive ? { pointerId: sample.pointerId } : {}) };
+      }
+
+      if (sample.phase === "down") {
+        const hitPoint = resolveSamplePanelWorldPoint(sample, frame, options.mesh, raycaster);
+        const canStartFromInteraction = Boolean(interaction?.hit?.targetId);
+        const targetId = interaction?.hit?.targetId;
+        if (!hitPoint || !canStartFromInteraction) {
+          return { active: false, moved: false };
+        }
+        if (targetFilter && (!targetId || !targetFilter.has(targetId))) {
+          return { active: false, moved: false };
+        }
+
+        const worldPosition = new THREE.Vector3();
+        const worldQuaternion = new THREE.Quaternion();
+        const worldForward = new THREE.Vector3(0, 0, 1);
+        const worldRight = new THREE.Vector3(1, 0, 0);
+        const worldUp = new THREE.Vector3(0, 1, 0);
+        options.mesh.getWorldPosition(worldPosition);
+        options.mesh.getWorldQuaternion(worldQuaternion);
+        worldForward.applyQuaternion(worldQuaternion).normalize();
+        worldRight.applyQuaternion(worldQuaternion).normalize();
+        worldUp.applyQuaternion(worldQuaternion).normalize();
+
+        active = {
+          pointerId: sample.pointerId,
+          plane: new THREE.Plane().setFromNormalAndCoplanarPoint(worldForward, worldPosition),
+          planeOrigin: worldPosition.clone(),
+          startPoint: hitPoint.clone(),
+          rightAxis: worldRight,
+          upAxis: worldUp,
+          parent: options.mesh.parent
+        };
+        return { active: true, moved: false, pointerId: sample.pointerId };
+      }
+
+      if (!active || active.pointerId !== sample.pointerId || sample.phase !== "move") {
+        return { active: Boolean(active), moved: false, ...(active ? { pointerId: active.pointerId } : {}) };
+      }
+
+      const hitPoint = resolveSamplePlaneWorldPoint(sample, frame, active.plane, raycaster);
+      if (!hitPoint) {
+        return { active: true, moved: false, pointerId: sample.pointerId };
+      }
+
+      const delta = hitPoint.clone().sub(active.startPoint);
+      const deltaX = delta.dot(active.rightAxis);
+      const deltaY = delta.dot(active.upAxis);
+      const clampedX = clamp(deltaX, options.bounds.minX, options.bounds.maxX);
+      const clampedY = clamp(deltaY, options.bounds.minY, options.bounds.maxY);
+      const nextWorld = active.planeOrigin
+        .clone()
+        .addScaledVector(active.rightAxis, clampedX)
+        .addScaledVector(active.upAxis, clampedY);
+      if (active.parent) {
+        active.parent.worldToLocal(nextWorld);
+      }
+      options.mesh.position.copy(nextWorld);
+      options.mesh.updateMatrixWorld(true);
+      return { active: true, moved: true, pointerId: sample.pointerId };
+    },
+    clear,
+    isActive(pointerId) {
+      if (!active) {
+        return false;
+      }
+      return pointerId ? active.pointerId === pointerId : true;
+    }
+  };
+}
+
 export function createScreenPointerSource(
   resolve: ThreePointerSourceResolver
 ): ThreePointerSource {
@@ -1275,6 +1404,63 @@ function createTransportPointerSource(
       }));
     }
   };
+}
+
+function resolveSamplePanelWorldPoint(
+  sample: ThreePointerSample,
+  frame: ThreePanelHostFrame,
+  mesh: ThreePanelMesh,
+  raycaster: THREE.Raycaster
+): THREE.Vector3 | undefined {
+  const ray = resolveSampleRay(sample, frame, raycaster);
+  if (!ray) {
+    return undefined;
+  }
+
+  raycaster.ray.origin.copy(ray.origin);
+  raycaster.ray.direction.copy(ray.direction);
+  const hit = raycaster.intersectObject(mesh, false)[0];
+  return hit?.point.clone();
+}
+
+function resolveSamplePlaneWorldPoint(
+  sample: ThreePointerSample,
+  frame: ThreePanelHostFrame,
+  plane: THREE.Plane,
+  raycaster: THREE.Raycaster
+): THREE.Vector3 | undefined {
+  const ray = resolveSampleRay(sample, frame, raycaster);
+  if (!ray) {
+    return undefined;
+  }
+
+  return ray.intersectPlane(plane, new THREE.Vector3()) ?? undefined;
+}
+
+function resolveSampleRay(
+  sample: ThreePointerSample,
+  frame: ThreePanelHostFrame,
+  raycaster: THREE.Raycaster
+): THREE.Ray | undefined {
+  if (sample.transport === "screen") {
+    if (!frame.camera || sample.ndcX === undefined || sample.ndcY === undefined) {
+      return undefined;
+    }
+    raycaster.setFromCamera(new THREE.Vector2(sample.ndcX, sample.ndcY), frame.camera);
+    return raycaster.ray;
+  }
+
+  if (sample.transport === "ray" || sample.transport === "contact") {
+    if (!sample.origin || !sample.direction) {
+      return undefined;
+    }
+    return new THREE.Ray(
+      new THREE.Vector3(sample.origin.x, sample.origin.y, sample.origin.z),
+      new THREE.Vector3(sample.direction.x, sample.direction.y, sample.direction.z).normalize()
+    );
+  }
+
+  return undefined;
 }
 
 function updateCapturedPointerState(

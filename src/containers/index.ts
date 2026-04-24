@@ -14,3 +14,5 @@ export type { SectionProps } from "./section.js";
 export { createSection } from "./section.js";
 export type { StackProps } from "./stack.js";
 export { createStack } from "./stack.js";
+export type { MovableWindowProps, MovableWindowRect } from "./movable-window.js";
+export { createMovableWindow } from "./movable-window.js";
