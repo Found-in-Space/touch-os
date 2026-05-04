@@ -74,8 +74,9 @@ Shipped in `@found-in-space/touch-os/containers`:
 - `createScrollContainer`
 - `createPageContainer`
 - `createDockLayout`
+- `createSurfaceShell`
 
-These cover the core runtime composition patterns needed for panels, forms, HUD groupings, overlays, and paged settings-style UIs.
+These cover the core runtime composition patterns needed for panels, forms, HUD groupings, overlays, responsive page shells, and paged settings-style UIs.
 
 ## Runtime Services
 

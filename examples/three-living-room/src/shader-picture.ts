@@ -1,9 +1,9 @@
 import * as THREE from "three";
+import type { EmbeddedSurfaceService } from "../../../src/index.js";
 import {
   resolveCompositeSurfacePlacements,
-  type EmbeddedSurfaceService,
   type ThreePanelHost
-} from "../../../src/index.js";
+} from "../../../src/hosts/three.js";
 
 export const WALL_PICTURE_COMPONENT_ID = "wall-picture-surface";
 export const WALL_PICTURE_SOURCE_ID = "picture.shader";

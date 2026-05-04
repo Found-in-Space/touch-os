@@ -4,12 +4,14 @@ import {
   createNode,
   createRuntime,
   createBitmapService,
-  type CanvasContextLike,
-  type CanvasLike,
   type DisplayComponent,
   type SurfaceMetrics
 } from "../src/index.js";
-import { createScenePanelHost } from "../src/hosts/three.js";
+import {
+  createScenePanelHost,
+  type CanvasContextLike,
+  type CanvasLike
+} from "../src/hosts/three.js";
 
 class RecordingCanvasContext implements CanvasContextLike {
   fillStyle: string | CanvasGradient | CanvasPattern = "#000000";

@@ -19,7 +19,7 @@ import {
   normalizeActionCardProps,
   type ActionCardProps
 } from "../components/action-card-contract.js";
-import { createColumn, createPageContainer, createScrollContainer } from "../containers/index.js";
+import { createPageContainer, createSurfaceShell } from "../containers/index.js";
 import {
   type DisplayComponent,
   type DisplayNode,
@@ -633,20 +633,16 @@ function createSchemaPage(
   page: CompiledSchemaPage,
   store: SchemaAdapterStore<SchemaCustomItem>
 ): DisplayNode {
-  return createScrollContainer(page.id, {
+  return createSurfaceShell(page.id, {
     children: [
-      createColumn(`${page.id}:content`, {
-        children: [
-          ...(page.title
-            ? [
-                createTextLabel(`${page.id}:title`, {
-                  text: page.title
-                })
-              ]
-            : []),
-          ...page.items.map((item) => item.createNode(createBuildContext(store)))
-        ]
-      })
+      ...(page.title
+        ? [
+            createTextLabel(`${page.id}:title`, {
+              text: page.title
+            })
+          ]
+        : []),
+      ...page.items.map((item) => item.createNode(createBuildContext(store)))
     ]
   });
 }

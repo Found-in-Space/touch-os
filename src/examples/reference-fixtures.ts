@@ -11,11 +11,10 @@ import {
   createValueReadout
 } from "../components/index.js";
 import {
-  createColumn,
   createPageContainer,
   createRow,
-  createScrollContainer,
-  createSection
+  createSection,
+  createSurfaceShell
 } from "../containers/index.js";
 import { type DisplayComponent, type DisplayNode, createNode } from "../core/component.js";
 
@@ -141,70 +140,69 @@ const SettingsShellComponent: DisplayComponent<SettingsShellProps> = {
         initialPageId: values.activePageId ?? "settings-page",
         padding: 0,
         children: [
-          createColumn("settings-page", {
+          createSurfaceShell("settings-page", {
+            padding: 12,
+            scrollId: "settings-scroll",
+            header: createRow("settings-header", {
+              gap: 8,
+              children: [
+                createTextLabel("settings-title", {
+                  text: "Settings"
+                }),
+                createButton("settings-open-audio", {
+                  label: "Audio",
+                  actionId: "nav.open-audio"
+                })
+              ]
+            }),
+            bodyGap: 12,
             children: [
-              createRow("settings-header", {
-                gap: 8,
+              createSection("settings-display-section", {
+                title: "Display",
                 children: [
-                  createTextLabel("settings-title", {
-                    text: "Settings"
+                  createToggle("show-labels-toggle", {
+                    label: "Show Labels",
+                    value: values.showLabels,
+                    field: "showLabels"
                   }),
-                  createButton("settings-open-audio", {
-                    label: "Audio",
-                    actionId: "nav.open-audio"
+                  createSlider("brightness-slider", {
+                    label: "Brightness",
+                    value: values.brightness,
+                    min: 0,
+                    max: 100,
+                    step: 5,
+                    field: "brightness"
                   })
                 ]
               }),
-              createScrollContainer("settings-scroll", {
-                gap: 12,
+              createSection("settings-audio-section", {
+                title: "Audio",
                 children: [
-                  createSection("settings-display-section", {
-                    title: "Display",
-                    children: [
-                      createToggle("show-labels-toggle", {
-                        label: "Show Labels",
-                        value: values.showLabels,
-                        field: "showLabels"
-                      }),
-                      createSlider("brightness-slider", {
-                        label: "Brightness",
-                        value: values.brightness,
-                        min: 0,
-                        max: 100,
-                        step: 5,
-                        field: "brightness"
-                      })
-                    ]
-                  }),
-                  createSection("settings-audio-section", {
-                    title: "Audio",
-                    children: [
-                      createToggle("alerts-toggle", {
-                        label: "Alerts",
-                        value: values.alertsEnabled,
-                        field: "alertsEnabled"
-                      })
-                    ]
+                  createToggle("alerts-toggle", {
+                    label: "Alerts",
+                    value: values.alertsEnabled,
+                    field: "alertsEnabled"
                   })
                 ]
               })
             ]
           }),
-          createColumn("audio-page", {
-            gap: 12,
+          createSurfaceShell("audio-page", {
+            padding: 12,
+            header: createRow("audio-page-header", {
+              gap: 8,
+              children: [
+                createTextLabel("audio-page-title", {
+                  text: "Audio"
+                }),
+                createButton("audio-page-back", {
+                  label: "Back",
+                  actionId: "nav.back"
+                })
+              ]
+            }),
+            bodyGap: 12,
             children: [
-              createRow("audio-page-header", {
-                gap: 8,
-                children: [
-                  createTextLabel("audio-page-title", {
-                    text: "Audio"
-                  }),
-                  createButton("audio-page-back", {
-                    label: "Back",
-                    actionId: "nav.back"
-                  })
-                ]
-              }),
               createValueReadout("audio-alerts-readout", {
                 label: "Alerts",
                 value: values.alertsEnabled ? "Enabled" : "Disabled"

@@ -222,6 +222,30 @@ export function createMemoryScrollService(onChange?: ChangeListener): ScrollServ
     entry.offsetY = Math.max(0, Math.min(entry.offsetY, entry.maxOffsetY));
   }
 
+  function hasChanged(entry: ScrollState, previous: ScrollState): boolean {
+    return (
+      entry.offsetX !== previous.offsetX ||
+      entry.offsetY !== previous.offsetY ||
+      entry.maxOffsetX !== previous.maxOffsetX ||
+      entry.maxOffsetY !== previous.maxOffsetY ||
+      entry.viewport.width !== previous.viewport.width ||
+      entry.viewport.height !== previous.viewport.height ||
+      entry.content.width !== previous.content.width ||
+      entry.content.height !== previous.content.height
+    );
+  }
+
+  function snapshotState(entry: ScrollState): ScrollState {
+    return {
+      offsetX: entry.offsetX,
+      offsetY: entry.offsetY,
+      maxOffsetX: entry.maxOffsetX,
+      maxOffsetY: entry.maxOffsetY,
+      viewport: copySize(entry.viewport),
+      content: copySize(entry.content)
+    };
+  }
+
   return {
     register(containerId) {
       getEntry(containerId);
@@ -244,24 +268,33 @@ export function createMemoryScrollService(onChange?: ChangeListener): ScrollServ
     },
     setMetrics(containerId, viewport, content) {
       const entry = getEntry(containerId);
+      const previous = snapshotState(entry);
       entry.viewport = copySize(viewport);
       entry.content = copySize(content);
       clampState(entry);
-      emit(onChange);
+      if (hasChanged(entry, previous)) {
+        emit(onChange);
+      }
     },
     setOffset(containerId, offsetX, offsetY) {
       const entry = getEntry(containerId);
+      const previous = snapshotState(entry);
       entry.offsetX = offsetX;
       entry.offsetY = offsetY;
       clampState(entry);
-      emit(onChange);
+      if (hasChanged(entry, previous)) {
+        emit(onChange);
+      }
     },
     scrollBy(containerId, deltaX, deltaY) {
       const entry = getEntry(containerId);
+      const previous = snapshotState(entry);
       entry.offsetX += deltaX;
       entry.offsetY += deltaY;
       clampState(entry);
-      emit(onChange);
+      if (hasChanged(entry, previous)) {
+        emit(onChange);
+      }
     }
   };
 }

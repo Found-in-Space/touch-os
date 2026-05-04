@@ -100,8 +100,11 @@ Current built-in containers cover:
 - scrolling
 - docked edge layout
 - grouped sections
+- full-surface shells with fixed header/footer regions and a scrollable body
 
 Containers may opt into full-bounds pointer opacity when an otherwise sparse surface should absorb input across its visible shell.
+
+`createColumn` and `createRow` are intrinsic stacks. They should not be treated as responsive page scaffolds. Full-surface application pages should start with `createSurfaceShell` so variable content is clipped, scrollable, and sized from current surface metrics.
 
 ### 4. Services
 

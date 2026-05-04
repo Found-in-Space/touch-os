@@ -13,7 +13,8 @@ import {
 import {
   createColumn,
   createDockLayout,
-  createSection
+  createSection,
+  createSurfaceShell
 } from "../../../src/index.js";
 import {
   REAR_VIEW_SOURCE_ID,
@@ -60,15 +61,17 @@ export function createRoomPanelRoot(
         ]
       });
     case "arm":
-      return createColumn("arm-root", {
+      return createSurfaceShell("arm-root", {
         padding: 10,
         gap: 10,
+        bodyGap: 10,
+        bodyPadding: 0,
         pointerOpaque: true,
         backgroundColor: "#101826",
+        header: createTextLabel("arm-title", {
+          text: "Wrist Panel"
+        }),
         children: [
-          createTextLabel("arm-title", {
-            text: "Wrist Panel"
-          }),
           createToggle("arm-light-toggle", {
             label: "Lamp",
             value: state.lightOn,

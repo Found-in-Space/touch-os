@@ -3,7 +3,8 @@ import {
   createButton,
   createColumn,
   createPageContainer,
-  createRuntime
+  createRuntime,
+  createSurfaceShell
 } from "../src/index.js";
 
 describe("focus service", () => {
@@ -80,4 +81,39 @@ describe("focus service", () => {
     expect(runtime.getInteraction().focusedComponentId).toBe("page-b-button");
     expect(runtime.getServices().focus.getDefaultTargetId()).toBe("page-b-button:face");
   });
+
+  it("skips focusable controls clipped outside a scroll body", () => {
+    const runtime = createRuntime({
+      root: createSurfaceShell("focus-shell", {
+        bodyPadding: 0,
+        bodyGap: 4,
+        children: createFocusButtons("focus-row", 5)
+      }),
+      surface: { width: 240, height: 80 }
+    });
+
+    runtime.render();
+    const focus = runtime.getServices().focus;
+
+    expect(focus.focusNext()).toBe("focus-row-0");
+    expect(focus.focusNext()).toBe("focus-row-1");
+    expect(focus.focusNext()).toBe("focus-row-0");
+
+    const scroll = runtime.getServices().scroll;
+    scroll.setOffset("focus-shell:scroll", 0, scroll.getState("focus-shell:scroll").maxOffsetY);
+    focus.clearFocus();
+
+    expect(focus.focusNext()).toBe("focus-row-3");
+    expect(focus.focusNext()).toBe("focus-row-4");
+    expect(focus.focusNext()).toBe("focus-row-3");
+  });
 });
+
+function createFocusButtons(prefix: string, count: number) {
+  return Array.from({ length: count }, (_, index) =>
+    createButton(`${prefix}-${index}`, {
+      label: `${index + 1}`,
+      actionId: `${prefix}.${index}`
+    })
+  );
+}

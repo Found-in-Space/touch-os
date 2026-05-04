@@ -83,6 +83,28 @@ describe("living room panel ui", () => {
     expect(texts).toContain("Picture offline");
     expect(texts).not.toContain("Mirror offline");
   });
+
+  it("keeps the wrist panel controls reachable on its compact surface", () => {
+    const surface = getRoomPanelSurface("arm");
+    const runtime = createRuntime({
+      root: createRoomPanelRoot("arm", createRoomDemoStore().getState()),
+      surface,
+      theme: getRoomPanelTheme("arm")
+    });
+
+    runtime.render();
+    const scrollBounds = runtime.getBounds("arm-root:scroll");
+    expect(scrollBounds).toBeDefined();
+    expect((scrollBounds?.y ?? 0) + (scrollBounds?.height ?? 0)).toBeLessThanOrEqual(surface.height ?? 0);
+    expect(runtime.getServices().scroll.getState("arm-root:scroll").maxOffsetY).toBeGreaterThan(0);
+
+    const scroll = runtime.getServices().scroll;
+    scroll.setOffset("arm-root:scroll", 0, scroll.getState("arm-root:scroll").maxOffsetY);
+
+    const finalControl = runtime.getBounds("arm-motion-readout");
+    expect(finalControl).toBeDefined();
+    expect((finalControl?.y ?? 0) + (finalControl?.height ?? 0)).toBeLessThanOrEqual(surface.height ?? 0);
+  });
 });
 
 function collectTexts(commands: readonly { type: string }[]): string[] {

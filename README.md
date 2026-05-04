@@ -160,7 +160,7 @@ Shipped now:
 - normalized input and emitted output model
 - generic controls: button, hold button, repeat button, d-pad, toggle, slider, choice group, text label, value readout, action card, list item
 - richer display components: bitmap plot, custom graph, embedded surface
-- containers: row, column, stack, overlay, section, scroll container, page container, dock layout
+- containers: row, column, stack, overlay, section, scroll container, page container, dock layout, surface shell
 - services: layout, navigation, scroll, focus, theme, timing, surface metrics, bitmap assets, embedded surfaces
 - embedded-surface composition through copy or host-composited surface commands
 - optional schema authoring for text, button, toggle, slider, choice group, value readout, and action card documents

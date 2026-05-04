@@ -14,3 +14,5 @@ export type { SectionProps } from "./section.js";
 export { createSection } from "./section.js";
 export type { StackProps } from "./stack.js";
 export { createStack } from "./stack.js";
+export type { SurfaceShellProps } from "./surface-shell.js";
+export { createSurfaceShell } from "./surface-shell.js";

@@ -152,12 +152,13 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
   const dragThreshold = options.dragThreshold ?? 6;
   let eventDispatchDepth = 0;
   let isFlushingEmissions = false;
+  let layoutPassDepth = 0;
 
   const services: RuntimeServices = {
     layout,
     navigation:
       options.services?.navigation ?? createMemoryNavigationService(() => invalidateLayout()),
-    scroll: options.services?.scroll ?? createMemoryScrollService(() => invalidateRender()),
+    scroll: options.services?.scroll ?? createMemoryScrollService(() => invalidateScrollLayout()),
     focus:
       options.services?.focus ??
       createMemoryFocusService(
@@ -198,8 +199,22 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
     renderDirty = true;
   }
 
+  function invalidateLayoutOnly(): void {
+    layoutDirty = true;
+    renderDirty = true;
+  }
+
   function invalidateRender(): void {
     renderDirty = true;
+  }
+
+  function invalidateScrollLayout(): void {
+    if (layoutPassDepth > 0) {
+      renderDirty = true;
+      return;
+    }
+
+    invalidateLayoutOnly();
   }
 
   function isRelevantEmbeddedSurfaceChange(change: EmbeddedSurfaceChange): boolean {
@@ -561,12 +576,16 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
       clearRemovedInteractionReferences();
       treeDirty = false;
     }
-    layout.clear();
-    const surface = services.surface.getMetrics();
-    const availableBounds = insetRect(createRect(0, 0, surface.width, surface.height), surface.safeArea);
-    measureNode(rootNode, unconstrained(availableBounds.width, availableBounds.height));
-    layoutNode(rootNode, availableBounds);
-    syncFocusVisibility();
+    layoutPassDepth += 1;
+    try {
+      layout.clear();
+      const availableBounds = getSurfaceVisibleBounds();
+      measureNode(rootNode, unconstrained(availableBounds.width, availableBounds.height));
+      layoutNode(rootNode, availableBounds);
+      syncFocusVisibility();
+    } finally {
+      layoutPassDepth -= 1;
+    }
     layoutDirty = false;
     renderDirty = true;
   }
@@ -672,8 +691,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
       return;
     }
 
-    const bounds = layout.getBounds(currentFocus);
-    if (bounds && bounds.width > 0 && bounds.height > 0) {
+    if (isComponentEffectivelyVisible(currentFocus)) {
       return;
     }
 
@@ -704,8 +722,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
           ];
 
     return orderedCandidates.find((componentId) => {
-      const bounds = layout.getBounds(componentId);
-      return Boolean(bounds && bounds.width > 0 && bounds.height > 0);
+      return isComponentEffectivelyVisible(componentId);
     });
   }
 
@@ -716,8 +733,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
   ): string | undefined {
     ensureLayout();
     const visibleFocusableIds = focusableIds.filter((componentId) => {
-      const bounds = layout.getBounds(componentId);
-      return Boolean(bounds && bounds.width > 0 && bounds.height > 0);
+      return isComponentEffectivelyVisible(componentId);
     });
     if (visibleFocusableIds.length === 0) {
       return undefined;
@@ -764,6 +780,35 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
       }
     });
     invalidateRender();
+  }
+
+  function isComponentEffectivelyVisible(componentId: string): boolean {
+    const visibleBounds = getEffectiveVisibleBounds(componentId);
+    return Boolean(visibleBounds && visibleBounds.width > 0 && visibleBounds.height > 0);
+  }
+
+  function getEffectiveVisibleBounds(componentId: string): Rect | undefined {
+    const node = nodeLookup.get(componentId);
+    if (!node) {
+      return undefined;
+    }
+
+    const path = resolvePathNodes(buildPathToRoot(node));
+    let visibleBounds: Rect | undefined = getSurfaceVisibleBounds();
+
+    for (const pathNode of path) {
+      visibleBounds = intersectRect(visibleBounds, pathNode.clipRect);
+      if (!visibleBounds) {
+        return undefined;
+      }
+    }
+
+    return intersectRect(visibleBounds, node.bounds);
+  }
+
+  function getSurfaceVisibleBounds(): Rect {
+    const surface = services.surface.getMetrics();
+    return insetRect(createRect(0, 0, surface.width, surface.height), surface.safeArea);
   }
 
   function resolvePathNodes(pathIds: readonly string[]): RuntimeNodeState[] {

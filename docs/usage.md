@@ -49,6 +49,60 @@ const snapshot = runtime.render();
 
 `snapshot.commands` is the host-facing render output. A host can rasterize those commands into a canvas, texture, or other retained surface.
 
+## Fit Content To The Surface
+
+Use `createSurfaceShell` for full-surface pages that need to survive different panel sizes, HUD safe areas, or XR tablet dimensions. The shell keeps optional header and footer regions fixed and gives the remaining height to a scrollable body.
+
+```ts
+import {
+  createButton,
+  createSection,
+  createSlider,
+  createSurfaceShell,
+  createTextLabel,
+  createToggle
+} from "@found-in-space/touch-os";
+
+const root = createSurfaceShell("settings", {
+  padding: 12,
+  header: createTextLabel("settings-title", {
+    text: "Settings"
+  }),
+  footer: createButton("settings-save", {
+    label: "Save",
+    actionId: "settings.save"
+  }),
+  children: [
+    createSection("settings-display", {
+      title: "Display",
+      children: [
+        createToggle("settings-labels", {
+          label: "Show Labels",
+          field: "showLabels",
+          value: true
+        }),
+        createSlider("settings-brightness", {
+          label: "Brightness",
+          field: "brightness",
+          value: 45,
+          min: 0,
+          max: 100,
+          step: 5
+        })
+      ]
+    })
+  ]
+});
+```
+
+Guidelines:
+
+- Start every full-panel app page with `createSurfaceShell`.
+- Keep persistent controls in `header` or `footer`.
+- Put variable lists, forms, and sections in `children`; the body scrolls when needed.
+- Use fixed heights only for content with a real aspect or data need, such as media and graphs.
+- Let hosts call `runtime.resize()` or pass updated surface metrics when the display size changes.
+
 ## Feed Input And Consume Outputs
 
 The runtime accepts normalized input rather than DOM or XR-native event objects.

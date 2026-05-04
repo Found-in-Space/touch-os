@@ -3,18 +3,20 @@ import * as THREE from "three";
 import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
 import {
   createEmbeddedSurfaceService,
-  createHudPanelDriver,
-  createPoseAnchoredPanelDriver,
   createRuntime,
-  createScenePanelDriver,
   type ActionEvent,
   type ChangeRequestEvent,
   type DisplayRuntime,
   type RuntimeOutput,
-  type SurfaceMetrics,
+  type SurfaceMetrics
+} from "../../../src/index.js";
+import {
+  createHudPanelDriver,
+  createPoseAnchoredPanelDriver,
+  createScenePanelDriver,
   type ThreePanelDriver,
   type ThreePointerSample
-} from "../../../src/index.js";
+} from "../../../src/hosts/three.js";
 import {
   routePointerSample,
   type CoordinatedPanel

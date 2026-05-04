@@ -82,6 +82,9 @@ describe("settings page fixture", () => {
 
     const scrollBounds = runtime.getBounds("settings-scroll");
     expect(scrollBounds).toBeDefined();
+    const audioSectionBefore = runtime.getBounds("settings-audio-section");
+    expect(audioSectionBefore).toBeDefined();
+    expect((scrollBounds?.y ?? 0) + (scrollBounds?.height ?? 0)).toBeLessThanOrEqual(120);
 
     runtime.dispatchInput({
       type: "scroll",
@@ -94,6 +97,9 @@ describe("settings page fixture", () => {
 
     const nextScrollState = runtime.getServices().scroll.getState("settings-scroll");
     expect(nextScrollState.offsetY).toBeGreaterThan(0);
+    const audioSectionAfter = runtime.getBounds("settings-audio-section");
+    expect(audioSectionAfter).toBeDefined();
+    expect(audioSectionAfter?.y ?? 0).toBeLessThan(audioSectionBefore?.y ?? 0);
     expect(runtime.render().revision).toBeGreaterThan(0);
   });
 
@@ -110,9 +116,11 @@ describe("settings page fixture", () => {
     runtime.render();
     const scrollBounds = runtime.getBounds("settings-scroll");
     expect(scrollBounds).toBeDefined();
+    const audioSectionBefore = runtime.getBounds("settings-audio-section");
+    expect(audioSectionBefore).toBeDefined();
 
     const startX = (scrollBounds?.x ?? 0) + 24;
-    const startY = (scrollBounds?.y ?? 0) + 60;
+    const startY = (scrollBounds?.y ?? 0) + (scrollBounds?.height ?? 0) / 2;
 
     runtime.dispatchInput({
       type: "pointer-down",
@@ -134,6 +142,34 @@ describe("settings page fixture", () => {
     });
 
     expect(runtime.getServices().scroll.getState("settings-scroll").offsetY).toBeGreaterThan(0);
+    expect(runtime.getBounds("settings-audio-section")?.y ?? 0).toBeLessThan(audioSectionBefore?.y ?? 0);
+  });
+
+  it("relayouts immediately when scroll state is changed through the service", () => {
+    const runtime = createRuntime({
+      root: createSettingsPageFixture({
+        showLabels: true,
+        brightness: 45,
+        alertsEnabled: true
+      }),
+      surface: { width: 320, height: 120 }
+    });
+
+    runtime.render();
+    const before = runtime.getBounds("settings-audio-section");
+    const scroll = runtime.getServices().scroll;
+    scroll.setOffset("settings-scroll", 0, scroll.getState("settings-scroll").maxOffsetY);
+
+    const after = runtime.getBounds("settings-audio-section");
+    const alerts = runtime.getBounds("alerts-toggle");
+    const scrollBounds = runtime.getBounds("settings-scroll");
+
+    expect(before).toBeDefined();
+    expect(after).toBeDefined();
+    expect(after?.y ?? 0).toBeLessThan(before?.y ?? 0);
+    expect((alerts?.y ?? 0) + (alerts?.height ?? 0)).toBeLessThanOrEqual(
+      (scrollBounds?.y ?? 0) + (scrollBounds?.height ?? 0)
+    );
   });
 
   it("hands focus to the next visible control when navigation hides the focused control", () => {
@@ -147,8 +183,8 @@ describe("settings page fixture", () => {
     });
 
     runtime.render();
-    clickComponentCenter(runtime, "brightness-slider");
-    expect(runtime.getInteraction().focusedComponentId).toBe("brightness-slider");
+    clickComponentCenter(runtime, "show-labels-toggle");
+    expect(runtime.getInteraction().focusedComponentId).toBe("show-labels-toggle");
 
     const result = clickComponentCenter(runtime, "settings-open-audio", 10);
     applyNavigationOutputs(runtime, result.outputs);
