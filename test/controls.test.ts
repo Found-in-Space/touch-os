@@ -75,7 +75,7 @@ describe("built-in controls", () => {
     expect(request).toMatchObject({
       type: "change-request",
       componentId: "fixture-slider",
-      field: "value"
+      field: "fixtureBrightness"
     });
     if (request?.type === "change-request") {
       expect(request.value).toBeGreaterThan(50);
@@ -84,8 +84,18 @@ describe("built-in controls", () => {
 
   it("rejects invalid slider configuration", () => {
     expect(() =>
+      createSlider("missing-field", {
+        label: "Bad",
+        value: 5,
+        min: 0,
+        max: 10
+      } as never)
+    ).toThrow(/field is required/i);
+
+    expect(() =>
       createSlider("invalid-range", {
         label: "Bad",
+        field: "invalidRange",
         value: 5,
         min: 10,
         max: 10
@@ -95,6 +105,7 @@ describe("built-in controls", () => {
     expect(() =>
       createSlider("invalid-step", {
         label: "Bad",
+        field: "invalidStep",
         value: 5,
         min: 0,
         max: 10,
@@ -105,6 +116,7 @@ describe("built-in controls", () => {
     expect(() =>
       createSlider("duplicate-labels", {
         label: "Bad",
+        field: "duplicateLabels",
         value: 5,
         min: 0,
         max: 10,
@@ -118,6 +130,7 @@ describe("built-in controls", () => {
     expect(() =>
       createSlider("out-of-range-label", {
         label: "Bad",
+        field: "outOfRangeLabel",
         value: 5,
         min: 0,
         max: 10,
@@ -130,6 +143,7 @@ describe("built-in controls", () => {
     const snappedRuntime = createRuntime({
       root: createSlider("snapped-slider", {
         label: "Projection",
+        field: "projection",
         value: 9,
         min: 0,
         max: 10,
@@ -147,6 +161,7 @@ describe("built-in controls", () => {
     const clampedRuntime = createRuntime({
       root: createSlider("clamped-slider", {
         label: "Brightness",
+        field: "brightness",
         value: 200,
         min: 0,
         max: 10,
@@ -166,6 +181,7 @@ describe("built-in controls", () => {
     const mappedRuntime = createRuntime({
       root: createSlider("mapped-slider", {
         label: "Projection",
+        field: "projection",
         value: 2,
         min: 0,
         max: 4,
@@ -184,6 +200,7 @@ describe("built-in controls", () => {
     const explicitRuntime = createRuntime({
       root: createSlider("explicit-slider", {
         label: "Zoom",
+        field: "zoom",
         value: 1.25,
         min: 1,
         max: 2,
@@ -205,6 +222,7 @@ describe("built-in controls", () => {
     const runtime = createRuntime({
       root: createSlider("track-slider", {
         label: "Brightness",
+        field: "brightness",
         value: 50,
         min: 0,
         max: 100,
@@ -230,7 +248,7 @@ describe("built-in controls", () => {
     expect(downResult.outputs).toContainEqual({
       type: "change-request",
       componentId: "track-slider",
-      field: "value",
+      field: "brightness",
       value: 80
     });
 
@@ -253,7 +271,7 @@ describe("built-in controls", () => {
     expect(nextStepMove.outputs).toContainEqual({
       type: "change-request",
       componentId: "track-slider",
-      field: "value",
+      field: "brightness",
       value: 90
     });
   });
@@ -262,6 +280,7 @@ describe("built-in controls", () => {
     const runtime = createRuntime({
       root: createSlider("cancel-slider", {
         label: "Brightness",
+        field: "brightness",
         value: 50,
         min: 0,
         max: 100,
@@ -312,6 +331,7 @@ describe("built-in controls", () => {
     runtime.setRoot(
       createSlider("cancel-slider", {
         label: "Brightness",
+        field: "brightness",
         value: 50,
         min: 0,
         max: 100,
@@ -339,6 +359,13 @@ describe("built-in controls", () => {
   });
 
   it("emits toggle change requests as controlled updates", () => {
+    expect(() =>
+      createToggle("missing-toggle-field", {
+        label: "Show Labels",
+        value: false
+      } as never)
+    ).toThrow(/field is required/i);
+
     const runtime = createRuntime({
       root: createToggle("test-toggle", {
         label: "Show Labels",

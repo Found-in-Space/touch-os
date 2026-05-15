@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { createEmbeddedSurfaceService } from "../src/services/index.js";
+import * as threeHost from "../src/hosts/three.js";
 
 interface PackageJsonExportsEntry {
   types?: string;
@@ -66,6 +68,33 @@ describe("public package api", () => {
         url: "https://github.com/Found-in-Space/touch-os/issues"
       }
     });
+  });
+
+  it("does not expose deprecated surface or three host aliases", () => {
+    const surfaces = createEmbeddedSurfaceService();
+    const retiredSurfaceUpdater = ["set", "State"].join("");
+    const retiredXrHost = ["create", "Xr", "Tablet", "Host"].join("");
+    const retiredHeldDriver = ["create", "Held", "Tablet", "Driver"].join("");
+    const retiredSurfaceUpdateType = ["Embedded", "Surface", "State", "Update"].join("");
+    const retiredPoseField = ["xr", "Pose"].join("");
+    const retiredXrOptions = ["Xr", "Tablet", "Host", "Options"].join("");
+    const retiredHeldOptions = ["Held", "Tablet", "Driver", "Options"].join("");
+
+    expect(retiredSurfaceUpdater in surfaces).toBe(false);
+    expect(retiredXrHost in threeHost).toBe(false);
+    expect(retiredHeldDriver in threeHost).toBe(false);
+
+    const servicesContract = readFileSync(
+      new URL("../src/services/contracts.ts", import.meta.url),
+      "utf8"
+    );
+    const threeHostSource = readFileSync(new URL("../src/hosts/three.ts", import.meta.url), "utf8");
+
+    expect(servicesContract).not.toContain(retiredSurfaceUpdateType);
+    expect(servicesContract).not.toContain(retiredSurfaceUpdater);
+    expect(threeHostSource).not.toContain(retiredPoseField);
+    expect(threeHostSource).not.toContain(retiredXrOptions);
+    expect(threeHostSource).not.toContain(retiredHeldOptions);
   });
 });
 

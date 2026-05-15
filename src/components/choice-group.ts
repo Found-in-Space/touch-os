@@ -9,7 +9,6 @@ import { createRect, rectContainsPoint, type Rect } from "../core/geometry.js";
 import type { ThemeTokens } from "../services/contracts.js";
 import { clearFocusableRegistration, syncFocusableRegistration } from "./focusable.js";
 import {
-  getChoiceGroupField,
   getChoiceGroupSelectedValues,
   normalizeChoiceGroupProps,
   type ChoiceGroupProps,
@@ -291,7 +290,7 @@ const ChoiceGroupComponent: DisplayComponent<ChoiceGroupProps<string>, ChoiceGro
           ctx.emit({
             type: "change-request",
             componentId: ctx.id,
-            field: getChoiceGroupField(props),
+            field: props.field,
             value: option.value
           });
           return;
@@ -307,7 +306,7 @@ const ChoiceGroupComponent: DisplayComponent<ChoiceGroupProps<string>, ChoiceGro
         ctx.emit({
           type: "change-request",
           componentId: ctx.id,
-          field: getChoiceGroupField(props),
+          field: props.field,
           value: props.options
             .filter((entry) => currentValues.has(entry.value))
             .map((entry) => entry.value)

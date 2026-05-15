@@ -113,14 +113,19 @@ export interface SchemaPage<TCustomItem extends SchemaCustomItem = never> {
 }
 
 export interface SchemaDocument<TCustomItem extends SchemaCustomItem = never> {
-  version?: 1;
+  version: 1;
   pages: readonly SchemaPage<TCustomItem>[];
   initialPageId?: string;
 }
 
+export interface SchemaTextTarget {
+  itemId: string;
+  slot: string;
+}
+
 export interface SchemaBuildContext {
   readField<TValue>(field: string, fallback: TValue): TValue;
-  readText(itemId: string, fallback: string): string;
+  readText(target: SchemaTextTarget, fallback: string): string;
 }
 
 export interface SchemaKindRegistration<TItem extends SchemaCustomItem = SchemaCustomItem> {
@@ -136,7 +141,7 @@ export interface SchemaAdapterOptions<TCustomItem extends SchemaCustomItem = nev
 export interface SchemaAdapterController<TCustomItem extends SchemaCustomItem = never> {
   setSchema(schema: SchemaDocument<TCustomItem>): void;
   setField(field: string, value: unknown): void;
-  setText(id: string, text: string): void;
+  setText(target: SchemaTextTarget, text: string): void;
   replaceItem(itemId: string, nextItem: SchemaItem<TCustomItem>): void;
 }
 
@@ -153,7 +158,7 @@ interface SchemaAdapterStore<TCustomItem extends SchemaCustomItem = never> {
   schema: SchemaDocument<TCustomItem>;
   compiled: CompiledSchemaDocument;
   fields: Map<string, unknown>;
-  texts: Map<string, string>;
+  texts: Map<string, Map<string, string>>;
   registrations: Map<string, ErasedSchemaRegistration>;
   invalidateLayout?: () => void;
   invalidateRender?: () => void;
@@ -209,7 +214,7 @@ const BUILTIN_REGISTRATIONS: readonly ErasedSchemaRegistration[] = [
     },
     createNode(item, context) {
       return createTextLabel(item.id, {
-        text: context.readText(item.id, item.text)
+        text: context.readText({ itemId: item.id, slot: "text" }, item.text)
       });
     }
   }),
@@ -232,7 +237,7 @@ const BUILTIN_REGISTRATIONS: readonly ErasedSchemaRegistration[] = [
     },
     createNode(item, context) {
       return createButton(item.id, {
-        label: context.readText(item.id, item.label),
+        label: context.readText({ itemId: item.id, slot: "label" }, item.label),
         actionId: item.actionId,
         ...(item.disabled === undefined ? {} : { disabled: item.disabled })
       });
@@ -252,7 +257,7 @@ const BUILTIN_REGISTRATIONS: readonly ErasedSchemaRegistration[] = [
     },
     createNode(item, context) {
       return createToggle(item.id, {
-        label: item.label,
+        label: context.readText({ itemId: item.id, slot: "label" }, item.label),
         field: item.field,
         value: context.readField(item.field, item.value)
       });
@@ -320,11 +325,11 @@ const BUILTIN_REGISTRATIONS: readonly ErasedSchemaRegistration[] = [
     createNode(item, context) {
       const valueText =
         item.valueTextField === undefined
-          ? item.valueText
+          ? readOptionalSchemaText(context, item.id, "valueText", item.valueText)
           : context.readField<string | undefined>(item.valueTextField, item.valueText);
 
       return createSlider(item.id, {
-        label: context.readText(item.id, item.label),
+        label: context.readText({ itemId: item.id, slot: "label" }, item.label),
         field: item.field,
         value: context.readField(item.field, item.value),
         min: item.min,
@@ -389,11 +394,20 @@ const BUILTIN_REGISTRATIONS: readonly ErasedSchemaRegistration[] = [
     },
     createNode(item, context) {
       const label =
-        item.label === undefined ? undefined : context.readText(item.id, item.label);
+        item.label === undefined
+          ? undefined
+          : context.readText({ itemId: item.id, slot: "label" }, item.label);
+      const options = item.options.map((option) => ({
+        ...option,
+        label: context.readText(
+          { itemId: item.id, slot: `option:${option.value}:label` },
+          option.label
+        )
+      }));
 
       if (item.selectionMode === "single") {
         return createChoiceGroup(item.id, {
-          options: item.options,
+          options,
           selectionMode: item.selectionMode,
           field: item.field,
           ...(label === undefined ? {} : { label }),
@@ -407,7 +421,7 @@ const BUILTIN_REGISTRATIONS: readonly ErasedSchemaRegistration[] = [
       }
 
       return createChoiceGroup(item.id, {
-        options: item.options,
+        options,
         selectionMode: item.selectionMode,
         field: item.field,
         values: context.readField(item.field, item.values ?? []),
@@ -431,8 +445,8 @@ const BUILTIN_REGISTRATIONS: readonly ErasedSchemaRegistration[] = [
     },
     createNode(item, context) {
       return createValueReadout(item.id, {
-        label: item.label,
-        value: context.readText(item.id, item.value)
+        label: context.readText({ itemId: item.id, slot: "label" }, item.label),
+        value: context.readText({ itemId: item.id, slot: "value" }, item.value)
       });
     }
   }),
@@ -489,11 +503,55 @@ const BUILTIN_REGISTRATIONS: readonly ErasedSchemaRegistration[] = [
         ...props
       };
     },
-    createNode(item) {
-      return createActionCard(item.id, item);
+    createNode(item, context) {
+      return createSchemaActionCard(item, context);
     }
   })
 ];
+
+function createSchemaActionCard(
+  item: SchemaActionCardItem,
+  context: SchemaBuildContext
+): DisplayNode {
+  const lines = item.lines?.map((line, index) =>
+    context.readText({ itemId: item.id, slot: `line:${index}` }, line)
+  );
+  const emptyStateText = readOptionalSchemaText(
+    context,
+    item.id,
+    "emptyStateText",
+    item.emptyStateText
+  );
+  const primaryActionLabel = readOptionalSchemaText(
+    context,
+    item.id,
+    "primaryActionLabel",
+    item.primaryActionLabel
+  );
+  const props = normalizeActionCardProps(
+    {
+      title: context.readText({ itemId: item.id, slot: "title" }, item.title),
+      ...(lines === undefined ? {} : { lines }),
+      ...(emptyStateText === undefined ? {} : { emptyStateText }),
+      ...(item.primaryActionId === undefined ? {} : { primaryActionId: item.primaryActionId }),
+      ...(primaryActionLabel === undefined ? {} : { primaryActionLabel }),
+      ...(item.dismissible === undefined ? {} : { dismissible: item.dismissible }),
+      ...(item.dismissActionId === undefined ? {} : { dismissActionId: item.dismissActionId })
+    },
+    `Schema action-card item "${item.id}"`
+  );
+
+  return createActionCard(item.id, props);
+}
+
+function readOptionalSchemaText(
+  context: SchemaBuildContext,
+  itemId: string,
+  slot: string,
+  fallback: string | undefined
+): string | undefined {
+  return fallback === undefined ? undefined : context.readText({ itemId, slot }, fallback);
+}
 
 const SchemaAdapterComponent: DisplayComponent<SchemaAdapterProps<SchemaCustomItem>> = {
   kind: "schema-adapter",
@@ -552,8 +610,8 @@ export function createSchemaAdapter<TCustomItem extends SchemaCustomItem = never
       store.fields.set(field, value);
       store.invalidateLayout?.();
     },
-    setText(itemId, text) {
-      store.texts.set(itemId, text);
+    setText(target, text) {
+      writeTextValue(store, target, text);
       store.invalidateLayout?.();
     },
     replaceItem(itemId, nextItem) {
@@ -582,7 +640,7 @@ export function createSchemaAdapter<TCustomItem extends SchemaCustomItem = never
       });
 
       const nextSchema: SchemaDocument<TCustomItem> = {
-        ...(store.schema.version === undefined ? {} : { version: store.schema.version }),
+        version: store.schema.version,
         ...(store.schema.initialPageId === undefined
           ? {}
           : { initialPageId: store.schema.initialPageId }),
@@ -652,8 +710,8 @@ function createBuildContext(store: SchemaAdapterStore<SchemaCustomItem>): Schema
     readField(field, fallback) {
       return readFieldValue(store, field, fallback);
     },
-    readText(itemId, fallback) {
-      return store.texts.get(itemId) ?? fallback;
+    readText(target, fallback) {
+      return readTextValue(store, target, fallback);
     }
   };
 }
@@ -664,6 +722,42 @@ function readFieldValue<TValue>(
   fallback: TValue
 ): TValue {
   return (store.fields.get(field) as TValue | undefined) ?? fallback;
+}
+
+function readTextValue(
+  store: SchemaAdapterStore<SchemaCustomItem>,
+  target: SchemaTextTarget,
+  fallback: string
+): string {
+  const normalizedTarget = validateSchemaTextTarget(target, "Schema text target");
+  return store.texts.get(normalizedTarget.itemId)?.get(normalizedTarget.slot) ?? fallback;
+}
+
+function writeTextValue(
+  store: SchemaAdapterStore<SchemaCustomItem>,
+  target: SchemaTextTarget,
+  text: string
+): void {
+  const normalizedTarget = validateSchemaTextTarget(target, "Schema text target");
+  const normalizedText = readStringValue(text, "Schema text value");
+  const itemTexts = store.texts.get(normalizedTarget.itemId) ?? new Map<string, string>();
+  itemTexts.set(normalizedTarget.slot, normalizedText);
+  store.texts.set(normalizedTarget.itemId, itemTexts);
+}
+
+function validateSchemaTextTarget(target: SchemaTextTarget, label: string): SchemaTextTarget {
+  const record = expectRecord(target as unknown, label);
+  return {
+    itemId: readRequiredStringProperty(record, "itemId", `${label} itemId`),
+    slot: readRequiredStringProperty(record, "slot", `${label} slot`)
+  };
+}
+
+function readStringValue(value: string, label: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`${label} must be a string.`);
+  }
+  return value;
 }
 
 function createRegistrationMap<TCustomItem extends SchemaCustomItem>(
@@ -691,7 +785,7 @@ function compileSchemaDocument<TCustomItem extends SchemaCustomItem>(
   registrations: Map<string, ErasedSchemaRegistration>
 ): CompiledSchemaDocument {
   const schemaRecord = expectRecord(schema as unknown, "Schema document");
-  const version = readOptionalLiteralVersion(schemaRecord.version);
+  const version = readRequiredLiteralVersion(schemaRecord.version);
   const rawPages = readRequiredArray(schemaRecord.pages, "Schema document pages");
   const initialPageId = readOptionalStringProperty(
     schemaRecord,
@@ -816,12 +910,9 @@ function readRequiredArray(value: unknown, label: string): readonly unknown[] {
   return value;
 }
 
-function readOptionalLiteralVersion(value: unknown): 1 {
-  if (value === undefined) {
-    return 1;
-  }
+function readRequiredLiteralVersion(value: unknown): 1 {
   if (value !== 1) {
-    throw new Error(`Schema document version must be 1 when provided.`);
+    throw new Error(`Schema document version is required and must be 1.`);
   }
   return value;
 }

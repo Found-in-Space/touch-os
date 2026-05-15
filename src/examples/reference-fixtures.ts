@@ -35,6 +35,7 @@ export function createButtonFixture(): DisplayNode {
 export function createSliderFixture(value = 50): DisplayNode {
   return createSlider("fixture-slider", {
     label: "Brightness",
+    field: "fixtureBrightness",
     value,
     min: 0,
     max: 100,
@@ -45,6 +46,7 @@ export function createSliderFixture(value = 50): DisplayNode {
 export function createFormattedSliderFixture(value = 1.5): DisplayNode {
   return createSlider("fixture-formatted-slider", {
     label: "Zoom",
+    field: "fixtureZoom",
     value,
     min: 1,
     max: 2,

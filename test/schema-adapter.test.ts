@@ -41,7 +41,7 @@ const customStatusRegistration: SchemaKindRegistration<CustomStatusItem> = {
   },
   createNode(item, context) {
     return createTextLabel(item.id, {
-      text: context.readText(item.id, item.text)
+      text: context.readText({ itemId: item.id, slot: "text" }, item.text)
     });
   }
 };
@@ -49,6 +49,7 @@ const customStatusRegistration: SchemaKindRegistration<CustomStatusItem> = {
 describe("schema adapter", () => {
   it("renders schema-driven built-ins and preserves controller updates", () => {
     const adapter = createSchemaAdapter("schema-shell", {
+      version: 1,
       initialPageId: "main",
       pages: [
         {
@@ -89,7 +90,7 @@ describe("schema adapter", () => {
     expect(texts).toContain("Brightness");
     expect(texts).toContain("Warm");
 
-    adapter.controller.setText("status-text", "Online");
+    adapter.controller.setText({ itemId: "status-text", slot: "text" }, "Online");
     adapter.controller.setField("brightness", 60);
     adapter.controller.setField("brightnessLabel", "Bright");
 
@@ -212,6 +213,53 @@ describe("schema adapter", () => {
     });
   });
 
+  it("updates schema text through explicit item slots", () => {
+    const adapter = createSchemaAdapter("schema-shell", {
+      version: 1,
+      pages: [
+        {
+          id: "main",
+          items: [
+            {
+              kind: "readout",
+              id: "status-readout",
+              label: "Status",
+              value: "Offline"
+            },
+            {
+              kind: "choice-group",
+              id: "mode-group",
+              field: "mode",
+              selectionMode: "single",
+              value: "standard",
+              options: [
+                { value: "standard", label: "Standard" },
+                { value: "cinema", label: "Cinema" }
+              ]
+            }
+          ]
+        }
+      ]
+    });
+
+    const runtime = createRuntime({
+      root: adapter.root,
+      surface: { width: 320, height: 220 }
+    });
+
+    adapter.controller.setText({ itemId: "status-readout", slot: "label" }, "State");
+    adapter.controller.setText({ itemId: "status-readout", slot: "value" }, "Online");
+    adapter.controller.setText({ itemId: "mode-group", slot: "option:cinema:label" }, "Theater");
+
+    const texts = getTexts(runtime.render().commands);
+    expect(texts).toContain("State");
+    expect(texts).toContain("Online");
+    expect(texts).toContain("Theater");
+    expect(texts).not.toContain("Status");
+    expect(texts).not.toContain("Offline");
+    expect(texts).not.toContain("Cinema");
+  });
+
   it("renders action-card items, emits shell actions, and supports replaceItem updates", () => {
     const adapter = createSchemaAdapter("schema-shell", {
       version: 1,
@@ -316,13 +364,36 @@ describe("schema adapter", () => {
 
     expect(getTexts(runtime.render().commands)).toContain("Custom Ready");
 
-    adapter.controller.setText("custom-status-item", "Custom Updated");
+    adapter.controller.setText(
+      { itemId: "custom-status-item", slot: "text" },
+      "Custom Updated"
+    );
     expect(getTexts(runtime.render().commands)).toContain("Custom Updated");
+  });
+
+  it("rejects invalid schema text targets", () => {
+    const adapter = createSchemaAdapter("schema-shell", {
+      version: 1,
+      pages: []
+    });
+
+    expect(() =>
+      adapter.controller.setText({ itemId: "", slot: "text" }, "Missing Item")
+    ).toThrow(/itemId must not be empty/);
+
+    expect(() =>
+      adapter.controller.setText({ itemId: "status", slot: "" }, "Missing Slot")
+    ).toThrow(/slot must not be empty/);
+
+    expect(() =>
+      adapter.controller.setText({ itemId: "status" } as never, "Missing Slot")
+    ).toThrow(/slot is required/);
   });
 
   it("rejects unknown kinds", () => {
     expect(() =>
       createSchemaAdapter("schema-shell", {
+        version: 1,
         pages: [
           {
             id: "main",
@@ -341,6 +412,7 @@ describe("schema adapter", () => {
   it("rejects duplicate page ids", () => {
     expect(() =>
       createSchemaAdapter("schema-shell", {
+        version: 1,
         pages: [
           {
             id: "main",
@@ -358,6 +430,7 @@ describe("schema adapter", () => {
   it("rejects duplicate item ids", () => {
     expect(() =>
       createSchemaAdapter("schema-shell", {
+        version: 1,
         pages: [
           {
             id: "main",
@@ -383,6 +456,7 @@ describe("schema adapter", () => {
   it("rejects invalid initialPageId values", () => {
     expect(() =>
       createSchemaAdapter("schema-shell", {
+        version: 1,
         initialPageId: "missing-page",
         pages: [
           {
@@ -397,6 +471,7 @@ describe("schema adapter", () => {
   it("rejects invalid action-card schema items", () => {
     expect(() =>
       createSchemaAdapter("schema-shell", {
+        version: 1,
         pages: [
           {
             id: "main",
@@ -417,14 +492,21 @@ describe("schema adapter", () => {
   it("rejects unsupported schema versions", () => {
     expect(() =>
       createSchemaAdapter("schema-shell", {
+        pages: []
+      } as never)
+    ).toThrow(/version is required and must be 1/);
+
+    expect(() =>
+      createSchemaAdapter("schema-shell", {
         version: 2 as never,
         pages: []
       })
-    ).toThrow(/version must be 1/);
+    ).toThrow(/version is required and must be 1/);
   });
 
   it("keeps the last valid schema after a failed setSchema update", () => {
     const adapter = createSchemaAdapter("schema-shell", {
+      version: 1,
       pages: [
         {
           id: "main",
@@ -448,6 +530,7 @@ describe("schema adapter", () => {
 
     expect(() =>
       adapter.controller.setSchema({
+        version: 1,
         pages: [
           {
             id: "secondary",
@@ -475,6 +558,7 @@ describe("schema adapter", () => {
 
   it("keeps the last valid schema after a failed replaceItem update", () => {
     const adapter = createSchemaAdapter("schema-shell", {
+      version: 1,
       pages: [
         {
           id: "main",
@@ -520,6 +604,7 @@ describe("schema adapter", () => {
       createSchemaAdapter(
         "schema-shell",
         {
+          version: 1,
           pages: []
         },
         {
@@ -550,6 +635,7 @@ describe("schema adapter", () => {
       createSchemaAdapter(
         "schema-shell",
         {
+          version: 1,
           pages: []
         },
         {

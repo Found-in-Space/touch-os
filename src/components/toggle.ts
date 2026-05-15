@@ -5,7 +5,7 @@ import { clearFocusableRegistration, syncFocusableRegistration } from "./focusab
 export interface ToggleProps {
   label: string;
   value: boolean;
-  field?: string;
+  field: string;
 }
 
 const ToggleComponent: DisplayComponent<ToggleProps> = {
@@ -95,7 +95,7 @@ const ToggleComponent: DisplayComponent<ToggleProps> = {
     ctx.emit({
       type: "change-request",
       componentId: ctx.id,
-      field: ctx.props.field ?? "value",
+      field: ctx.props.field,
       value: !ctx.props.value
     });
   },
@@ -105,5 +105,15 @@ const ToggleComponent: DisplayComponent<ToggleProps> = {
 };
 
 export function createToggle(id: string, props: ToggleProps): DisplayNode<ToggleProps> {
+  validateToggleProps(props, `Toggle "${id}"`);
   return createNode(id, ToggleComponent, props);
+}
+
+function validateToggleProps(props: ToggleProps, context: string): void {
+  if (typeof props.field !== "string") {
+    throw new Error(`${context} field is required.`);
+  }
+  if (props.field.trim().length === 0) {
+    throw new Error(`${context} field must not be empty.`);
+  }
 }

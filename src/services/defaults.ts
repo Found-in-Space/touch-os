@@ -17,7 +17,6 @@ import type {
   EmbeddedSurfaceConfig,
   EmbeddedSurfaceSourceSnapshot,
   EmbeddedSurfaceSourceUpdate,
-  EmbeddedSurfaceStateUpdate,
   EmbeddedSurfaceService,
   FocusRegistrationOptions,
   FocusService,
@@ -633,29 +632,27 @@ export function createEmbeddedSurfaceService(onChange?: ChangeListener): Embedde
     return componentIds;
   }
 
-  function resolveAttachment(
-    componentId: string,
-    fallback?: EmbeddedSurfaceConfig
-  ): EmbeddedSurfaceAttachmentRecord {
-    const attachment = attachments.get(componentId);
-    if (attachment) {
-      return attachment;
-    }
-
-    const created: EmbeddedSurfaceAttachmentRecord = {
-      sourceId: fallback?.sourceId ?? componentId,
-      interactive: fallback?.interactive ?? false,
-      preserveAspectRatio: fallback?.preserveAspectRatio ?? true,
-      mirrorX: fallback?.mirrorX ?? false,
-      desiredSourceType: fallback?.desiredSourceType,
-      refreshPolicy: fallback?.refreshPolicy,
-      acceptsForwardedInput: fallback?.acceptsForwardedInput ?? false,
-      fallbackLabel: fallback?.fallbackLabel,
-      compositionMode: fallback?.compositionMode ?? "copy",
+  function createAttachment(config: EmbeddedSurfaceConfig): EmbeddedSurfaceAttachmentRecord {
+    return {
+      sourceId: config.sourceId,
+      interactive: config.interactive ?? false,
+      preserveAspectRatio: config.preserveAspectRatio ?? true,
+      mirrorX: config.mirrorX ?? false,
+      desiredSourceType: config.desiredSourceType,
+      refreshPolicy: config.refreshPolicy,
+      acceptsForwardedInput: config.acceptsForwardedInput ?? false,
+      fallbackLabel: config.fallbackLabel,
+      compositionMode: config.compositionMode ?? "copy",
       forwardedEvents: []
     };
-    attachments.set(componentId, created);
-    return created;
+  }
+
+  function requireAttachment(componentId: string): EmbeddedSurfaceAttachmentRecord {
+    const attachment = attachments.get(componentId);
+    if (!attachment) {
+      throw new Error(`Embedded surface "${componentId}" is not attached.`);
+    }
+    return attachment;
   }
 
   function updateAttachment(
@@ -756,14 +753,14 @@ export function createEmbeddedSurfaceService(onChange?: ChangeListener): Embedde
 
   return {
     attach(componentId, config) {
-      attachments.set(componentId, resolveAttachment(componentId, config));
+      attachments.set(componentId, createAttachment(config));
       emitChanges({
         componentIds: [componentId],
         sourceIds: [config.sourceId]
       });
     },
     configure(componentId, config) {
-      const attachment = resolveAttachment(componentId);
+      const attachment = requireAttachment(componentId);
       const nextAttachment = updateAttachment(attachment, config);
       attachments.set(componentId, nextAttachment);
       emitChanges({
@@ -818,18 +815,8 @@ export function createEmbeddedSurfaceService(onChange?: ChangeListener): Embedde
         });
       }
     },
-    setState(componentId, state) {
-      const attachment = attachments.get(componentId);
-      const sourceId = attachment?.sourceId ?? componentId;
-      const source = resolveSource(sourceId);
-      sources.set(sourceId, updateSource(source, state));
-      emitChanges({
-        componentIds: getAttachmentComponentIdsForSource(sourceId),
-        sourceIds: [sourceId]
-      });
-    },
     forwardEvent(componentId, event) {
-      const attachment = resolveAttachment(componentId);
+      const attachment = requireAttachment(componentId);
       attachments.set(componentId, {
         ...attachment,
         forwardedEvents: [...attachment.forwardedEvents, cloneDisplayEvent(event)]

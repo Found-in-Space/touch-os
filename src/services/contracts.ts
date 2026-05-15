@@ -198,8 +198,6 @@ export interface EmbeddedSurfaceSourceUpdate {
   sourceType?: string;
 }
 
-export type EmbeddedSurfaceStateUpdate = EmbeddedSurfaceSourceUpdate;
-
 export interface EmbeddedSurfaceChange {
   componentIds: readonly string[];
   sourceIds: readonly string[];
@@ -216,8 +214,6 @@ export interface EmbeddedSurfaceService {
   getHandle(componentId: string): unknown;
   publish(sourceId: string, update: EmbeddedSurfaceSourceUpdate): void;
   unpublish(sourceId: string): void;
-  /** @deprecated Use publish(sourceId, update). */
-  setState(componentId: string, state: EmbeddedSurfaceStateUpdate): void;
   forwardEvent(componentId: string, event: DisplayEvent): void;
 }
 

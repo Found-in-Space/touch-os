@@ -11,7 +11,7 @@ export interface SliderProps {
   min: number;
   max: number;
   step?: number;
-  field?: string;
+  field: string;
   disabled?: boolean;
   valueText?: string;
   valueLabels?: readonly SliderValueLabel[];
@@ -28,6 +28,7 @@ export function normalizeSliderProps(
   props: SliderProps,
   context: string
 ): NormalizedSliderProps {
+  const field = readRequiredString(props.field, `${context} field`);
   assertFiniteNumber(props.value, `${context} value`);
   assertFiniteNumber(props.min, `${context} min`);
   assertFiniteNumber(props.max, `${context} max`);
@@ -65,6 +66,7 @@ export function normalizeSliderProps(
 
   return {
     ...props,
+    field,
     value: normalizeSliderValue(props.value, props.min, props.max, step),
     step,
     disabled: props.disabled ?? false,
@@ -105,6 +107,16 @@ function assertFiniteNumber(value: number, label: string): void {
   if (!Number.isFinite(value)) {
     throw new Error(`${label} must be a finite number.`);
   }
+}
+
+function readRequiredString(value: string, label: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`${label} is required.`);
+  }
+  if (value.trim().length === 0) {
+    throw new Error(`${label} must not be empty.`);
+  }
+  return value;
 }
 
 function getDecimalPlaces(value: number): number {

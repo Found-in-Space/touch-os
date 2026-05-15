@@ -146,10 +146,8 @@ Shipped in `@found-in-space/touch-os/hosts/three`:
 
 - `createScenePanelHost`
 - `createPoseAnchoredPanelHost`
-- `createXrTabletHost`
 - `createHudHost`
 - `createScenePanelDriver`
-- `createHeldTabletDriver`
 - `createPoseAnchoredPanelDriver`
 - `createHudPanelDriver`
 - `createPanelInteractor`

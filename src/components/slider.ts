@@ -268,7 +268,7 @@ function emitSliderValue(
   ctx.emit({
     type: "change-request",
     componentId: ctx.id,
-    field: props.field ?? "value",
+    field: props.field,
     value: nextValue
   });
 }

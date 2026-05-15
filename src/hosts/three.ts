@@ -180,8 +180,6 @@ export interface ThreePanelHostFrame {
   surfaceMetrics?: Partial<SurfaceMetrics>;
   events?: readonly ThreePanelHostInputEvent[];
   anchorPose?: ThreeHostPose;
-  /** @deprecated Use anchorPose. */
-  xrPose?: ThreeHostPose;
 }
 
 export interface ThreePanelHit {
@@ -263,9 +261,6 @@ export interface PoseAnchoredPanelHostOptions extends ThreePanelHostOptions {
   offset?: Vector3Like;
 }
 
-/** @deprecated Use PoseAnchoredPanelHostOptions. */
-export interface XrTabletHostOptions extends PoseAnchoredPanelHostOptions {}
-
 export interface HudHostOptions extends ThreePanelHostOptions {
   distance?: number;
   offset?: { x?: number; y?: number };
@@ -305,9 +300,6 @@ export interface ScenePanelDriverOptions extends ThreePanelHostOptions, ThreePan
 
 export interface PoseAnchoredPanelDriverOptions
   extends PoseAnchoredPanelHostOptions, ThreePanelDriverOptions {}
-
-/** @deprecated Use PoseAnchoredPanelDriverOptions. */
-export interface HeldTabletDriverOptions extends PoseAnchoredPanelDriverOptions {}
 
 export interface HudPanelDriverOptions extends HudHostOptions, ThreePanelDriverOptions {}
 
@@ -634,7 +626,7 @@ export function createPoseAnchoredPanelHost(
   return createAnchoredPanelHost({
     ...options,
     anchor(frame) {
-      const pose = frame.anchorPose ?? frame.xrPose;
+      const pose = frame.anchorPose;
       return pose
         ? {
             position: pose.position,
@@ -645,11 +637,6 @@ export function createPoseAnchoredPanelHost(
     anchorOffset: options.offset ?? { x: 0, y: 0.08, z: -0.02 },
     tiltRadians: options.tiltRadians ?? -Math.PI * 0.35
   });
-}
-
-/** @deprecated Use createPoseAnchoredPanelHost. */
-export function createXrTabletHost(options: XrTabletHostOptions): ThreePanelHost {
-  return createPoseAnchoredPanelHost(options);
 }
 
 export function createHudHost(options: HudHostOptions): ThreePanelHost {
@@ -929,10 +916,6 @@ export function createScenePanelDriver(options: ScenePanelDriverOptions): ThreeP
     options.pointerSources,
     options.pointerPresenter
   );
-}
-
-export function createHeldTabletDriver(options: HeldTabletDriverOptions): ThreePanelDriver {
-  return createPoseAnchoredPanelDriver(options);
 }
 
 /** Create a panel driver that follows an explicit pose supplied on each frame. */

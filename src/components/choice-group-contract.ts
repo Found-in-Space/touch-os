@@ -14,7 +14,7 @@ export interface ChoiceGroupProps<TValue extends string = string> {
   selectionMode: ChoiceGroupSelectionMode;
   value?: TValue;
   values?: readonly TValue[];
-  field?: string;
+  field: string;
   orientation?: ChoiceGroupOrientation;
   columns?: number;
   disabled?: boolean;
@@ -31,6 +31,7 @@ export function normalizeChoiceGroupProps<TValue extends string>(
   props: ChoiceGroupProps<TValue>,
   context: string
 ): NormalizedChoiceGroupProps<TValue> {
+  const field = readRequiredString(props.field, `${context} field`);
   if (props.options.length === 0) {
     throw new Error(`${context} must declare at least one option.`);
   }
@@ -85,16 +86,21 @@ export function normalizeChoiceGroupProps<TValue extends string>(
 
   return {
     ...props,
+    field,
     orientation,
     disabled: props.disabled ?? false,
     options
   };
 }
 
-export function getChoiceGroupField<TValue extends string>(
-  props: Pick<ChoiceGroupProps<TValue>, "field" | "selectionMode">
-): string {
-  return props.field ?? (props.selectionMode === "single" ? "value" : "values");
+function readRequiredString(value: string, label: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`${label} is required.`);
+  }
+  if (value.trim().length === 0) {
+    throw new Error(`${label} must not be empty.`);
+  }
+  return value;
 }
 
 export function getChoiceGroupSelectedValues<TValue extends string>(

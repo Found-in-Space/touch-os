@@ -8,6 +8,23 @@ import {
 import { findCommandByRole } from "./helpers/runtime-helpers.js";
 
 describe("embedded surface sources", () => {
+  it("requires explicit attachments before component-scoped operations", () => {
+    const surfaces = createEmbeddedSurfaceService();
+
+    surfaces.publish("monitor", {
+      available: true,
+      handle: { kind: "source" }
+    });
+
+    expect(surfaces.getAttachment("monitor")).toBeUndefined();
+    expect(() => surfaces.configure("monitor", { sourceId: "camera.rear" })).toThrow(
+      /not attached/
+    );
+    expect(() => surfaces.forwardEvent("monitor", { type: "tick", timestamp: 1 })).toThrow(
+      /not attached/
+    );
+  });
+
   it("binds a source published before mount and exposes source metadata on the viewport command", () => {
     const surfaces = createEmbeddedSurfaceService();
     surfaces.publish("plot.main", {

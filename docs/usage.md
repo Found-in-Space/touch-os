@@ -275,6 +275,7 @@ import { createRuntime } from "@found-in-space/touch-os";
 import { createSchemaAdapter } from "@found-in-space/touch-os/adapters/schema";
 
 const adapter = createSchemaAdapter("settings-shell", {
+  version: 1,
   pages: [
     {
       id: "main",
@@ -300,7 +301,7 @@ const runtime = createRuntime({
   surface: { width: 320, height: 180 }
 });
 
-adapter.controller.setText("status", "Online");
+adapter.controller.setText({ itemId: "status", slot: "text" }, "Online");
 adapter.controller.replaceItem("sync", {
   kind: "button",
   id: "sync",

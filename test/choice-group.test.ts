@@ -10,7 +10,15 @@ import {
 describe("choice group", () => {
   it("rejects invalid configuration", () => {
     expect(() =>
+      createChoiceGroup("missing-field", {
+        selectionMode: "single",
+        options: [{ value: "a", label: "A" }]
+      } as never)
+    ).toThrow(/field is required/i);
+
+    expect(() =>
       createChoiceGroup("empty-group", {
+        field: "empty",
         selectionMode: "single",
         options: []
       })
@@ -18,6 +26,7 @@ describe("choice group", () => {
 
     expect(() =>
       createChoiceGroup("duplicate-group", {
+        field: "duplicate",
         selectionMode: "single",
         options: [
           { value: "a", label: "A" },
@@ -28,6 +37,7 @@ describe("choice group", () => {
 
     expect(() =>
       createChoiceGroup("mixed-single", {
+        field: "mixedSingle",
         selectionMode: "single",
         value: "a",
         values: ["a"],
@@ -37,6 +47,7 @@ describe("choice group", () => {
 
     expect(() =>
       createChoiceGroup("mixed-multiple", {
+        field: "mixedMultiple",
         selectionMode: "multiple",
         value: "a",
         options: [{ value: "a", label: "A" }]
@@ -45,6 +56,7 @@ describe("choice group", () => {
 
     expect(() =>
       createChoiceGroup("bad-columns", {
+        field: "badColumns",
         selectionMode: "single",
         orientation: "vertical",
         columns: 2,
@@ -57,6 +69,7 @@ describe("choice group", () => {
     const runtime = createRuntime({
       root: createChoiceGroup("quality-group", {
         label: "Quality",
+        field: "quality",
         selectionMode: "single",
         value: "medium",
         orientation: "horizontal",
@@ -90,7 +103,7 @@ describe("choice group", () => {
     expect(nextSelection.outputs).toContainEqual({
       type: "change-request",
       componentId: "quality-group",
-      field: "value",
+      field: "quality",
       value: "high"
     });
     expect(runtime.getInteraction().focusedComponentId).toBe("quality-group");
@@ -153,6 +166,7 @@ describe("choice group", () => {
   it("ignores disabled options and disabled groups", () => {
     const runtime = createRuntime({
       root: createChoiceGroup("disabled-option-group", {
+        field: "disabledOption",
         selectionMode: "single",
         value: "b",
         options: [
@@ -174,6 +188,7 @@ describe("choice group", () => {
 
     runtime.setRoot(
       createChoiceGroup("disabled-option-group", {
+        field: "disabledOption",
         selectionMode: "single",
         value: "b",
         disabled: true,
@@ -198,6 +213,7 @@ describe("choice group", () => {
   it("renders vertical, horizontal, and wrapped layouts predictably", () => {
     const verticalRuntime = createRuntime({
       root: createChoiceGroup("vertical-group", {
+        field: "vertical",
         selectionMode: "single",
         options: [
           { value: "one", label: "One" },
@@ -217,6 +233,7 @@ describe("choice group", () => {
 
     const horizontalRuntime = createRuntime({
       root: createChoiceGroup("horizontal-group", {
+        field: "horizontal",
         selectionMode: "single",
         orientation: "horizontal",
         options: [
@@ -236,6 +253,7 @@ describe("choice group", () => {
 
     const wrappedRuntime = createRuntime({
       root: createChoiceGroup("wrapped-group", {
+        field: "wrapped",
         selectionMode: "multiple",
         orientation: "horizontal",
         columns: 2,
@@ -261,6 +279,7 @@ describe("choice group", () => {
     const runtime = createRuntime({
       root: createChoiceGroup("focus-group", {
         label: "Mode",
+        field: "mode",
         selectionMode: "single",
         value: "a",
         options: [

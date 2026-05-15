@@ -7,7 +7,6 @@ export type {
   EmbeddedSurfaceConfig,
   EmbeddedSurfaceSourceSnapshot,
   EmbeddedSurfaceSourceUpdate,
-  EmbeddedSurfaceStateUpdate,
   EmbeddedSurfaceService,
   FocusRegistrationOptions,
   FocusService,

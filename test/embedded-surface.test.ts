@@ -293,27 +293,19 @@ function createMockEmbeddedSurfaceService(options?: {
   const available = options?.available ?? false;
   const handle = options?.handle;
 
-  function resolveAttachment(
-    componentId: string,
-    fallback?: Partial<EmbeddedSurfaceConfig>
-  ): EmbeddedSurfaceAttachment {
-    const existing = attachments.get(componentId);
-    if (existing) {
-      return existing;
-    }
-
-    const created: EmbeddedSurfaceAttachment = {
-      sourceId: fallback?.sourceId ?? componentId,
-      interactive: fallback?.interactive ?? false,
-      preserveAspectRatio: fallback?.preserveAspectRatio ?? true,
-      mirrorX: fallback?.mirrorX ?? false,
-      desiredSourceType: fallback?.desiredSourceType,
-      refreshPolicy: fallback?.refreshPolicy,
-      acceptsForwardedInput: fallback?.acceptsForwardedInput ?? false,
-      fallbackLabel: fallback?.fallbackLabel,
+  function createAttachment(config: EmbeddedSurfaceConfig): EmbeddedSurfaceAttachment {
+    return {
+      sourceId: config.sourceId,
+      interactive: config.interactive ?? false,
+      preserveAspectRatio: config.preserveAspectRatio ?? true,
+      mirrorX: config.mirrorX ?? false,
+      desiredSourceType: config.desiredSourceType,
+      refreshPolicy: config.refreshPolicy,
+      acceptsForwardedInput: config.acceptsForwardedInput ?? false,
+      fallbackLabel: config.fallbackLabel,
       available,
       handle,
-      compositionMode: fallback?.compositionMode ?? "copy",
+      compositionMode: config.compositionMode ?? "copy",
       sourceWidth: undefined,
       sourceHeight: undefined,
       aspectRatio: undefined,
@@ -324,8 +316,14 @@ function createMockEmbeddedSurfaceService(options?: {
       surfaceRevision: 0,
       forwardedEvents: []
     };
-    attachments.set(componentId, created);
-    return created;
+  }
+
+  function requireAttachment(componentId: string): EmbeddedSurfaceAttachment {
+    const existing = attachments.get(componentId);
+    if (existing) {
+      return existing;
+    }
+    throw new Error(`Embedded surface "${componentId}" is not attached.`);
   }
 
   function updateAttachment(
@@ -418,14 +416,14 @@ function createMockEmbeddedSurfaceService(options?: {
         componentId,
         config: { ...config }
       });
-      attachments.set(componentId, resolveAttachment(componentId, config));
+      attachments.set(componentId, createAttachment(config));
     },
     configure(componentId, config) {
       configureCalls.push({
         componentId,
         config: { ...config }
       });
-      const attachment = resolveAttachment(componentId);
+      const attachment = requireAttachment(componentId);
       attachments.set(componentId, updateAttachment(attachment, config));
     },
     release(componentId) {
@@ -454,12 +452,8 @@ function createMockEmbeddedSurfaceService(options?: {
     unpublish(sourceId) {
       sources.delete(sourceId);
     },
-    setState(componentId, state) {
-      const attachment = attachments.get(componentId);
-      publishSource(attachment?.sourceId ?? componentId, state);
-    },
     forwardEvent(componentId, event) {
-      const attachment = resolveAttachment(componentId);
+      const attachment = requireAttachment(componentId);
       attachments.set(componentId, {
         ...attachment,
         forwardedEvents: [...attachment.forwardedEvents, cloneDisplayEvent(event)]
