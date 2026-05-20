@@ -9,7 +9,10 @@ import { createButtonFixture } from "../src/examples/reference-fixtures.js";
 import {
   createHudHost,
   createPoseAnchoredPanelHost,
+  createScenePanelDriver,
   createScenePanelHost,
+  createThreeTextureCompositePresenter,
+  isThreeTextureSurfaceHandle,
   resolveCompositeSurfacePlacements
 } from "../src/hosts/three.js";
 import { createFakeCanvas } from "./helpers/fake-canvas.js";
@@ -216,6 +219,7 @@ describe("three host adapters", () => {
     });
 
     host.attach();
+    const initialTexture = host.texture;
     host.update({
       scene,
       camera,
@@ -239,6 +243,8 @@ describe("three host adapters", () => {
     });
     expect(host.canvas.width).toBe(1280);
     expect(host.canvas.height).toBe(720);
+    expect(host.texture).not.toBe(initialTexture);
+    expect(host.material.map).toBe(host.texture);
 
     host.detach();
   });
@@ -527,6 +533,120 @@ describe("three host adapters", () => {
     expect(host.getCompositeSurfaces()[0]?.surfaceRevision).toBe(2);
 
     host.detach();
+  });
+
+  it("presents composite three-texture surfaces as panel-local meshes", () => {
+    const surfaces = createEmbeddedSurfaceService();
+    const runtime = createRuntime({
+      root: createEmbeddedSurface("monitor", {
+        sourceId: "plot.main",
+        compositionMode: "composite",
+        preserveAspectRatio: false
+      }),
+      surface: { width: 160, height: 100 },
+      theme: { padding: 0 },
+      services: { surfaces }
+    });
+    const texture = new THREE.Texture();
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1.6, 0.1, 10);
+    scene.add(camera);
+
+    surfaces.publish("plot.main", {
+      available: true,
+      handle: { kind: "three-texture", texture },
+      sourceWidth: 160,
+      sourceHeight: 100
+    });
+
+    const host = createScenePanelHost({
+      runtime,
+      surface: { width: 160, height: 100 },
+      panelWidth: 1,
+      panelHeight: 0.625,
+      createCanvas: createFakeCanvas
+    });
+    const presenter = createThreeTextureCompositePresenter(host, {
+      componentId: "monitor"
+    });
+
+    host.attach();
+    host.update({ scene, camera });
+    presenter.update();
+
+    expect(presenter.mesh.parent).toBe(host.mesh);
+    expect(presenter.mesh.visible).toBe(true);
+    expect(presenter.mesh.material.map).toBe(texture);
+    expect(presenter.mesh.position.x).toBeCloseTo(0);
+    expect(presenter.mesh.position.y).toBeCloseTo(0);
+    expect(presenter.mesh.scale.x).toBeCloseTo(1);
+    expect(presenter.mesh.scale.y).toBeCloseTo(0.625);
+    expect(presenter.mesh.renderOrder).toBe(host.mesh.renderOrder + 1);
+
+    surfaces.publish("plot.main", {
+      handle: { kind: "mock-surface" }
+    });
+    host.render();
+    presenter.update();
+    expect(presenter.mesh.visible).toBe(false);
+
+    presenter.dispose();
+    host.detach();
+  });
+
+  it("scene panel drivers automatically present composite three-texture surfaces", () => {
+    const surfaces = createEmbeddedSurfaceService();
+    const runtime = createRuntime({
+      root: createEmbeddedSurface("monitor", {
+        sourceId: "plot.main",
+        compositionMode: "composite",
+        preserveAspectRatio: false
+      }),
+      surface: { width: 160, height: 100 },
+      theme: { padding: 0 },
+      services: { surfaces }
+    });
+    const texture = new THREE.Texture();
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1.6, 0.1, 10);
+    scene.add(camera);
+
+    surfaces.publish("plot.main", {
+      available: true,
+      handle: { kind: "three-texture", texture },
+      sourceWidth: 160,
+      sourceHeight: 100
+    });
+
+    const driver = createScenePanelDriver({
+      runtime,
+      surface: { width: 160, height: 100 },
+      panelWidth: 1,
+      panelHeight: 0.625,
+      createCanvas: createFakeCanvas
+    });
+
+    driver.attach();
+    driver.update({ scene, camera });
+
+    const textureMeshes = driver.host.mesh.children.filter((child): child is THREE.Mesh => {
+      return child instanceof THREE.Mesh &&
+        child.material instanceof THREE.MeshBasicMaterial &&
+        child.material.map === texture;
+    });
+    expect(textureMeshes).toHaveLength(1);
+    expect(textureMeshes[0]?.visible).toBe(true);
+
+    driver.detach();
+  });
+
+  it("accepts structural three-texture handles from sibling package instances", () => {
+    const localTexture = new THREE.Texture();
+    const siblingTexture = { isTexture: true };
+
+    expect(isThreeTextureSurfaceHandle({ kind: "three-texture", texture: localTexture })).toBe(true);
+    expect(isThreeTextureSurfaceHandle({ kind: "three-texture", texture: siblingTexture })).toBe(true);
+    expect(isThreeTextureSurfaceHandle({ kind: "three-texture", texture: {} })).toBe(false);
   });
 
   it("mirrors embedded rear-view surfaces horizontally when requested", () => {

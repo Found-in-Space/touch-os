@@ -255,6 +255,26 @@ export interface ThreeCompositeSurfacePlacement {
   };
 }
 
+export interface ThreeTextureSurfaceHandle {
+  kind: "three-texture";
+  texture: THREE.Texture;
+}
+
+export interface ThreeTextureCompositePresenterOptions {
+  componentId?: string;
+  sourceId?: string;
+  zOffset?: number;
+  renderOrderOffset?: number;
+  depthTest?: boolean;
+  transparent?: boolean;
+}
+
+export interface ThreeTextureCompositePresenter {
+  readonly mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  update(host?: Pick<ThreePanelHost, "mesh" | "getSurfaceMetrics" | "getCompositeSurfaces">): void;
+  dispose(): void;
+}
+
 /** Options for a panel attached to an application-supplied pose such as a hand, head, chest, or tool mount. */
 export interface PoseAnchoredPanelHostOptions extends ThreePanelHostOptions {
   tiltRadians?: number;
@@ -335,8 +355,7 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
   let surfaceMetrics = resolveSurfaceMetrics(options.surface);
   let canvas = (options.createCanvas ?? createDefaultCanvas)(surfaceMetrics);
   let renderer = createCanvasSurfaceRenderer(canvas, surfaceMetrics);
-  const texture = new THREE.CanvasTexture(canvas as never);
-  texture.colorSpace = THREE.SRGBColorSpace;
+  let texture = createPanelCanvasTexture(canvas);
   const material = new THREE.MeshBasicMaterial({
     map: texture,
     transparent: options.transparent ?? true,
@@ -352,6 +371,8 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
 
   const raycaster = new THREE.Raycaster();
   let currentParent: THREE.Object3D | undefined;
+  let lastRenderSnapshot: RenderSnapshot | null = null;
+  let lastCompositeSurfaceRevision = -1;
   let lastRenderedSharedSurfaceRevision = -1;
   let latestHit: ThreePanelHit | null = null;
   let compositeSurfaces: SurfaceDrawCommand[] = [];
@@ -364,13 +385,14 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
   function update(frame: ThreePanelHostFrame): void {
     surfaceMetrics = resolveSurfaceMetrics(options.surface, frame.surfaceMetrics);
     runtime.resize(surfaceMetrics);
-    if (
-      canvas.width !== surfaceMetrics.width * surfaceMetrics.pixelDensity ||
-      canvas.height !== surfaceMetrics.height * surfaceMetrics.pixelDensity
-    ) {
+    const backingSize = getSurfaceBackingSize(surfaceMetrics);
+    if (canvas.width !== backingSize.width || canvas.height !== backingSize.height) {
       canvas = (options.createCanvas ?? createDefaultCanvas)(surfaceMetrics);
       renderer = createCanvasSurfaceRenderer(canvas, surfaceMetrics);
-      texture.image = canvas as never;
+      texture.dispose();
+      texture = createPanelCanvasTexture(canvas);
+      material.map = texture;
+      material.needsUpdate = true;
       lastRenderedSharedSurfaceRevision = -1;
     }
 
@@ -402,11 +424,22 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
   }
 
   function render(): RenderSnapshot {
+    if (
+      !runtime.isRenderDirty() &&
+      lastRenderSnapshot &&
+      lastRenderedSharedSurfaceRevision === lastRenderSnapshot.sharedSurfaceRevision
+    ) {
+      return lastRenderSnapshot;
+    }
     const snapshot = runtime.render();
-    compositeSurfaces = snapshot.commands.filter(
-      (command): command is SurfaceDrawCommand =>
-        command.type === "surface" && (command.compositionMode ?? "copy") === "composite"
-    );
+    lastRenderSnapshot = snapshot;
+    if (snapshot.revision !== lastCompositeSurfaceRevision) {
+      compositeSurfaces = snapshot.commands.filter(
+        (command): command is SurfaceDrawCommand =>
+          command.type === "surface" && (command.compositionMode ?? "copy") === "composite"
+      );
+      lastCompositeSurfaceRevision = snapshot.revision;
+    }
     if (snapshot.sharedSurfaceRevision !== lastRenderedSharedSurfaceRevision) {
       renderer.draw(snapshot);
       texture.needsUpdate = true;
@@ -555,7 +588,9 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
 
   return {
     mesh,
-    texture,
+    get texture() {
+      return texture;
+    },
     material,
     get canvas() {
       return canvas;
@@ -617,6 +652,84 @@ export function resolveCompositeSurfacePlacements(
       }
     };
   });
+}
+
+export function createThreeTextureCompositePresenter(
+  host: Pick<ThreePanelHost, "mesh" | "getSurfaceMetrics" | "getCompositeSurfaces">,
+  options: ThreeTextureCompositePresenterOptions = {}
+): ThreeTextureCompositePresenter {
+  const geometry = new THREE.PlaneGeometry(1, 1);
+  const material = new THREE.MeshBasicMaterial({
+    transparent: options.transparent ?? true,
+    depthTest: options.depthTest ?? false,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    toneMapped: false
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = "touch-os-composite-three-texture";
+  mesh.visible = false;
+  mesh.frustumCulled = false;
+  host.mesh.add(mesh);
+
+  return {
+    mesh,
+    update(nextHost = host) {
+      const placement = resolveCompositeSurfacePlacements(nextHost).find((candidate) => {
+        if (options.componentId && candidate.componentId !== options.componentId) {
+          return false;
+        }
+        if (options.sourceId && candidate.sourceId !== options.sourceId) {
+          return false;
+        }
+        return isThreeTextureSurfaceHandle(candidate.command.handle);
+      });
+
+      if (!placement || !isThreeTextureSurfaceHandle(placement.command.handle)) {
+        mesh.visible = false;
+        return;
+      }
+
+      const nextTexture = placement.command.handle.texture;
+      if (material.map !== nextTexture) {
+        material.map = nextTexture;
+        material.needsUpdate = true;
+      }
+      mesh.position.set(
+        placement.localCenter.x,
+        placement.localCenter.y,
+        options.zOffset ?? 0.001
+      );
+      mesh.scale.set(
+        placement.size.width * (placement.mirrorX ? -1 : 1),
+        placement.size.height,
+        1
+      );
+      mesh.renderOrder = nextHost.mesh.renderOrder + (options.renderOrderOffset ?? 1);
+      mesh.visible = nextHost.mesh.visible;
+    },
+    dispose() {
+      mesh.parent?.remove(mesh);
+      geometry.dispose();
+      material.dispose();
+    }
+  };
+}
+
+export function isThreeTextureSurfaceHandle(handle: unknown): handle is ThreeTextureSurfaceHandle {
+  return Boolean(handle) &&
+    typeof handle === "object" &&
+    (handle as { kind?: unknown }).kind === "three-texture" &&
+    isThreeTextureLike((handle as { texture?: unknown }).texture);
+}
+
+function isThreeTextureLike(texture: unknown): texture is THREE.Texture {
+  return Boolean(texture) &&
+    typeof texture === "object" &&
+    (
+      texture instanceof THREE.Texture ||
+      (texture as { isTexture?: unknown }).isTexture === true
+    );
 }
 
 /** Create a panel host that follows an explicit pose supplied on each frame. */
@@ -967,8 +1080,7 @@ function resolveSurfaceMetrics(
 }
 
 function createDefaultCanvas(metrics: SurfaceMetrics): CanvasLike {
-  const width = metrics.width * metrics.pixelDensity;
-  const height = metrics.height * metrics.pixelDensity;
+  const { width, height } = getSurfaceBackingSize(metrics);
   const scope = globalThis as {
     document?: { createElement(tag: "canvas"): HTMLCanvasElement };
     OffscreenCanvas?: new (width: number, height: number) => OffscreenCanvas;
@@ -989,14 +1101,21 @@ function createDefaultCanvas(metrics: SurfaceMetrics): CanvasLike {
   throw new Error("No canvas implementation is available. Provide createCanvas in host options.");
 }
 
+function createPanelCanvasTexture(canvas: CanvasLike): THREE.CanvasTexture {
+  const texture = new THREE.CanvasTexture(canvas as never);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 function createCanvasSurfaceRenderer(canvas: CanvasLike, metrics: SurfaceMetrics) {
   const context = canvas.getContext("2d");
   if (!context) {
     throw new Error("Unable to acquire a 2D rendering context for the Three host surface.");
   }
 
-  canvas.width = metrics.width * metrics.pixelDensity;
-  canvas.height = metrics.height * metrics.pixelDensity;
+  const { width, height } = getSurfaceBackingSize(metrics);
+  canvas.width = width;
+  canvas.height = height;
 
   return {
     draw(snapshot: RenderSnapshot) {
@@ -1006,6 +1125,13 @@ function createCanvasSurfaceRenderer(canvas: CanvasLike, metrics: SurfaceMetrics
         drawCommand(context, command);
       }
     }
+  };
+}
+
+function getSurfaceBackingSize(metrics: SurfaceMetrics): { width: number; height: number } {
+  return {
+    width: Math.max(1, Math.round(metrics.width * metrics.pixelDensity)),
+    height: Math.max(1, Math.round(metrics.height * metrics.pixelDensity))
   };
 }
 
@@ -1246,7 +1372,10 @@ function createPanelDriver(
     : pointerPresenter
       ? [pointerPresenter]
       : [];
+  const compositePresenters = new Map<string, ThreeTextureCompositePresenter>();
   let latestHit: ThreePanelHit | null = null;
+  let latestCompositeRenderRevision = -1;
+  let latestCompositeHostVisible = false;
 
   return {
     host,
@@ -1281,7 +1410,7 @@ function createPanelDriver(
         }
       }
 
-      host.render();
+      syncCompositePresentersAfterRender(host.render());
     },
     detach() {
       interactor.clear();
@@ -1291,10 +1420,16 @@ function createPanelDriver(
       for (const presenter of presenters) {
         presenter.dispose();
       }
+      for (const presenter of compositePresenters.values()) {
+        presenter.dispose();
+      }
+      compositePresenters.clear();
       host.detach();
     },
     render() {
-      return host.render();
+      const snapshot = host.render();
+      syncCompositePresentersAfterRender(snapshot);
+      return snapshot;
     },
     getHit() {
       return latestHit ? { ...latestHit } : null;
@@ -1309,6 +1444,42 @@ function createPanelDriver(
       interactor.clear(pointerId);
     }
   };
+
+  function syncCompositePresentersAfterRender(snapshot: RenderSnapshot): void {
+    const visibleChanged = host.mesh.visible !== latestCompositeHostVisible;
+    latestCompositeHostVisible = host.mesh.visible;
+    if (snapshot.revision === latestCompositeRenderRevision && !visibleChanged) {
+      return;
+    }
+    latestCompositeRenderRevision = snapshot.revision;
+    syncCompositePresenters();
+  }
+
+  function syncCompositePresenters(): void {
+    const activeKeys = new Set<string>();
+    for (const placement of resolveCompositeSurfacePlacements(host)) {
+      if (!isThreeTextureSurfaceHandle(placement.command.handle)) {
+        continue;
+      }
+      const key = `${placement.componentId}\n${placement.sourceId ?? ""}`;
+      activeKeys.add(key);
+      let presenter = compositePresenters.get(key);
+      if (!presenter) {
+        presenter = createThreeTextureCompositePresenter(host, {
+          componentId: placement.componentId,
+          ...(placement.sourceId === undefined ? {} : { sourceId: placement.sourceId })
+        });
+        compositePresenters.set(key, presenter);
+      }
+      presenter.update(host);
+    }
+
+    for (const [key, presenter] of compositePresenters) {
+      if (!activeKeys.has(key)) {
+        presenter.mesh.visible = false;
+      }
+    }
+  }
 }
 
 function createTransportPointerSource(
