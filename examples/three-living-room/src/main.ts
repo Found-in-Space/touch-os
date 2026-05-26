@@ -15,6 +15,7 @@ import {
   createPoseAnchoredPanelDriver,
   createScenePanelDriver,
   createThreePanelSession,
+  resolveCompositeSurfacePlacements,
   type ThreePanelHostFrame,
   type ThreePanelDriver,
   type ThreePanelSession,
@@ -44,7 +45,8 @@ import {
 } from "./mirror.js";
 import {
   createShaderPicturePresenter,
-  createShaderPictureSource
+  createShaderPictureSource,
+  WALL_PICTURE_SOURCE_ID
 } from "./shader-picture.js";
 import { createLivingRoomScene } from "./room.js";
 import {
@@ -57,6 +59,48 @@ import {
 type ScreenPointerSample = ThreePointerSample & {
   transport: "screen";
 };
+
+interface ScreenRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface SurfaceRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface LivingRoomFractalTestState {
+  armVisible: boolean;
+  compositeSurfaceCount: number;
+  pictureSurfaceCount: number;
+  fractalComponentId?: string;
+  surfaceRevision?: number;
+  screenRect?: ScreenRect;
+}
+
+interface LivingRoomTestApi {
+  readonly ready: boolean;
+  readonly ids: typeof ARM_TEST_COMPONENT_IDS;
+  getArmComponentScreenRect(componentId: string): ScreenRect | undefined;
+  getFractalState(): LivingRoomFractalTestState;
+}
+
+declare global {
+  interface Window {
+    __TOUCH_OS_LIVING_ROOM_TEST__?: LivingRoomTestApi;
+  }
+}
+
+const livingRoomTestMode = new URLSearchParams(window.location.search).has("touchOsTest");
+const ARM_TEST_COMPONENT_IDS = {
+  fractalIcon: "arm-os:home:open:space-found-living-room-fractal-art",
+  homeControl: "arm-os:tablet-screen:home-control"
+} as const;
 
 const room = createLivingRoomScene();
 const store = createRoomDemoStore();
@@ -208,7 +252,9 @@ for (const binding of xrBindings) {
   });
 }
 
-const desktopPanels = [desktopHudPanel, tvPanel];
+const desktopPanels = livingRoomTestMode
+  ? [desktopHudPanel, armPanel, tvPanel]
+  : [desktopHudPanel, tvPanel];
 const xrPanels = [armPanel, tvPanel];
 const desktopPanelCoordinator = createPanelCoordinator({
   panels: desktopPanels
@@ -340,6 +386,10 @@ window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+if (livingRoomTestMode) {
+  installLivingRoomTestApi();
+}
+
 renderer.setAnimationLoop(() => {
   const xrActive = isXrPresentationActive();
   syncXrPresentationState(xrActive);
@@ -410,6 +460,16 @@ renderer.setAnimationLoop(() => {
           }
         : baseFrame
     );
+  } else if (livingRoomTestMode) {
+    desktopHudPanel.enabled = false;
+    desktopHudPanel.hide();
+    xrHudPanel.enabled = false;
+    xrHudPanel.hide();
+    armPanel.enabled = true;
+    armPanel.update({
+      ...baseFrame,
+      anchorPose: getTestArmPose()
+    });
   } else {
     desktopHudPanel.enabled = true;
     desktopHudPanel.update({
@@ -1165,6 +1225,144 @@ function getDesktopSurfaceMetrics(): Partial<SurfaceMetrics> {
     width: size.x,
     height: size.y,
     pixelDensity: renderer.getPixelRatio()
+  };
+}
+
+function installLivingRoomTestApi(): void {
+  window.__TOUCH_OS_LIVING_ROOM_TEST__ = {
+    ready: true,
+    ids: ARM_TEST_COMPONENT_IDS,
+    getArmComponentScreenRect(componentId) {
+      renderArmPanelForTest();
+      return getArmComponentScreenRect(componentId);
+    },
+    getFractalState() {
+      renderArmPanelForTest();
+      return getArmFractalTestState();
+    }
+  };
+}
+
+function renderArmPanelForTest(): void {
+  if (!livingRoomTestMode) {
+    return;
+  }
+
+  const now = performance.now();
+  desktopHudPanel.enabled = false;
+  desktopHudPanel.hide();
+  xrHudPanel.enabled = false;
+  xrHudPanel.hide();
+  shaderPictureSource.render(renderer, now);
+  shaderPictureSource.publish(sharedSurfaces, now);
+  room.camera.updateMatrixWorld(true);
+  armPanel.enabled = true;
+  armPanel.update({
+    scene: room.scene,
+    camera: room.camera,
+    anchorPose: getTestArmPose()
+  });
+  tickActiveRuntime(armPanel, now);
+  armPanel.render();
+  renderer.render(room.scene, room.camera);
+}
+
+function getArmComponentScreenRect(componentId: string): ScreenRect | undefined {
+  const bounds = armRuntime.runtime.getBounds(componentId);
+  if (!bounds) {
+    return undefined;
+  }
+
+  return projectArmSurfaceRect(bounds);
+}
+
+function getArmFractalTestState(): LivingRoomFractalTestState {
+  const commands = armPanel.driver.getCompositeSurfaces();
+  const pictureCommands = commands.filter((command) => command.sourceId === WALL_PICTURE_SOURCE_ID);
+  const placement = resolveCompositeSurfacePlacements(armPanel.driver.host).find(
+    (candidate) =>
+      candidate.sourceId === WALL_PICTURE_SOURCE_ID &&
+      candidate.componentId.includes("fractal-art-surface")
+  );
+  const state: LivingRoomFractalTestState = {
+    armVisible: armPanel.driver.host.mesh.visible,
+    compositeSurfaceCount: commands.length,
+    pictureSurfaceCount: pictureCommands.length
+  };
+  if (placement) {
+    state.fractalComponentId = placement.componentId;
+    if (placement.command.surfaceRevision !== undefined) {
+      state.surfaceRevision = placement.command.surfaceRevision;
+    }
+    const screenRect = projectArmLocalRect({
+      x: placement.localCenter.x - placement.size.width / 2,
+      y: placement.localCenter.y - placement.size.height / 2,
+      width: placement.size.width,
+      height: placement.size.height
+    });
+    if (screenRect) {
+      state.screenRect = screenRect;
+    }
+  }
+  return state;
+}
+
+function projectArmSurfaceRect(rect: SurfaceRect): ScreenRect | undefined {
+  const metrics = armPanel.driver.host.getSurfaceMetrics();
+  if (metrics.width <= 0 || metrics.height <= 0) {
+    return undefined;
+  }
+
+  const geometry = armPanel.driver.host.mesh.geometry.parameters;
+  const panelWidth = geometry.width ?? 1;
+  const panelHeight = geometry.height ?? 1;
+  const halfWidth = panelWidth / 2;
+  const halfHeight = panelHeight / 2;
+  const localRect = {
+    x: -halfWidth + (rect.x / metrics.width) * panelWidth,
+    y: halfHeight - ((rect.y + rect.height) / metrics.height) * panelHeight,
+    width: (rect.width / metrics.width) * panelWidth,
+    height: (rect.height / metrics.height) * panelHeight
+  };
+
+  return projectArmLocalRect(localRect);
+}
+
+function projectArmLocalRect(rect: SurfaceRect): ScreenRect | undefined {
+  const mesh = armPanel.driver.host.mesh;
+  const corners = [
+    new THREE.Vector3(rect.x, rect.y, 0.002),
+    new THREE.Vector3(rect.x + rect.width, rect.y, 0.002),
+    new THREE.Vector3(rect.x + rect.width, rect.y + rect.height, 0.002),
+    new THREE.Vector3(rect.x, rect.y + rect.height, 0.002)
+  ].map((corner) => mesh.localToWorld(corner).project(room.camera));
+
+  if (corners.some((corner) => corner.z < -1 || corner.z > 1)) {
+    return undefined;
+  }
+
+  const canvasRect = renderer.domElement.getBoundingClientRect();
+  const points = corners.map((corner) => ({
+    x: canvasRect.left + ((corner.x + 1) / 2) * canvasRect.width,
+    y: canvasRect.top + ((1 - corner.y) / 2) * canvasRect.height
+  }));
+  const xValues = points.map((point) => point.x);
+  const yValues = points.map((point) => point.y);
+  const x = Math.min(...xValues);
+  const y = Math.min(...yValues);
+  const width = Math.max(...xValues) - x;
+  const height = Math.max(...yValues) - y;
+  if (!Number.isFinite(x) || !Number.isFinite(y) || width <= 0 || height <= 0) {
+    return undefined;
+  }
+
+  return { x, y, width, height };
+}
+
+function getTestArmPose(): NonNullable<THREEFrame["anchorPose"]> {
+  return {
+    position: { x: 0, y: 1.34, z: 1.02 },
+    orientation: { x: 0, y: 0, z: 0, w: 1 }
   };
 }
 

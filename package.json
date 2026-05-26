@@ -78,7 +78,10 @@
     "build": "tsc -p tsconfig.build.json",
     "dev": "vite examples/three-living-room --host 0.0.0.0",
     "example:build": "vite build examples/three-living-room",
+    "example:e2e": "vite examples/three-living-room --host 127.0.0.1",
     "example:living-room": "vite examples/three-living-room --host 0.0.0.0",
+    "test:e2e": "playwright test",
+    "test:e2e:fractal": "playwright test test/e2e/living-room-fractal.spec.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
@@ -91,6 +94,7 @@
     }
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/three": "^0.180.0",
     "three": "^0.180.0",
     "typescript": "^5.8.3",
