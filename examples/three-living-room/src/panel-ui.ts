@@ -5,14 +5,19 @@ import {
   createRepeatButton,
   createTextLabel,
   createToggle,
+  createTouchAppRegistry,
   createValueReadout,
+  createWindowManager,
+  defineTouchApp,
   type DisplayNode,
   type SurfaceMetrics,
-  type ThemeTokens
+  type ThemeTokens,
+  type TouchWindowState
 } from "../../../src/index.js";
 import {
   createColumn,
   createDockLayout,
+  createRow,
   createSection,
   createSurfaceShell
 } from "../../../src/index.js";
@@ -30,9 +35,130 @@ import type { MovementIntent, RoomDemoState } from "./store.js";
 
 export type RoomPanelVariant = "tv" | "hud" | "arm";
 
+export interface RoomPanelDiagnostics {
+  pointerMode: string;
+  timing: string;
+  activePanel: string;
+}
+
+interface ArmPanelAppState {
+  room: RoomDemoState;
+  diagnostics: RoomPanelDiagnostics;
+}
+
+const ARM_APP_STATE_IDS = {
+  movement: "movement",
+  settings: "settings",
+  rearView: "rear-view",
+  diagnostics: "diagnostics"
+} as const;
+
+const ARM_APP_IDS = {
+  movement: "space.found.living-room.movement",
+  settings: "space.found.living-room.settings",
+  rearView: "space.found.living-room.rear-view",
+  diagnostics: "space.found.living-room.diagnostics"
+} as const;
+
+const ARM_WINDOW_IDS = {
+  movement: "arm-movement-window",
+  settings: "arm-settings-window",
+  rearView: "arm-rear-view-window",
+  diagnostics: "arm-diagnostics-window"
+} as const;
+
+const ARM_APP_REGISTRY = createTouchAppRegistry([
+  defineTouchApp<ArmPanelAppState>({
+    manifest: {
+      id: ARM_APP_IDS.movement,
+      name: "Movement",
+      version: "1.0.0",
+      preferredWindow: {
+        width: 176,
+        height: 208,
+        minWidth: 150,
+        minHeight: 150,
+        resizable: false
+      }
+    },
+    createApp() {
+      return {
+        render(state) {
+          return createMovementAppRoot(state.room);
+        }
+      };
+    }
+  }),
+  defineTouchApp<ArmPanelAppState>({
+    manifest: {
+      id: ARM_APP_IDS.settings,
+      name: "Settings",
+      version: "1.0.0",
+      preferredWindow: {
+        width: 172,
+        height: 148,
+        minWidth: 150,
+        minHeight: 118,
+        resizable: false
+      }
+    },
+    createApp() {
+      return {
+        render(state) {
+          return createSettingsAppRoot(state.room);
+        }
+      };
+    }
+  }),
+  defineTouchApp<ArmPanelAppState>({
+    manifest: {
+      id: ARM_APP_IDS.rearView,
+      name: "Rear View",
+      version: "1.0.0",
+      capabilities: ["surfaces"],
+      preferredWindow: {
+        width: 188,
+        height: 124,
+        minWidth: 160,
+        minHeight: 104,
+        resizable: false
+      }
+    },
+    createApp() {
+      return {
+        render() {
+          return createRearViewAppRoot();
+        }
+      };
+    }
+  }),
+  defineTouchApp<ArmPanelAppState>({
+    manifest: {
+      id: ARM_APP_IDS.diagnostics,
+      name: "Diagnostics",
+      version: "1.0.0",
+      preferredWindow: {
+        width: 172,
+        height: 132,
+        minWidth: 150,
+        minHeight: 112,
+        resizable: false
+      }
+    },
+    createApp() {
+      return {
+        render(state) {
+          return createDiagnosticsAppRoot(state);
+        }
+      };
+    }
+  })
+]);
+
 export function createRoomPanelRoot(
   variant: RoomPanelVariant,
-  state: RoomDemoState
+  state: RoomDemoState,
+  diagnostics: RoomPanelDiagnostics = createDefaultRoomPanelDiagnostics()
 ): DisplayNode<unknown> {
   switch (variant) {
     case "tv":
@@ -61,36 +187,7 @@ export function createRoomPanelRoot(
         ]
       });
     case "arm":
-      return createSurfaceShell("arm-root", {
-        padding: 10,
-        gap: 10,
-        bodyGap: 10,
-        bodyPadding: 0,
-        pointerOpaque: true,
-        backgroundColor: "#101826",
-        header: createTextLabel("arm-title", {
-          text: "Wrist Panel"
-        }),
-        children: [
-          createToggle("arm-light-toggle", {
-            label: "Lamp",
-            value: state.lightOn,
-            field: "lightOn"
-          }),
-          createValueReadout("arm-light-readout", {
-            label: "State",
-            value: state.lightOn ? "On" : "Off"
-          }),
-          createValueReadout("arm-speed-readout", {
-            label: "Speed",
-            value: formatSpeed(state.moveSpeed)
-          }),
-          createValueReadout("arm-motion-readout", {
-            label: "Move",
-            value: getMovementSummary(state)
-          })
-        ]
-      });
+      return createArmWindowManagerRoot(state, diagnostics);
     case "hud":
     default:
       return createDockLayout("hud-root", {
@@ -219,6 +316,249 @@ export function createXrHudRoot(): DisplayNode<unknown> {
   });
 }
 
+export function createDefaultRoomPanelDiagnostics(): RoomPanelDiagnostics {
+  return {
+    pointerMode: "XR ray/contact",
+    timing: "Waiting",
+    activePanel: "Arm tablet"
+  };
+}
+
+function createArmWindowManagerRoot(
+  state: RoomDemoState,
+  diagnostics: RoomPanelDiagnostics
+): DisplayNode<unknown> {
+  const appState: ArmPanelAppState = {
+    room: state,
+    diagnostics
+  };
+
+  return createWindowManager("arm-os", {
+    registry: ARM_APP_REGISTRY,
+    pointerOpaque: true,
+    constraintPadding: 4,
+    focusOnPress: true,
+    windowControls: ["minimize", "maximize"],
+    appStates: {
+      [ARM_APP_STATE_IDS.movement]: appState,
+      [ARM_APP_STATE_IDS.settings]: appState,
+      [ARM_APP_STATE_IDS.rearView]: appState,
+      [ARM_APP_STATE_IDS.diagnostics]: appState
+    },
+    windows: createArmWindowStates()
+  });
+}
+
+function createArmWindowStates(): readonly TouchWindowState[] {
+  return [
+    {
+      id: ARM_WINDOW_IDS.diagnostics,
+      appId: ARM_APP_IDS.diagnostics,
+      instanceId: ARM_APP_STATE_IDS.diagnostics,
+      title: "Diagnostics",
+      rect: { x: 122, y: 8, width: 172, height: 132 },
+      zIndex: 1,
+      mode: "normal",
+      focused: false,
+      movable: true,
+      resizable: false,
+      minSize: { width: 150, height: 112 }
+    },
+    {
+      id: ARM_WINDOW_IDS.rearView,
+      appId: ARM_APP_IDS.rearView,
+      instanceId: ARM_APP_STATE_IDS.rearView,
+      title: "Rear View",
+      rect: { x: 88, y: 88, width: 204, height: 122 },
+      zIndex: 2,
+      mode: "normal",
+      focused: false,
+      movable: true,
+      resizable: false,
+      minSize: { width: 160, height: 104 }
+    },
+    {
+      id: ARM_WINDOW_IDS.settings,
+      appId: ARM_APP_IDS.settings,
+      instanceId: ARM_APP_STATE_IDS.settings,
+      title: "Settings",
+      rect: { x: 68, y: 36, width: 176, height: 148 },
+      zIndex: 3,
+      mode: "normal",
+      focused: false,
+      movable: true,
+      resizable: false,
+      minSize: { width: 150, height: 118 }
+    },
+    {
+      id: ARM_WINDOW_IDS.movement,
+      appId: ARM_APP_IDS.movement,
+      instanceId: ARM_APP_STATE_IDS.movement,
+      title: "Movement",
+      rect: { x: 6, y: 6, width: 182, height: 208 },
+      zIndex: 4,
+      mode: "normal",
+      focused: true,
+      movable: true,
+      resizable: false,
+      minSize: { width: 150, height: 150 }
+    }
+  ];
+}
+
+function createMovementAppRoot(state: RoomDemoState): DisplayNode<unknown> {
+  return createSurfaceShell("movement-root", {
+    padding: 6,
+    gap: 6,
+    bodyGap: 6,
+    bodyPadding: 0,
+    pointerOpaque: true,
+    backgroundColor: "#101826",
+    children: [
+      createDPad("movement-dpad", {
+        up: createMovementBinding("forward", "Fwd"),
+        down: createMovementBinding("back", "Back"),
+        left: createMovementBinding("strafeLeft", "Left"),
+        right: createMovementBinding("strafeRight", "Right")
+      }),
+      createRow("movement-turn-row", {
+        gap: 6,
+        children: [
+          createHoldButton("movement-turn-left", {
+            label: "Turn L",
+            actionId: "movement.set",
+            startPayload: { intent: "turnLeft", active: true },
+            stopPayload: { intent: "turnLeft", active: false }
+          }),
+          createHoldButton("movement-turn-right", {
+            label: "Turn R",
+            actionId: "movement.set",
+            startPayload: { intent: "turnRight", active: true },
+            stopPayload: { intent: "turnRight", active: false }
+          })
+        ]
+      }),
+      createRow("movement-speed-row", {
+        gap: 6,
+        children: [
+          createRepeatButton("movement-speed-down", {
+            label: "Slow",
+            actionId: "moveSpeed.adjust",
+            payload: { delta: -0.2 }
+          }),
+          createRepeatButton("movement-speed-up", {
+            label: "Fast",
+            actionId: "moveSpeed.adjust",
+            payload: { delta: 0.2 }
+          })
+        ]
+      }),
+      createValueReadout("movement-speed-readout", {
+        label: "Speed",
+        value: formatSpeed(state.moveSpeed)
+      }),
+      createValueReadout("movement-intent-readout", {
+        label: "Intent",
+        value: getMovementSummary(state)
+      })
+    ]
+  });
+}
+
+function createSettingsAppRoot(state: RoomDemoState): DisplayNode<unknown> {
+  return createSurfaceShell("settings-root", {
+    padding: 6,
+    gap: 6,
+    bodyGap: 6,
+    bodyPadding: 0,
+    pointerOpaque: true,
+    backgroundColor: "#101826",
+    children: [
+      createToggle("settings-light-toggle", {
+        label: "Lamp",
+        value: state.lightOn,
+        field: "lightOn"
+      }),
+      createValueReadout("settings-mode-readout", {
+        label: "Mode",
+        value: state.xrActive ? "XR" : "Desktop"
+      }),
+      createValueReadout("settings-lamp-readout", {
+        label: "Lamp",
+        value: state.lightOn ? "On" : "Off"
+      }),
+      createRow("settings-speed-row", {
+        gap: 6,
+        children: [
+          createRepeatButton("settings-speed-down", {
+            label: "Slow",
+            actionId: "moveSpeed.adjust",
+            payload: { delta: -0.2 }
+          }),
+          createRepeatButton("settings-speed-up", {
+            label: "Fast",
+            actionId: "moveSpeed.adjust",
+            payload: { delta: 0.2 }
+          })
+        ]
+      }),
+      createValueReadout("settings-speed-readout", {
+        label: "Speed",
+        value: formatSpeed(state.moveSpeed)
+      })
+    ]
+  });
+}
+
+function createRearViewAppRoot(): DisplayNode<unknown> {
+  return createSurfaceShell("rear-view-root", {
+    padding: 4,
+    gap: 4,
+    bodyPadding: 0,
+    pointerOpaque: true,
+    backgroundColor: "#101826",
+    children: [
+      createEmbeddedSurface("rear-view-surface", {
+        sourceId: REAR_VIEW_SOURCE_ID,
+        interactive: false,
+        acceptsForwardedInput: false,
+        fallbackLabel: "Mirror offline",
+        preserveAspectRatio: true,
+        mirrorX: true
+      })
+    ]
+  });
+}
+
+function createDiagnosticsAppRoot(state: ArmPanelAppState): DisplayNode<unknown> {
+  return createSurfaceShell("diagnostics-root", {
+    padding: 6,
+    gap: 6,
+    bodyGap: 6,
+    bodyPadding: 0,
+    pointerOpaque: true,
+    backgroundColor: "#101826",
+    children: [
+      createValueReadout("diagnostics-pointer-readout", {
+        label: "Pointer",
+        value: state.diagnostics.pointerMode
+      }),
+      createValueReadout("diagnostics-timing-readout", {
+        label: "Timing",
+        value: state.diagnostics.timing
+      }),
+      createValueReadout("diagnostics-panel-readout", {
+        label: "Panel",
+        value: state.diagnostics.activePanel
+      }),
+      createValueReadout("diagnostics-mode-readout", {
+        label: "Mode",
+        value: state.room.xrActive ? "XR" : "Desktop"
+      })
+    ]
+  });
+}
+
 export function getRoomPanelSurface(
   variant: RoomPanelVariant
 ): Partial<SurfaceMetrics> {
@@ -275,13 +615,13 @@ export function getRoomPanelTheme(
         borderColor: "#35506e",
         accentColor: "#fb7185",
         focusColor: "#22c55e",
-        controlHeight: 52,
-        spacing: 10,
-        padding: 12,
-        radius: 12,
+        controlHeight: 38,
+        spacing: 6,
+        padding: 8,
+        radius: 8,
         typography: {
-          fontSize: 15,
-          lineHeight: 18,
+          fontSize: 13,
+          lineHeight: 16,
           fontWeight: 600,
           fontFamily: "Avenir Next, ui-sans-serif"
         }

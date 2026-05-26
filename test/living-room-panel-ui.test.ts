@@ -13,6 +13,7 @@ import {
   getRoomPanelTheme
 } from "../examples/three-living-room/src/panel-ui.js";
 import { createRoomDemoStore } from "../examples/three-living-room/src/store.js";
+import { pressAt } from "./helpers/runtime-helpers.js";
 
 describe("living room panel ui", () => {
   it("renders TV from shared XR state while XR HUD uses a separate root", () => {
@@ -84,7 +85,7 @@ describe("living room panel ui", () => {
     expect(texts).not.toContain("Mirror offline");
   });
 
-  it("keeps the wrist panel controls reachable on its compact surface", () => {
+  it("hosts the wrist panel as a compact window-managed app surface", () => {
     const surface = getRoomPanelSurface("arm");
     const runtime = createRuntime({
       root: createRoomPanelRoot("arm", createRoomDemoStore().getState()),
@@ -92,18 +93,53 @@ describe("living room panel ui", () => {
       theme: getRoomPanelTheme("arm")
     });
 
-    runtime.render();
-    const scrollBounds = runtime.getBounds("arm-root:scroll");
-    expect(scrollBounds).toBeDefined();
-    expect((scrollBounds?.y ?? 0) + (scrollBounds?.height ?? 0)).toBeLessThanOrEqual(surface.height ?? 0);
-    expect(runtime.getServices().scroll.getState("arm-root:scroll").maxOffsetY).toBeGreaterThan(0);
+    const texts = collectTexts(runtime.render().commands);
+    expect(texts).toContain("Movement");
+    expect(texts).toContain("Settings");
+    expect(texts).toContain("Rear View");
+    expect(texts).toContain("Diagnostics");
 
-    const scroll = runtime.getServices().scroll;
-    scroll.setOffset("arm-root:scroll", 0, scroll.getState("arm-root:scroll").maxOffsetY);
+    const layerBounds = runtime.getBounds("arm-os:windows");
+    expect(layerBounds).toEqual({
+      x: 0,
+      y: 0,
+      width: surface.width,
+      height: surface.height
+    });
 
-    const finalControl = runtime.getBounds("arm-motion-readout");
-    expect(finalControl).toBeDefined();
-    expect((finalControl?.y ?? 0) + (finalControl?.height ?? 0)).toBeLessThanOrEqual(surface.height ?? 0);
+    const movementWindowBounds = runtime.getBounds("arm-movement-window");
+    expect(movementWindowBounds).toBeDefined();
+    expect((movementWindowBounds?.x ?? 0) + (movementWindowBounds?.width ?? 0)).toBeLessThanOrEqual(surface.width ?? 0);
+    expect((movementWindowBounds?.y ?? 0) + (movementWindowBounds?.height ?? 0)).toBeLessThanOrEqual(surface.height ?? 0);
+
+    const movementDpadId =
+      "space.found.living-room.movement:movement:arm-movement-window:movement-dpad";
+    const movementDpadBounds = runtime.getBounds(movementDpadId);
+    expect(movementDpadBounds).toBeDefined();
+    expect(
+      runtime.getBounds(
+        "space.found.living-room.rear-view:rear-view:arm-rear-view-window:rear-view-surface"
+      )
+    ).toBeDefined();
+
+    if (!movementDpadBounds) {
+      throw new Error("Expected the arm movement d-pad to be mounted.");
+    }
+    pressAt(
+      runtime,
+      movementDpadBounds.x + movementDpadBounds.width / 2,
+      movementDpadBounds.y + movementDpadBounds.height / 6
+    );
+
+    expect(runtime.takeOutputs()).toContainEqual({
+      type: "action",
+      actionId: "movement.set",
+      componentId: movementDpadId,
+      payload: {
+        intent: "forward",
+        active: true
+      }
+    });
   });
 });
 

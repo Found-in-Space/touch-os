@@ -54,6 +54,7 @@ export interface WindowManagerProps {
   windows: readonly TouchWindowState[];
   launcher?: boolean;
   taskSwitcher?: boolean;
+  pointerOpaque?: boolean;
   constraintPadding?: number | Partial<Insets>;
   focusOnPress?: boolean;
   windowControls?: readonly WindowControl[];

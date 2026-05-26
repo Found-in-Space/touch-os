@@ -74,6 +74,7 @@ const WindowManagerComponent: DisplayComponent<WindowManagerProps, WindowManager
     return [
       createWindowLayer(createWindowLayerId(ctx.id), {
         windows,
+        pointerOpaque: ctx.props.pointerOpaque ?? true,
         ...(ctx.props.constraintPadding !== undefined
           ? { constraintPadding: ctx.props.constraintPadding }
           : {}),

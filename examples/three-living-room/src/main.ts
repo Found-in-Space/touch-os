@@ -25,6 +25,7 @@ import {
   createXrHudRoot,
   createWallMirrorRoot,
   createWallPictureRoot,
+  createDefaultRoomPanelDiagnostics,
   createRoomPanelRoot,
   getXrHudSurface,
   getXrHudTheme,
@@ -33,7 +34,8 @@ import {
   getWallPictureSurface,
   getWallPictureTheme,
   getRoomPanelSurface,
-  getRoomPanelTheme
+  getRoomPanelTheme,
+  type RoomPanelDiagnostics
 } from "./panel-ui.js";
 import {
   REAR_VIEW_SOURCE_ID,
@@ -99,6 +101,7 @@ const sharedSurfaces = createEmbeddedSurfaceService();
 interface RuntimeBinding {
   runtime: DisplayRuntime;
   sync(state: RoomDemoState): void;
+  syncDiagnostics(diagnostics: RoomPanelDiagnostics): void;
 }
 
 interface StaticRuntimeBinding {
@@ -154,6 +157,7 @@ let lookActive = false;
 let yaw = 0;
 let pitch = -0.08;
 let lastFrameTime = performance.now();
+let lastArmDiagnosticsSync = 0;
 let latestPointerNdc = new THREE.Vector2();
 let lastLookPoint:
   | {
@@ -431,6 +435,8 @@ renderer.setAnimationLoop(() => {
     xrHudDriverBinding.hide();
   }
 
+  syncArmDiagnostics(now, deltaSeconds, xrActive);
+
   if (xrActive) {
     let pointerVisualUpdated = false;
     const armPose = resolveArmPose();
@@ -491,8 +497,9 @@ function createRuntimeBinding(
   variant: "hud" | "tv" | "arm"
 ): RuntimeBinding {
   let lastState = store.getState();
+  let lastDiagnostics = createDefaultRoomPanelDiagnostics();
   const runtime = createRuntime({
-    root: createRoomPanelRoot(variant, store.getState()),
+    root: createRoomPanelRoot(variant, lastState, lastDiagnostics),
     surface: getRoomPanelSurface(variant),
     theme: getRoomPanelTheme(variant),
     services: {
@@ -508,7 +515,15 @@ function createRuntimeBinding(
       }
 
       lastState = state;
-      runtime.setRoot(createRoomPanelRoot(variant, state));
+      runtime.setRoot(createRoomPanelRoot(variant, state, lastDiagnostics));
+    },
+    syncDiagnostics(diagnostics) {
+      if (variant !== "arm" || diagnosticsEqual(diagnostics, lastDiagnostics)) {
+        return;
+      }
+
+      lastDiagnostics = diagnostics;
+      runtime.setRoot(createRoomPanelRoot(variant, lastState, lastDiagnostics));
     }
   };
 }
@@ -1078,6 +1093,36 @@ function syncRuntimeBindings(
   desktopHudBinding.sync(state);
   tvBinding.sync(state);
   armBinding.sync(state);
+}
+
+function syncArmDiagnostics(
+  timestamp: number,
+  deltaSeconds: number,
+  xrActive: boolean
+): void {
+  if (timestamp - lastArmDiagnosticsSync < 250) {
+    return;
+  }
+
+  lastArmDiagnosticsSync = timestamp;
+  const fps = deltaSeconds > 0 ? Math.round(1 / deltaSeconds) : 0;
+  const frameMs = (deltaSeconds * 1000).toFixed(1);
+  armBinding.syncDiagnostics({
+    pointerMode: xrActive ? "XR ray/contact" : "Desktop hidden",
+    timing: `${fps} fps / ${frameMs} ms`,
+    activePanel: armDriverBinding.enabled ? "Arm tablet" : xrActive ? "No arm pose" : "HUD only"
+  });
+}
+
+function diagnosticsEqual(
+  left: RoomPanelDiagnostics,
+  right: RoomPanelDiagnostics
+): boolean {
+  return (
+    left.pointerMode === right.pointerMode &&
+    left.timing === right.timing &&
+    left.activePanel === right.activePanel
+  );
 }
 
 function isXrPresentationActive(): boolean {
