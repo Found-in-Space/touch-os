@@ -688,6 +688,10 @@ function drainHostedForwardedInput(ctx: ShellContext, record: WindowManagerAppWi
     return;
   }
 
+  if (!ctx.services.surfaces.getAttachment(record.hostedSurfaceComponentId)) {
+    return;
+  }
+
   const forwardedEvents = ctx.services.surfaces.takeForwardedEvents(record.hostedSurfaceComponentId);
   if (forwardedEvents.length === 0) {
     return;

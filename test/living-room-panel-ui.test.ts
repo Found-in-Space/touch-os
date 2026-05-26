@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createRuntime } from "../src/index.js";
+import { createEmbeddedSurfaceService, createRuntime } from "../src/index.js";
 import type { DrawCommand, SurfaceDrawCommand, TextDrawCommand } from "../src/core/draw.js";
 import {
   createXrHudRoot,
@@ -13,6 +13,7 @@ import {
   getRoomPanelTheme
 } from "../examples/three-living-room/src/panel-ui.js";
 import { createRoomDemoStore } from "../examples/three-living-room/src/store.js";
+import { REAR_VIEW_SOURCE_ID } from "../examples/three-living-room/src/mirror.js";
 import { clickComponentCenter, pressAt } from "./helpers/runtime-helpers.js";
 
 describe("living room panel ui", () => {
@@ -159,7 +160,69 @@ describe("living room panel ui", () => {
       })
     });
   });
+
+  it("can re-enter the arm rear-view tablet app", () => {
+    const surfaces = createEmbeddedSurfaceService();
+    surfaces.publish(REAR_VIEW_SOURCE_ID, {
+      available: true,
+      handle: { kind: "test-rear-view" },
+      sourceWidth: 320,
+      sourceHeight: 180,
+      sourceType: "test-camera"
+    });
+    const runtime = createRuntime({
+      root: createRoomPanelRoot("arm", createRoomDemoStore().getState()),
+      surface: getRoomPanelSurface("arm"),
+      theme: getRoomPanelTheme("arm"),
+      services: {
+        surfaces
+      }
+    });
+
+    runtime.render();
+    clickComponentCenter(runtime, "arm-os:home:open:space-found-living-room-rear-view");
+    runtime.takeOutputs();
+    const firstEntry = runtime.render();
+    expect(findHostedSurface(firstEntry.commands, "space.found.living-room.rear-view:")).toBeDefined();
+
+    clickComponentCenter(runtime, "arm-os:tablet-screen:home-control", 20);
+    runtime.takeOutputs();
+    expect(collectTexts(runtime.render().commands)).toContain("Apps");
+
+    clickComponentCenter(runtime, "arm-os:home:open:space-found-living-room-rear-view", 30);
+    runtime.takeOutputs();
+    const secondEntry = runtime.render();
+    const rearViewSurface = findHostedSurface(
+      secondEntry.commands,
+      "space.found.living-room.rear-view:"
+    );
+
+    expect(rearViewSurface).toBeDefined();
+    const handle = rearViewSurface ? getHostedSnapshotHandle(rearViewSurface) : undefined;
+    expect(
+      handle?.snapshot.commands.some(
+        (command) =>
+          command.type === "surface" &&
+          command.componentId === "rear-view-surface" &&
+          command.sourceId === REAR_VIEW_SOURCE_ID
+      )
+    ).toBe(true);
+  });
 });
+
+function findHostedSurface(
+  commands: readonly DrawCommand[],
+  componentIdPrefix: string
+): SurfaceDrawCommand | undefined {
+  return commands.find(
+    (command): command is SurfaceDrawCommand =>
+      command.type === "surface" &&
+      command.role === "embedded-surface-viewport" &&
+      command.componentId.startsWith(componentIdPrefix) &&
+      typeof command.sourceId === "string" &&
+      command.sourceId.endsWith(":surface-source")
+  );
+}
 
 function findSurfaceCommand(
   commands: readonly DrawCommand[],
