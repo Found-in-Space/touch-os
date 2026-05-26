@@ -57,6 +57,7 @@ import {
   mapTouchWindowModeToWindowMode,
   type TouchWindowState,
   type WindowManagerChange,
+  type WindowManagerUtilityWindowPolicy,
   type WindowManagerProps
 } from "./window-state.js";
 
@@ -199,6 +200,7 @@ function syncLiveRecords(ctx: ManagerContext): void {
       continue;
     }
 
+    record.forwardAppOutputs = ctx.props.forwardAppOutputs ?? false;
     updateAppWindowSurface(record, createSurfaceContext(ctx, record.window));
     if (record.window.mode === "minimized") {
       suspendRecord(record, ctx.services.surfaces);
@@ -216,6 +218,7 @@ function createRecord(ctx: ManagerContext, window: TouchWindowState): WindowMana
     hostMode: resolveAppHostMode(ctx.props),
     surface: createSurfaceContext(ctx, window),
     theme: ctx.services.theme,
+    forwardAppOutputs: ctx.props.forwardAppOutputs ?? false,
     actions: {
       emit(event) {
         if (record) {
@@ -317,17 +320,26 @@ function getVisibleAppWindows(ctx: Pick<ManagerContext, "state">): readonly Wind
 }
 
 function createUtilityWindows(ctx: ManagerContext): DisplayNode<WindowProps, unknown>[] {
+  const policy = resolveUtilityWindowPolicy(ctx.props);
+  if (policy === "none") {
+    return [];
+  }
+
+  const utilityBaseZ = policy === "front" ? getNextRecordZIndex(ctx.state) : UTILITY_Z_BASE;
   const windows: DisplayNode<WindowProps, unknown>[] = [];
   if (ctx.props.launcher) {
-    windows.push(createLauncherWindow(ctx));
+    windows.push(createLauncherWindow(ctx, utilityBaseZ));
   }
   if (ctx.props.taskSwitcher) {
-    windows.push(createTaskSwitcherWindow(ctx));
+    windows.push(createTaskSwitcherWindow(ctx, utilityBaseZ + 1));
   }
   return windows;
 }
 
-function createLauncherWindow(ctx: ManagerContext): DisplayNode<WindowProps, unknown> {
+function createLauncherWindow(
+  ctx: ManagerContext,
+  zIndex: number
+): DisplayNode<WindowProps, unknown> {
   const manifests = ctx.props.registry.list();
   const shellId = `${ctx.id}:launcher:shell`;
   const content = createSurfaceShell(shellId, {
@@ -355,7 +367,7 @@ function createLauncherWindow(ctx: ManagerContext): DisplayNode<WindowProps, unk
   return createWindow(createLauncherWindowId(ctx.id), {
     title: "Apps",
     rect: createLauncherRect(ctx),
-    zIndex: UTILITY_Z_BASE,
+    zIndex,
     mode: "normal",
     movable: true,
     resizable: false,
@@ -364,7 +376,10 @@ function createLauncherWindow(ctx: ManagerContext): DisplayNode<WindowProps, unk
   });
 }
 
-function createTaskSwitcherWindow(ctx: ManagerContext): DisplayNode<WindowProps, unknown> {
+function createTaskSwitcherWindow(
+  ctx: ManagerContext,
+  zIndex: number
+): DisplayNode<WindowProps, unknown> {
   const records = getVisibleAppWindows(ctx);
   const shellId = `${ctx.id}:tasks:shell`;
   const content = createSurfaceShell(shellId, {
@@ -392,7 +407,7 @@ function createTaskSwitcherWindow(ctx: ManagerContext): DisplayNode<WindowProps,
   return createWindow(createTaskSwitcherWindowId(ctx.id), {
     title: "Windows",
     rect: createTaskSwitcherRect(ctx),
-    zIndex: UTILITY_Z_BASE + 1,
+    zIndex,
     mode: "normal",
     movable: true,
     resizable: false,
@@ -601,8 +616,10 @@ function flushHostedAppOutputs(ctx: Pick<ManagerContext, "emit">, record: Window
   }
 
   for (const output of record.hosted.runtime.takeOutputs()) {
-    ctx.emit(scopeRuntimeOutput(output, record.namespacePrefix));
     record.runtime?.handleOutput(output);
+    if (record.forwardAppOutputs) {
+      ctx.emit(scopeRuntimeOutput(output, record.namespacePrefix));
+    }
   }
 }
 
@@ -915,11 +932,34 @@ function getNextRecordZIndex(state: WindowManagerState): number {
 }
 
 function resolveAppState(props: WindowManagerProps, window: TouchWindowState): unknown {
-  return props.appStates?.[window.instanceId] ?? props.appStates?.[window.id];
+  const customState = props.getAppState?.(window);
+  if (customState !== undefined) {
+    return customState;
+  }
+
+  return resolveMappedAppState(props.appStates, window.instanceId) ??
+    resolveMappedAppState(props.appStates, window.id) ??
+    resolveMappedAppState(props.appStates, window.appId);
 }
 
 function resolveAppHostMode(props: WindowManagerProps): "same-runtime" | "child-runtime" {
   return props.appHostMode ?? "same-runtime";
+}
+
+function resolveUtilityWindowPolicy(
+  props: WindowManagerProps
+): WindowManagerUtilityWindowPolicy {
+  return props.utilityWindows ?? "front";
+}
+
+function resolveMappedAppState(
+  states: Readonly<Record<string, unknown>> | undefined,
+  key: string
+): unknown {
+  if (!states || !Object.prototype.hasOwnProperty.call(states, key)) {
+    return undefined;
+  }
+  return states[key];
 }
 
 function createSurfaceContext(ctx: Pick<ManagerContext, "services" | "props">, window: TouchWindowState): TouchAppSurfaceContext {

@@ -205,6 +205,12 @@ const runtime = createRuntime({
 
 `initialWindows` seeds the panel OS session. After mount, the manager owns live window state for launch, focus, move, resize, minimize, restore, fullscreen, and close. Persist state by observing `window-manager-change` outputs; remount with a new manager id when you intentionally want a fresh seed.
 
+App render state is resolved with `getAppState(window)` first, then by `appStates[instanceId]`, `appStates[windowId]`, and `appStates[appId]`. Key shared app state by app id when launcher-created windows should reuse the same external state.
+
+The launcher and task switcher render above app windows by default. Set `utilityWindows: "back"` for the older behind-app behavior, or `utilityWindows: "none"` to suppress built-in utility windows even if `launcher` or `taskSwitcher` are enabled.
+
+Same-runtime id scoping covers built-in components and the standard `child`/`children`, `header`, `footer`, and dock-slot structural props. Use child-runtime mode when hosting arbitrary app trees or custom components that store child nodes under non-standard prop names.
+
 For OS-style isolation, switch to child-runtime mode:
 
 ```ts
@@ -215,7 +221,9 @@ const root = createWindowManager("tablet-os", {
 });
 ```
 
-In child-runtime mode, each app window owns a `DisplayRuntime`. The manager publishes each child runtime as an embedded surface and forwards viewport input into the child runtime in window-local coordinates. App instances still receive local ids such as `"settings-sync"` in `handleOutput`, while hosts consume normal runtime outputs: app events arrive as `app-event`, and window manager requests arrive as `window-manager-change`.
+In child-runtime mode, each app window owns a `DisplayRuntime`. The manager publishes each child runtime as an embedded surface and forwards viewport input into the child runtime in window-local coordinates. App instances still receive local ids such as `"settings-sync"` in `handleOutput`, while hosts consume the public app contract: app events arrive as `app-event`, and window manager requests arrive as `window-manager-change`.
+
+Apps should communicate outward by calling `ctx.actions.emit(...)` from `handleOutput`; hosts should listen for `app-event`. Set `forwardAppOutputs: true` only when the host intentionally wants transparent raw child-runtime outputs with component ids scoped to the app window.
 
 ## Feed Input And Consume Outputs
 

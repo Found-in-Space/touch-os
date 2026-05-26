@@ -216,6 +216,7 @@ const EmbeddedSurfaceComponent: DisplayComponent<EmbeddedSurfaceProps, EmbeddedS
         }
         break;
       case "pointer-leave":
+        forwardViewportInput(ctx);
         ctx.state.hoveredTargetId = undefined;
         ctx.state.pressedTargetId = undefined;
         break;

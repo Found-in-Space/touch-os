@@ -114,8 +114,6 @@ describe("living room panel ui", () => {
     expect((movementWindowBounds?.x ?? 0) + (movementWindowBounds?.width ?? 0)).toBeLessThanOrEqual(surface.width ?? 0);
     expect((movementWindowBounds?.y ?? 0) + (movementWindowBounds?.height ?? 0)).toBeLessThanOrEqual(surface.height ?? 0);
 
-    const movementDpadId =
-      "space.found.living-room.movement:movement:arm-movement-window:movement-dpad";
     const movementSurface = findSurfaceCommand(
       snapshot.commands,
       "space.found.living-room.movement:movement:arm-movement-window:surface"
@@ -147,12 +145,21 @@ describe("living room panel ui", () => {
     );
 
     expect(runtime.takeOutputs()).toContainEqual({
-      type: "action",
-      actionId: "movement.set",
-      componentId: movementDpadId,
-      payload: {
-        intent: "forward",
-        active: true
+      type: "app-event",
+      componentId: "arm-os",
+      appId: "space.found.living-room.movement",
+      instanceId: "movement",
+      windowId: "arm-movement-window",
+      event: {
+        type: "app-action",
+        appId: "space.found.living-room.movement",
+        instanceId: "movement",
+        windowId: "arm-movement-window",
+        name: "movement.set",
+        payload: {
+          intent: "forward",
+          active: true
+        }
       }
     });
   });

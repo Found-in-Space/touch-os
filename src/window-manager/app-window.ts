@@ -43,6 +43,7 @@ export interface WindowManagerAppWindow {
   runtime: TouchAppRuntimeInstance<unknown> | undefined;
   hosted: HostedAppWindow | undefined;
   hostedSurfaceComponentId: string;
+  forwardAppOutputs: boolean;
   lastPublishedRevision: number | undefined;
   lastPublishedWidth: number | undefined;
   lastPublishedHeight: number | undefined;
@@ -68,6 +69,7 @@ export interface CreateWindowManagerAppWindowOptions {
   windows: Partial<TouchAppWindowApi>;
   storage?: TouchAppStorage;
   surfaces?: TouchAppSurfaceApi;
+  forwardAppOutputs?: boolean;
 }
 
 export interface EnsureHostedAppWindowOptions {
@@ -127,6 +129,7 @@ export function createWindowManagerAppWindow(
     runtime: undefined,
     hosted: undefined,
     hostedSurfaceComponentId: createHostedAppSurfaceComponentId(options.window),
+    forwardAppOutputs: options.forwardAppOutputs ?? false,
     lastPublishedRevision: undefined,
     lastPublishedWidth: undefined,
     lastPublishedHeight: undefined,

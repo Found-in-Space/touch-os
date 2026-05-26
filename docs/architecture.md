@@ -159,7 +159,7 @@ They do not own:
 - host rendering
 - security sandboxing for untrusted code
 
-The window manager supports two host modes. Same-runtime windows mount app trees inside the panel runtime and scope app component ids. Child-runtime windows give each app window its own `DisplayRuntime`, publish that runtime's render snapshot through an embedded surface, and forward viewport input into the child runtime in window-local coordinates.
+The window manager supports two host modes. Same-runtime windows mount app trees inside the panel runtime and scope app component ids for built-in containers and the standard structural child props. Child-runtime windows give each app window its own `DisplayRuntime`, publish that runtime's render snapshot through an embedded surface, and forward viewport input into the child runtime in window-local coordinates.
 
 `WindowManagerProps.initialWindows` is a seed, not a controlled window list. To reseed the OS session, remount the manager with a new component id. External callers should observe `window-manager-change` outputs for persistence.
 

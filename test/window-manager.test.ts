@@ -11,6 +11,7 @@ import {
   type DrawCommand,
   type RuntimeOutput,
   type TouchAppEvent,
+  type TouchRuntimeSurfaceHandle,
   type TouchWindowState
 } from "../src/index.js";
 import {
@@ -39,6 +40,30 @@ describe("window manager", () => {
     expect(() => runtime.render()).not.toThrow();
     expect(runtime.getBounds("space.test.one:one-1:one-window:shared-button")).toBeDefined();
     expect(runtime.getBounds("space.test.two:two-1:two-window:shared-button")).toBeDefined();
+  });
+
+  it("hosts two same-runtime windows for the same app without local id collisions", () => {
+    const registry = createTouchAppRegistry([
+      createButtonApp("space.test.duplicate", "Duplicate")
+    ]);
+    const runtime = createRuntime({
+      root: createWindowManager("tablet-os", {
+        registry,
+        initialWindows: [
+          createManagedWindow("first-window", "space.test.duplicate", "duplicate-1", 1),
+          createManagedWindow("second-window", "space.test.duplicate", "duplicate-2", 2)
+        ]
+      }),
+      surface: { width: 560, height: 320 }
+    });
+
+    expect(() => runtime.render()).not.toThrow();
+    expect(
+      runtime.getBounds("space.test.duplicate:duplicate-1:first-window:shared-button")
+    ).toBeDefined();
+    expect(
+      runtime.getBounds("space.test.duplicate:duplicate-2:second-window:shared-button")
+    ).toBeDefined();
   });
 
   it("forwards scoped app outputs to app instances without the namespace", () => {
@@ -285,7 +310,7 @@ describe("window manager", () => {
     );
     const outputs = runtime.takeOutputs();
 
-    expect(outputs).toContainEqual({
+    expect(outputs).not.toContainEqual({
       type: "action",
       actionId: "child.run",
       componentId: "space.test.child:child-1:child-window:shared-button"
@@ -366,6 +391,116 @@ describe("window manager", () => {
     expect(surfaces.getSource("space.test.child:child-1:child-window:surface-source")).toBeUndefined();
   });
 
+  it("can opt child-runtime windows into raw scoped app output forwarding", () => {
+    const surfaces = createEmbeddedSurfaceService();
+    const registry = createTouchAppRegistry([
+      defineTouchApp({
+        manifest: {
+          id: "space.test.forward",
+          name: "Forward",
+          version: "1.0.0"
+        },
+        createApp() {
+          return {
+            render() {
+              return createButton("shared-button", {
+                label: "Run",
+                actionId: "forward.run"
+              });
+            }
+          };
+        }
+      })
+    ]);
+    const runtime = createRuntime({
+      root: createWindowManager("tablet-os", {
+        registry,
+        appHostMode: "child-runtime",
+        forwardAppOutputs: true,
+        initialWindows: [createManagedWindow("forward-window", "space.test.forward", "forward-1", 1)]
+      }),
+      surface: { width: 420, height: 280 },
+      services: { surfaces }
+    });
+
+    const snapshot = runtime.render();
+    const viewport = findCommandByRole(snapshot.commands, "embedded-surface-viewport");
+    if (viewport.type !== "surface") {
+      throw new Error("Expected the hosted app viewport to render as a surface command.");
+    }
+
+    pressAt(
+      runtime,
+      viewport.rect.x + viewport.rect.width / 2,
+      viewport.rect.y + viewport.rect.height / 2
+    );
+    const outputs = runtime.takeOutputs();
+
+    expect(outputs).toContainEqual({
+      type: "action",
+      actionId: "forward.run",
+      componentId: "space.test.forward:forward-1:forward-window:shared-button"
+    });
+  });
+
+  it("clears child-runtime hover when the pointer leaves an embedded app surface", () => {
+    const surfaces = createEmbeddedSurfaceService();
+    const sourceId = "space.test.leave:leave-1:leave-window:surface-source";
+    const registry = createTouchAppRegistry([
+      defineTouchApp({
+        manifest: {
+          id: "space.test.leave",
+          name: "Leave",
+          version: "1.0.0"
+        },
+        createApp() {
+          return {
+            render() {
+              return createButton("leave-button", {
+                label: "Hover",
+                actionId: "leave.run"
+              });
+            }
+          };
+        }
+      })
+    ]);
+    const runtime = createRuntime({
+      root: createWindowManager("tablet-os", {
+        registry,
+        appHostMode: "child-runtime",
+        initialWindows: [createManagedWindow("leave-window", "space.test.leave", "leave-1", 1)]
+      }),
+      surface: { width: 420, height: 280 },
+      services: { surfaces }
+    });
+
+    const snapshot = runtime.render();
+    const viewport = findCommandByRole(snapshot.commands, "embedded-surface-viewport");
+    if (viewport.type !== "surface") {
+      throw new Error("Expected the hosted app viewport to render as a surface command.");
+    }
+
+    const normalFill = getHostedButtonFill(surfaces, sourceId);
+    runtime.dispatchInput({
+      type: "pointer-move",
+      surfaceX: viewport.rect.x + viewport.rect.width / 2,
+      surfaceY: viewport.rect.y + viewport.rect.height / 2,
+      timestamp: 1
+    });
+    const hoverFill = getHostedButtonFill(surfaces, sourceId);
+    expect(hoverFill).not.toBe(normalFill);
+
+    runtime.dispatchInput({
+      type: "pointer-move",
+      surfaceX: viewport.rect.x + viewport.rect.width + 12,
+      surfaceY: viewport.rect.y + viewport.rect.height / 2,
+      timestamp: 2
+    });
+
+    expect(getHostedButtonFill(surfaces, sourceId)).toBe(normalFill);
+  });
+
   it("opens registered apps from the launcher with generated ids and preferred placement", () => {
     const registry = createTouchAppRegistry([
       defineTouchApp({
@@ -428,6 +563,78 @@ describe("window manager", () => {
       width: 360,
       height: 260
     });
+  });
+
+  it("resolves launcher-created app state by app id", () => {
+    const registry = createTouchAppRegistry([
+      defineTouchApp<{ title: string }>({
+        manifest: {
+          id: "space.test.state",
+          name: "State",
+          version: "1.0.0"
+        },
+        createApp() {
+          return {
+            render(state) {
+              return createTextLabel("state-root", {
+                text: state.title
+              });
+            }
+          };
+        }
+      })
+    ]);
+    const runtime = createRuntime({
+      root: createWindowManager("tablet-os", {
+        registry,
+        launcher: true,
+        appStates: {
+          "space.test.state": { title: "Shared app state" }
+        }
+      }),
+      surface: { width: 420, height: 300 }
+    });
+
+    runtime.render();
+    clickComponentCenter(runtime, "tablet-os:launcher:open:space-test-state");
+    runtime.takeOutputs();
+    const snapshot = runtime.render();
+
+    expect(
+      snapshot.commands.some(
+        (command) =>
+          command.type === "text" &&
+          command.componentId === "space.test.state:space-test-state-1:space-test-state-1-window:state-root" &&
+          command.text === "Shared app state"
+      )
+    ).toBe(true);
+  });
+
+  it("renders launcher and task switcher above app windows by default", () => {
+    const registry = createTouchAppRegistry([
+      createButtonApp("space.test.utility", "Utility")
+    ]);
+    const runtime = createRuntime({
+      root: createWindowManager("tablet-os", {
+        registry,
+        launcher: true,
+        taskSwitcher: true,
+        initialWindows: [
+          createManagedWindow("utility-window", "space.test.utility", "utility-1", 10)
+        ]
+      }),
+      surface: { width: 560, height: 320 }
+    });
+
+    const frames = runtime.render().commands
+      .filter((command) => command.type === "rect" && command.role === "window-frame")
+      .map((command) => command.componentId);
+
+    expect(frames).toEqual([
+      "utility-window",
+      "tablet-os:launcher-window",
+      "tablet-os:task-switcher-window"
+    ]);
   });
 
   it("restores and focuses minimized windows from the task switcher", () => {
@@ -754,4 +961,20 @@ function createManagedWindow(
     movable: true,
     resizable: true
   };
+}
+
+function getHostedButtonFill(
+  surfaces: ReturnType<typeof createEmbeddedSurfaceService>,
+  sourceId: string
+): string | undefined {
+  const handle = surfaces.getSource(sourceId)?.handle as TouchRuntimeSurfaceHandle | undefined;
+  if (handle?.kind !== "touch-os-render-snapshot") {
+    throw new Error(`Expected source "${sourceId}" to expose a touch runtime snapshot.`);
+  }
+
+  const buttonFace = findCommandByRole<DrawCommand>(handle.snapshot.commands, "button-face");
+  if (buttonFace.type !== "rect") {
+    throw new Error("Expected hosted button face to render as a rect.");
+  }
+  return buttonFace.fill;
 }

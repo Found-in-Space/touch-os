@@ -104,17 +104,19 @@ Shipped in `@found-in-space/touch-os/window-manager`:
 - `createWindowManager` for hosting registered apps inside panel windows
 - `TouchWindowState` and `WindowManagerProps` contracts for app windows
 - `initialWindows` seeding, with live window state owned by the mounted manager session
-- built-in launcher and task switcher windows backed by the app registry and running windows
+- built-in launcher and task switcher windows backed by the app registry and running windows, with front/back/none z-order policy
 - `appHostMode: "same-runtime" | "child-runtime"` for choosing the app hosting model
 - same-runtime app rendering through `createWindowLayer` and `createWindow`
 - app root id namespacing before mounting, so multiple apps can reuse local component ids safely
 - child-runtime app rendering through embedded surfaces, with one `DisplayRuntime` per app window
 - draining forwarded embedded-surface input translated into child-runtime display-space input
-- app output forwarding that strips the namespace before invoking the app instance's `handleOutput`
+- app state resolution by `getAppState`, instance id, window id, or app id
+- app output handling that strips the namespace before invoking the app instance's `handleOutput`
 - `app-event` outputs for events emitted through `ctx.actions.emit(...)`
+- opt-in raw child-runtime app output forwarding for transparent host integrations
 - `window-manager-change` outputs for title, close, resize, open-app, and window-state changes
 
-Same-runtime mode is still the simplest path for first-party panels. Child-runtime mode isolates app focus, scroll, navigation, and local component ids while still running trusted app code in the same JavaScript environment.
+Same-runtime mode is still the simplest path for first-party panels built from standard containers and custom components that use the conventional `child`/`children` structural props. Child-runtime mode isolates app focus, scroll, navigation, and local component ids while still running trusted app code in the same JavaScript environment.
 
 ## Runtime Services
 

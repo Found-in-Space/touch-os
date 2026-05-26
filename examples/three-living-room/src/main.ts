@@ -4,7 +4,6 @@ import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
 import {
   createEmbeddedSurfaceService,
   createRuntime,
-  type ActionEvent,
   type ChangeRequestEvent,
   type DisplayRuntime,
   type RuntimeOutput,
@@ -111,6 +110,11 @@ interface StaticRuntimeController {
 interface THREEFrame extends ThreePanelHostFrame {
   scene: THREE.Scene;
   camera: THREE.Camera;
+}
+
+interface RoomPanelAction {
+  actionId: string;
+  payload?: Record<string, unknown>;
 }
 
 const desktopHudRuntime = createRoomRuntimeController("hud");
@@ -655,11 +659,25 @@ function applyRuntimeOutput(output: RuntimeOutput, state: RoomDemoState): void {
     return;
   }
 
+  if (output.type === "app-event") {
+    const event = output.event;
+    if (event.type === "app-action" && typeof event.name === "string") {
+      applyPanelAction({
+        actionId: event.name,
+        ...(isRecord(event.payload) ? { payload: event.payload } : {})
+      }, state);
+    }
+    return;
+  }
+
   if (output.type !== "action") {
     return;
   }
 
-  const action = output as ActionEvent;
+  applyPanelAction(output, state);
+}
+
+function applyPanelAction(action: RoomPanelAction, state: RoomDemoState): void {
   if (action.actionId === "light.toggle") {
     dispatchStoreAction({
       type: "light.set",
@@ -690,6 +708,10 @@ function applyRuntimeOutput(output: RuntimeOutput, state: RoomDemoState): void {
       });
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function dispatchStoreAction(action: RoomDemoAction): void {

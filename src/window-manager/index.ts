@@ -14,6 +14,7 @@ export type {
   TouchWindowMode,
   TouchWindowState,
   WindowManagerAppHostMode,
+  WindowManagerUtilityWindowPolicy,
   WindowManagerChange,
   WindowManagerProps
 } from "./window-state.js";

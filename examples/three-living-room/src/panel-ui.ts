@@ -10,8 +10,10 @@ import {
   createWindowManager,
   defineTouchApp,
   type DisplayNode,
+  type RuntimeOutput,
   type SurfaceMetrics,
   type ThemeTokens,
+  type TouchAppContext,
   type TouchWindowState
 } from "../../../src/index.js";
 import {
@@ -81,10 +83,13 @@ const ARM_APP_REGISTRY = createTouchAppRegistry([
         resizable: false
       }
     },
-    createApp() {
+    createApp(ctx) {
       return {
         render(state) {
           return createMovementAppRoot(state.room);
+        },
+        handleOutput(output) {
+          emitActionOutput(ctx, output);
         }
       };
     }
@@ -102,10 +107,13 @@ const ARM_APP_REGISTRY = createTouchAppRegistry([
         resizable: false
       }
     },
-    createApp() {
+    createApp(ctx) {
       return {
         render(state) {
           return createSettingsAppRoot(state.room);
+        },
+        handleOutput(output) {
+          emitActionOutput(ctx, output);
         }
       };
     }
@@ -124,10 +132,13 @@ const ARM_APP_REGISTRY = createTouchAppRegistry([
         resizable: false
       }
     },
-    createApp() {
+    createApp(ctx) {
       return {
         render() {
           return createRearViewAppRoot();
+        },
+        handleOutput(output) {
+          emitActionOutput(ctx, output);
         }
       };
     }
@@ -145,10 +156,13 @@ const ARM_APP_REGISTRY = createTouchAppRegistry([
         resizable: false
       }
     },
-    createApp() {
+    createApp(ctx) {
       return {
         render(state) {
           return createDiagnosticsAppRoot(state);
+        },
+        handleOutput(output) {
+          emitActionOutput(ctx, output);
         }
       };
     }
@@ -341,12 +355,13 @@ function createArmWindowManagerRoot(
     focusOnPress: true,
     launcher: true,
     taskSwitcher: true,
+    utilityWindows: "back",
     windowControls: ["minimize", "maximize", "fullscreen"],
     appStates: {
-      [ARM_APP_STATE_IDS.movement]: appState,
-      [ARM_APP_STATE_IDS.settings]: appState,
-      [ARM_APP_STATE_IDS.rearView]: appState,
-      [ARM_APP_STATE_IDS.diagnostics]: appState
+      [ARM_APP_IDS.movement]: appState,
+      [ARM_APP_IDS.settings]: appState,
+      [ARM_APP_IDS.rearView]: appState,
+      [ARM_APP_IDS.diagnostics]: appState
     },
     initialWindows: createArmWindowStates()
   });
@@ -734,6 +749,18 @@ function createMovementBinding(
     startPayload: { intent, active: true },
     stopPayload: { intent, active: false }
   };
+}
+
+function emitActionOutput(ctx: TouchAppContext, output: RuntimeOutput): void {
+  if (output.type !== "action") {
+    return;
+  }
+
+  ctx.actions.emit({
+    type: "app-action",
+    name: output.actionId,
+    ...(output.payload ? { payload: output.payload } : {})
+  });
 }
 
 function formatSpeed(moveSpeed: number): string {

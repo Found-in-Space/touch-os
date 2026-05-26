@@ -156,7 +156,15 @@ describe("embedded surface", () => {
     });
 
     const forwardedAfterDismiss = surfaces.getAttachment("monitor")?.forwardedEvents ?? [];
-    expect(forwardedAfterDismiss).toHaveLength(forwardedBeforeDismiss.length);
+    expect(forwardedAfterDismiss.map((event) => event.type)).toEqual([
+      "pointer-down",
+      "pointer-up",
+      "press",
+      "pointer-leave"
+    ]);
+    expect(forwardedAfterDismiss.at(-1)).toMatchObject({
+      targetId: "monitor:viewport"
+    });
   });
 
   it("drains forwarded viewport input from the default service", () => {

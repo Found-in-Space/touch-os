@@ -171,7 +171,7 @@ Shipped now:
 - embedded-surface composition through copy or host-composited surface commands
 - movable surface-local windows with drag handles, focus/z-order, clamping, and window-state-change outputs
 - app bundle contracts for manifests, lifecycle hooks, app context, registries, and instance wrappers
-- same-runtime and child-runtime app windows through `createWindowManager`, with launcher/task-switcher support, scoped app outputs, and app/window-manager events
+- same-runtime and child-runtime app windows through `createWindowManager`, with launcher/task-switcher support, app/window-manager events, and opt-in raw child-runtime output forwarding
 - panel coordination for ordered multi-panel routing, fallthrough, lower-priority clearing, and pointer-scoped ownership
 - Three panel sessions for reusable runtime/driver update, render, pointer routing, and output flushing
 - optional schema authoring for text, button, toggle, slider, choice group, value readout, and action card documents

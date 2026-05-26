@@ -23,6 +23,8 @@ export type TouchWindowMode = "normal" | "minimized" | "maximized" | "fullscreen
 
 export type WindowManagerAppHostMode = "same-runtime" | "child-runtime";
 
+export type WindowManagerUtilityWindowPolicy = "none" | "back" | "front";
+
 export interface TouchWindowState {
   id: string;
   appId: string;
@@ -58,11 +60,14 @@ export interface WindowManagerProps {
   launcher?: boolean;
   taskSwitcher?: boolean;
   appHostMode?: WindowManagerAppHostMode;
+  utilityWindows?: WindowManagerUtilityWindowPolicy;
   pointerOpaque?: boolean;
   constraintPadding?: number | Partial<Insets>;
   focusOnPress?: boolean;
   windowControls?: readonly WindowControl[];
   appStates?: Readonly<Record<string, unknown>>;
+  getAppState?(window: TouchWindowState): unknown;
+  forwardAppOutputs?: boolean;
   storage?: TouchAppStorage;
   surfaces?: TouchAppSurfaceApi;
   onWindowChange?(change: WindowManagerChange): void;

@@ -1170,6 +1170,24 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
           targetId = pointer.targetId;
           activePointers.delete(pointerId);
         }
+
+        const currentHover = hoveredMatches.get(pointerId);
+        if (currentHover) {
+          dispatchToPath(currentHover.pathIds, currentHover.targetId, (node) =>
+            createPointerDisplayEvent(
+              "pointer-leave",
+              node,
+              point,
+              event.timestamp,
+              currentHover.targetId,
+              pointer
+            )
+          );
+          hoveredMatches.delete(pointerId);
+          handled = true;
+          componentId = componentId ?? currentHover.componentId;
+          targetId = targetId ?? currentHover.targetId;
+        }
         break;
       }
 
