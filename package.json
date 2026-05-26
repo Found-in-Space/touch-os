@@ -45,6 +45,10 @@
       "types": "./dist/services/index.d.ts",
       "import": "./dist/services/index.js"
     },
+    "./coordination": {
+      "types": "./dist/coordination/index.d.ts",
+      "import": "./dist/coordination/index.js"
+    },
     "./hosts": {
       "types": "./dist/hosts/index.d.ts",
       "import": "./dist/hosts/index.js"

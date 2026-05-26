@@ -18,9 +18,9 @@ import {
   type ThreePointerSample
 } from "../../../src/hosts/three.js";
 import {
-  routePointerSample,
+  createPanelCoordinator,
   type CoordinatedPanel
-} from "./coordinator.js";
+} from "../../../src/coordination/index.js";
 import {
   createXrHudRoot,
   createWallMirrorRoot,
@@ -222,6 +222,12 @@ const xrPanels: CoordinatedPanel<ThreePointerSample, THREEFrame>[] = [
   toCoordinatedPanel(armDriverBinding),
   toCoordinatedPanel(tvDriverBinding)
 ];
+const desktopPanelCoordinator = createPanelCoordinator({
+  panels: desktopPanels
+});
+const xrPanelCoordinator = createPanelCoordinator({
+  panels: xrPanels
+});
 
 store.subscribe(() => {
   const state = store.getState();
@@ -435,7 +441,7 @@ renderer.setAnimationLoop(() => {
         }
       : baseFrame;
     for (const sample of consumeXrSamples(now)) {
-      const routing = routePointerSample(xrPanels, sample, xrFrame);
+      const routing = xrPanelCoordinator.route(sample, xrFrame);
       if (sample.pointerId === "xr-ray" && sample.transport === "ray") {
         updateXrPointerVisual(sample, routing.ownerKey);
         pointerVisualUpdated = true;
@@ -451,7 +457,7 @@ renderer.setAnimationLoop(() => {
       if (!sample) {
         continue;
       }
-      routePointerSample(desktopPanels, sample, baseFrame);
+      desktopPanelCoordinator.route(sample, baseFrame);
     }
   }
 

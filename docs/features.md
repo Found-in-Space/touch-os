@@ -165,6 +165,17 @@ Current Three.js host coverage includes:
 - pluggable pointer presentation integration
 - host-side composite embedded-surface placement resolution
 
+## Panel Coordination
+
+Shipped in `@found-in-space/touch-os/coordination`:
+
+- `routePointerSample` for stateless ordered routing across panels
+- `createPanelCoordinator` for pointer-scoped ownership across multiple samples
+- same-frame fallthrough when a higher-priority panel misses
+- lower-priority pointer clearing after a panel claims or blocks a sample
+- per-pointer ownership for simultaneous mouse, touch, controller, ray, and contact sources
+- release and cancel cleanup through `phase` or normalized `type` fields
+
 ## Declarative Schema Adapter
 
 Shipped in `@found-in-space/touch-os/adapters/schema`:
@@ -199,6 +210,5 @@ The following intentionally remain planned work rather than implicit promises:
 
 - browser and DOM-adjacent hosts in [plan-browser-hosts.md](./plan-browser-hosts.md)
 - movable windows and bounded scene panels in [plan-movable-components.md](./plan-movable-components.md)
-- reusable multi-panel coordination in [plan-panel-coordination.md](./plan-panel-coordination.md)
 - presentation variants and runtime bindings in [plan-presentation-variants.md](./plan-presentation-variants.md)
 - source-bound embedded-surface input sinks in [plan-embedded-surface-input.md](./plan-embedded-surface-input.md)

@@ -17,6 +17,7 @@ The runtime stays headless and display-space-only. Hosts own environment-specifi
 - a strict TypeScript, ESM-only core runtime
 - a small set of generic built-in components and containers
 - runtime services for layout, navigation, focus, scroll, theme, timing, bitmap assets, and embedded surfaces
+- a generic multi-panel coordination helper for ordered routing and pointer ownership
 - a Three.js host package with scene, pose-anchored, tablet, and HUD panel helpers
 - host-side pointer interop helpers for screen, ray, surface, and direct-contact input
 - an optional schema adapter for code-generated or serialized surfaces
@@ -30,6 +31,7 @@ The runtime stays headless and display-space-only. Hosts own environment-specifi
 | `@found-in-space/touch-os/components` | Built-in leaf components such as buttons, sliders, choice groups, graphs, and embedded surfaces. |
 | `@found-in-space/touch-os/containers` | Built-in containers such as row, column, stack, overlay, scroll, page, section, and dock layout. |
 | `@found-in-space/touch-os/services` | Runtime service contracts plus default in-memory implementations. |
+| `@found-in-space/touch-os/coordination` | Generic ordered panel routing, fallthrough, and pointer ownership helpers. |
 | `@found-in-space/touch-os/hosts` | Generic host contract types only. |
 | `@found-in-space/touch-os/hosts/three` | Three.js host adapters, panel drivers, pointer sources, and panel interactor helpers. |
 | `@found-in-space/touch-os/adapters/schema` | Optional declarative schema adapter. |
@@ -163,13 +165,13 @@ Shipped now:
 - containers: row, column, stack, overlay, section, scroll container, page container, dock layout, surface shell
 - services: layout, navigation, scroll, focus, theme, timing, surface metrics, bitmap assets, embedded surfaces
 - embedded-surface composition through copy or host-composited surface commands
+- panel coordination for ordered multi-panel routing, fallthrough, lower-priority clearing, and pointer-scoped ownership
 - optional schema authoring for text, button, toggle, slider, choice group, value readout, and action card documents
 
 Planned but not shipped yet:
 
 - browser and DOM-adjacent hosts in [docs/plan-browser-hosts.md](./docs/plan-browser-hosts.md)
 - movable windows and bounded movable panels in [docs/plan-movable-components.md](./docs/plan-movable-components.md)
-- reusable multi-panel coordination in [docs/plan-panel-coordination.md](./docs/plan-panel-coordination.md)
 - presentation variants and runtime bindings in [docs/plan-presentation-variants.md](./docs/plan-presentation-variants.md)
 - source-bound embedded-surface input sinks in [docs/plan-embedded-surface-input.md](./docs/plan-embedded-surface-input.md)
 
@@ -180,7 +182,7 @@ Planned but not shipped yet:
 - [docs/usage.md](./docs/usage.md): integration patterns and code examples
 - [docs/plan-browser-hosts.md](./docs/plan-browser-hosts.md): browser host roadmap
 - [docs/plan-movable-components.md](./docs/plan-movable-components.md): movable window roadmap
-- [docs/plan-panel-coordination.md](./docs/plan-panel-coordination.md): multi-panel coordination roadmap
+- [docs/plan-panel-coordination.md](./docs/plan-panel-coordination.md): shipped panel coordination notes and future policy roadmap
 - [docs/plan-presentation-variants.md](./docs/plan-presentation-variants.md): presentation-variant roadmap
 - [docs/plan-embedded-surface-input.md](./docs/plan-embedded-surface-input.md): advanced embedded-surface input roadmap
 

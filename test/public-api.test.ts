@@ -35,6 +35,10 @@ describe("public package api", () => {
         types: "./dist/hosts/index.d.ts",
         import: "./dist/hosts/index.js"
       },
+      "./coordination": {
+        types: "./dist/coordination/index.d.ts",
+        import: "./dist/coordination/index.js"
+      },
       "./hosts/three": {
         types: "./dist/hosts/three.d.ts",
         import: "./dist/hosts/three.js"

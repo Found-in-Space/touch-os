@@ -34,6 +34,8 @@ The published surface is intentionally small and explicit:
   Built-in composition primitives.
 - `@found-in-space/touch-os/services`
   Service contracts and default implementations.
+- `@found-in-space/touch-os/coordination`
+  Generic ordered panel routing, fallthrough, lower-priority clearing, and pointer-scoped ownership helpers.
 - `@found-in-space/touch-os/hosts`
   Generic host contract types only.
 - `@found-in-space/touch-os/hosts/three`
@@ -234,7 +236,6 @@ These are intentionally not shipped in the current release line:
 
 - a browser or DOM-backed host
 - movable windows or bounded movable scene panels
-- a reusable multi-panel coordinator above individual panel drivers
 - presentation variants and runtime-binding helpers
 - source-bound embedded-surface input sinks
 
@@ -242,6 +243,5 @@ Those areas are tracked in:
 
 - [plan-browser-hosts.md](./plan-browser-hosts.md)
 - [plan-movable-components.md](./plan-movable-components.md)
-- [plan-panel-coordination.md](./plan-panel-coordination.md)
 - [plan-presentation-variants.md](./plan-presentation-variants.md)
 - [plan-embedded-surface-input.md](./plan-embedded-surface-input.md)

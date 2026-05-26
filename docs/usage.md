@@ -343,6 +343,41 @@ function createHost(runtime: DisplayRuntime): HostAdapter {
 
 That is enough for a canvas host, a texture-backed scene host, or a test harness.
 
+## Coordinate Multiple Panels
+
+Use the coordination helper when more than one panel can receive samples from the same pointer source.
+
+```ts
+import {
+  createPanelCoordinator,
+  type CoordinatedPanel,
+  type PointerSampleLike
+} from "@found-in-space/touch-os/coordination";
+
+type PointerSample = PointerSampleLike & {
+  phase: "move" | "down" | "up" | "cancel";
+};
+
+interface Frame {
+  timestamp: number;
+}
+
+const panels: CoordinatedPanel<PointerSample, Frame>[] = [
+  hudPanel,
+  tabletPanel,
+  wallPanel
+];
+
+const coordinator = createPanelCoordinator({ panels });
+
+for (const sample of pointerSamples) {
+  const routing = coordinator.route(sample, frame);
+  updatePointerVisual(sample.pointerId, routing.ownerKey);
+}
+```
+
+Panels are processed in array order. If a panel misses without blocking, lower-priority panels get the same sample in the same routing step. Once a panel claims a pointer, the coordinator keeps routing that pointer to the owner until an `up` or `cancel` phase is observed.
+
 ## Use The Three.js Host Package
 
 The current first-class host integration is `@found-in-space/touch-os/hosts/three`.
@@ -388,6 +423,5 @@ If you need a feature that is not shipped yet, check the relevant plan doc first
 
 - [plan-browser-hosts.md](./plan-browser-hosts.md)
 - [plan-movable-components.md](./plan-movable-components.md)
-- [plan-panel-coordination.md](./plan-panel-coordination.md)
 - [plan-presentation-variants.md](./plan-presentation-variants.md)
 - [plan-embedded-surface-input.md](./plan-embedded-surface-input.md)

@@ -4,11 +4,21 @@
 
 Provide a reusable coordination layer for multiple interactive panel surfaces so applications can express priority, fallthrough, and pointer ownership without rebuilding the same routing logic around every set of panel drivers.
 
+## Status
+
+Phase 1 is shipped in `@found-in-space/touch-os/coordination`.
+
+The public surface includes:
+
+- `routePointerSample` for stateless ordered routing
+- `createPanelCoordinator` for pointer-scoped ownership across samples
+- `CoordinatedPanel` and `PointerRoutingResult` contracts
+
 ## Recommendation
 
-`touch-os` should expose a small public coordination helper above individual panel interactors or drivers.
+`touch-os` exposes a small public coordination helper above individual panel interactors or drivers.
 
-This helper should be generic and policy-driven rather than tied to one environment or layout pattern.
+This helper is generic and policy-driven rather than tied to one environment or layout pattern.
 
 ## Why This Feature Exists
 
@@ -174,7 +184,7 @@ This feature should include tests for:
 
 ### Phase 1
 
-Ship a minimal ordered coordinator with:
+Shipped as a minimal ordered coordinator with:
 
 - explicit panel order
 - same-frame fallthrough
