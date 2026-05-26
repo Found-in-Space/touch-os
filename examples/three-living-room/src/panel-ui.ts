@@ -49,51 +49,24 @@ interface ArmPanelAppState {
 }
 
 const ARM_APP_STATE_IDS = {
-  movement: "movement",
   settings: "settings",
   rearView: "rear-view",
   diagnostics: "diagnostics"
 } as const;
 
 const ARM_APP_IDS = {
-  movement: "space.found.living-room.movement",
   settings: "space.found.living-room.settings",
   rearView: "space.found.living-room.rear-view",
   diagnostics: "space.found.living-room.diagnostics"
 } as const;
 
 const ARM_WINDOW_IDS = {
-  movement: "arm-movement-window",
   settings: "arm-settings-window",
   rearView: "arm-rear-view-window",
   diagnostics: "arm-diagnostics-window"
 } as const;
 
 const ARM_APP_REGISTRY = createTouchAppRegistry([
-  defineTouchApp<ArmPanelAppState>({
-    manifest: {
-      id: ARM_APP_IDS.movement,
-      name: "Movement",
-      version: "1.0.0",
-      preferredWindow: {
-        width: 176,
-        height: 208,
-        minWidth: 150,
-        minHeight: 150,
-        resizable: false
-      }
-    },
-    createApp(ctx) {
-      return {
-        render(state) {
-          return createMovementAppRoot(state.room);
-        },
-        handleOutput(output) {
-          emitActionOutput(ctx, output);
-        }
-      };
-    }
-  }),
   defineTouchApp<ArmPanelAppState>({
     manifest: {
       id: ARM_APP_IDS.settings,
@@ -113,7 +86,7 @@ const ARM_APP_REGISTRY = createTouchAppRegistry([
           return createSettingsAppRoot(state.room);
         },
         handleOutput(output) {
-          emitActionOutput(ctx, output);
+          emitRoomAppOutput(ctx, output);
         }
       };
     }
@@ -138,7 +111,7 @@ const ARM_APP_REGISTRY = createTouchAppRegistry([
           return createRearViewAppRoot();
         },
         handleOutput(output) {
-          emitActionOutput(ctx, output);
+          emitRoomAppOutput(ctx, output);
         }
       };
     }
@@ -162,7 +135,7 @@ const ARM_APP_REGISTRY = createTouchAppRegistry([
           return createDiagnosticsAppRoot(state);
         },
         handleOutput(output) {
-          emitActionOutput(ctx, output);
+          emitRoomAppOutput(ctx, output);
         }
       };
     }
@@ -358,7 +331,6 @@ function createArmWindowManagerRoot(
     utilityWindows: "back",
     windowControls: ["minimize", "maximize", "fullscreen"],
     appStates: {
-      [ARM_APP_IDS.movement]: appState,
       [ARM_APP_IDS.settings]: appState,
       [ARM_APP_IDS.rearView]: appState,
       [ARM_APP_IDS.diagnostics]: appState
@@ -374,7 +346,7 @@ function createArmWindowStates(): readonly TouchWindowState[] {
       appId: ARM_APP_IDS.diagnostics,
       instanceId: ARM_APP_STATE_IDS.diagnostics,
       title: "Diagnostics",
-      rect: { x: 122, y: 8, width: 172, height: 132 },
+      rect: { x: 124, y: 8, width: 172, height: 132 },
       zIndex: 1,
       mode: "normal",
       focused: false,
@@ -387,7 +359,7 @@ function createArmWindowStates(): readonly TouchWindowState[] {
       appId: ARM_APP_IDS.rearView,
       instanceId: ARM_APP_STATE_IDS.rearView,
       title: "Rear View",
-      rect: { x: 88, y: 88, width: 204, height: 122 },
+      rect: { x: 86, y: 88, width: 204, height: 122 },
       zIndex: 2,
       mode: "normal",
       focused: false,
@@ -400,87 +372,15 @@ function createArmWindowStates(): readonly TouchWindowState[] {
       appId: ARM_APP_IDS.settings,
       instanceId: ARM_APP_STATE_IDS.settings,
       title: "Settings",
-      rect: { x: 68, y: 36, width: 176, height: 148 },
+      rect: { x: 8, y: 8, width: 176, height: 148 },
       zIndex: 3,
-      mode: "normal",
-      focused: false,
-      movable: true,
-      resizable: false,
-      minSize: { width: 150, height: 118 }
-    },
-    {
-      id: ARM_WINDOW_IDS.movement,
-      appId: ARM_APP_IDS.movement,
-      instanceId: ARM_APP_STATE_IDS.movement,
-      title: "Movement",
-      rect: { x: 6, y: 6, width: 182, height: 208 },
-      zIndex: 4,
       mode: "normal",
       focused: true,
       movable: true,
       resizable: false,
-      minSize: { width: 150, height: 150 }
+      minSize: { width: 150, height: 118 }
     }
   ];
-}
-
-function createMovementAppRoot(state: RoomDemoState): DisplayNode<unknown> {
-  return createSurfaceShell("movement-root", {
-    padding: 6,
-    gap: 6,
-    bodyGap: 6,
-    bodyPadding: 0,
-    pointerOpaque: true,
-    backgroundColor: "#101826",
-    children: [
-      createDPad("movement-dpad", {
-        up: createMovementBinding("forward", "Fwd"),
-        down: createMovementBinding("back", "Back"),
-        left: createMovementBinding("strafeLeft", "Left"),
-        right: createMovementBinding("strafeRight", "Right")
-      }),
-      createRow("movement-turn-row", {
-        gap: 6,
-        children: [
-          createHoldButton("movement-turn-left", {
-            label: "Turn L",
-            actionId: "movement.set",
-            startPayload: { intent: "turnLeft", active: true },
-            stopPayload: { intent: "turnLeft", active: false }
-          }),
-          createHoldButton("movement-turn-right", {
-            label: "Turn R",
-            actionId: "movement.set",
-            startPayload: { intent: "turnRight", active: true },
-            stopPayload: { intent: "turnRight", active: false }
-          })
-        ]
-      }),
-      createRow("movement-speed-row", {
-        gap: 6,
-        children: [
-          createRepeatButton("movement-speed-down", {
-            label: "Slow",
-            actionId: "moveSpeed.adjust",
-            payload: { delta: -0.2 }
-          }),
-          createRepeatButton("movement-speed-up", {
-            label: "Fast",
-            actionId: "moveSpeed.adjust",
-            payload: { delta: 0.2 }
-          })
-        ]
-      }),
-      createValueReadout("movement-speed-readout", {
-        label: "Speed",
-        value: formatSpeed(state.moveSpeed)
-      }),
-      createValueReadout("movement-intent-readout", {
-        label: "Intent",
-        value: getMovementSummary(state)
-      })
-    ]
-  });
 }
 
 function createSettingsAppRoot(state: RoomDemoState): DisplayNode<unknown> {
@@ -751,16 +651,27 @@ function createMovementBinding(
   };
 }
 
-function emitActionOutput(ctx: TouchAppContext, output: RuntimeOutput): void {
-  if (output.type !== "action") {
-    return;
+function emitRoomAppOutput(ctx: TouchAppContext, output: RuntimeOutput): void {
+  switch (output.type) {
+    case "action":
+      ctx.actions.emit({
+        type: "app-action",
+        name: output.actionId,
+        ...(output.payload ? { payload: output.payload } : {})
+      });
+      return;
+    case "change-request":
+      if (output.field === "lightOn" && typeof output.value === "boolean") {
+        ctx.actions.emit({
+          type: "app-action",
+          name: "light.set",
+          payload: { value: output.value }
+        });
+      }
+      return;
+    default:
+      return;
   }
-
-  ctx.actions.emit({
-    type: "app-action",
-    name: output.actionId,
-    ...(output.payload ? { payload: output.payload } : {})
-  });
 }
 
 function formatSpeed(moveSpeed: number): string {

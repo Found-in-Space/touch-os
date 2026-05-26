@@ -678,6 +678,17 @@ function applyRuntimeOutput(output: RuntimeOutput, state: RoomDemoState): void {
 }
 
 function applyPanelAction(action: RoomPanelAction, state: RoomDemoState): void {
+  if (action.actionId === "light.set") {
+    const value = action.payload?.value;
+    if (typeof value === "boolean") {
+      dispatchStoreAction({
+        type: "light.set",
+        value
+      });
+    }
+    return;
+  }
+
   if (action.actionId === "light.toggle") {
     dispatchStoreAction({
       type: "light.set",

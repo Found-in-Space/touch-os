@@ -24,8 +24,9 @@ XR behavior:
 
 - Enter XR with the browser XR button in the top-right corner
 - A separate head-mounted rear-view mirror remains visible in XR
-- The arm-mounted controller panel still appears for interactive controls
+- The arm-mounted controller panel appears for settings, diagnostics, and rear-view controls
 - Use the dominant controller ray and hit marker to interact with the arm panel or the TV
+- Locomotion controls remain desktop-only; in XR, move physically within the tracked space
 
 Scene notes:
 

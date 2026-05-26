@@ -96,10 +96,10 @@ describe("living room panel ui", () => {
 
     const snapshot = runtime.render();
     const texts = collectTexts(snapshot.commands);
-    expect(texts).toContain("Movement");
     expect(texts).toContain("Settings");
     expect(texts).toContain("Rear View");
     expect(texts).toContain("Diagnostics");
+    expect(texts).not.toContain("Movement");
 
     const layerBounds = runtime.getBounds("arm-os:windows");
     expect(layerBounds).toEqual({
@@ -109,22 +109,24 @@ describe("living room panel ui", () => {
       height: surface.height
     });
 
-    const movementWindowBounds = runtime.getBounds("arm-movement-window");
-    expect(movementWindowBounds).toBeDefined();
-    expect((movementWindowBounds?.x ?? 0) + (movementWindowBounds?.width ?? 0)).toBeLessThanOrEqual(surface.width ?? 0);
-    expect((movementWindowBounds?.y ?? 0) + (movementWindowBounds?.height ?? 0)).toBeLessThanOrEqual(surface.height ?? 0);
+    const settingsWindowBounds = runtime.getBounds("arm-settings-window");
+    expect(settingsWindowBounds).toBeDefined();
+    expect((settingsWindowBounds?.x ?? 0) + (settingsWindowBounds?.width ?? 0)).toBeLessThanOrEqual(surface.width ?? 0);
+    expect((settingsWindowBounds?.y ?? 0) + (settingsWindowBounds?.height ?? 0)).toBeLessThanOrEqual(surface.height ?? 0);
 
-    const movementSurface = findSurfaceCommand(
+    const settingsSurface = findSurfaceCommand(
       snapshot.commands,
-      "space.found.living-room.movement:movement:arm-movement-window:surface"
+      "space.found.living-room.settings:settings:arm-settings-window:surface"
     );
-    expect(movementSurface).toBeDefined();
-    const movementHandle = movementSurface ? getHostedSnapshotHandle(movementSurface) : undefined;
-    const dpadUp = movementHandle?.snapshot.commands.find(
+    expect(settingsSurface).toBeDefined();
+    const settingsHandle = settingsSurface ? getHostedSnapshotHandle(settingsSurface) : undefined;
+    const lightToggle = settingsHandle?.snapshot.commands.find(
       (command): command is Extract<DrawCommand, { type: "rect" }> =>
-        command.type === "rect" && command.componentId === "movement-dpad" && command.role === "d-pad-up"
+        command.type === "rect" &&
+        command.componentId === "settings-light-toggle" &&
+        command.role === "toggle-switch"
     );
-    expect(dpadUp).toBeDefined();
+    expect(lightToggle).toBeDefined();
     expect(
       findSurfaceCommand(
         snapshot.commands,
@@ -132,33 +134,32 @@ describe("living room panel ui", () => {
       )
     ).toBeDefined();
 
-    if (!movementSurface || !movementHandle || !dpadUp) {
-      throw new Error("Expected the arm movement app to be hosted as an embedded child runtime.");
+    if (!settingsSurface || !settingsHandle || !lightToggle) {
+      throw new Error("Expected the arm settings app to be hosted as an embedded child runtime.");
     }
 
-    const dpadUpCenterX = dpadUp.rect.x + dpadUp.rect.width / 2;
-    const dpadUpCenterY = dpadUp.rect.y + dpadUp.rect.height / 2;
+    const lightToggleCenterX = lightToggle.rect.x + lightToggle.rect.width / 2;
+    const lightToggleCenterY = lightToggle.rect.y + lightToggle.rect.height / 2;
     pressAt(
       runtime,
-      movementSurface.rect.x + (dpadUpCenterX / movementHandle.width) * movementSurface.rect.width,
-      movementSurface.rect.y + (dpadUpCenterY / movementHandle.height) * movementSurface.rect.height
+      settingsSurface.rect.x + (lightToggleCenterX / settingsHandle.width) * settingsSurface.rect.width,
+      settingsSurface.rect.y + (lightToggleCenterY / settingsHandle.height) * settingsSurface.rect.height
     );
 
     expect(runtime.takeOutputs()).toContainEqual({
       type: "app-event",
       componentId: "arm-os",
-      appId: "space.found.living-room.movement",
-      instanceId: "movement",
-      windowId: "arm-movement-window",
+      appId: "space.found.living-room.settings",
+      instanceId: "settings",
+      windowId: "arm-settings-window",
       event: {
         type: "app-action",
-        appId: "space.found.living-room.movement",
-        instanceId: "movement",
-        windowId: "arm-movement-window",
-        name: "movement.set",
+        appId: "space.found.living-room.settings",
+        instanceId: "settings",
+        windowId: "arm-settings-window",
+        name: "light.set",
         payload: {
-          intent: "forward",
-          active: true
+          value: false
         }
       }
     });
