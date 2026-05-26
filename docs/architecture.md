@@ -25,7 +25,7 @@ It must remain:
 The published surface is intentionally small and explicit:
 
 - `@found-in-space/touch-os`
-  Headless root entrypoint for the core runtime, built-in components, containers, services, apps, coordination, and generic host contract types.
+  Headless root entrypoint for the core runtime, built-in components, containers, services, apps, window manager, coordination, and generic host contract types.
 - `@found-in-space/touch-os/core`
   Runtime contracts, geometry, normalized events, draw commands, and `createRuntime`.
 - `@found-in-space/touch-os/components`
@@ -38,6 +38,8 @@ The published surface is intentionally small and explicit:
   Generic ordered panel routing, fallthrough, lower-priority clearing, and pointer-scoped ownership helpers.
 - `@found-in-space/touch-os/apps`
   Standard app bundle, app context, registry, and lifecycle contracts.
+- `@found-in-space/touch-os/window-manager`
+  Same-runtime app window orchestration, window state contracts, and app tree namespacing helpers.
 - `@found-in-space/touch-os/hosts`
   Generic host contract types only.
 - `@found-in-space/touch-os/hosts/three`
@@ -49,7 +51,7 @@ The root package stays headless by design. Host-specific runtime code belongs be
 
 ## Layer Model
 
-`touch-os` is organized into five layers.
+`touch-os` is organized into six layers.
 
 ### 1. Core Runtime
 
@@ -128,7 +130,28 @@ Current service areas are:
 
 The default service implementations are in-memory, side-effect free, and test-friendly.
 
-### 5. Hosts
+### 5. Window And App Orchestration
+
+The app and window-manager layers sit above the core runtime.
+
+They own:
+
+- standardized app manifests and lifecycle hooks
+- app registry lookup
+- window state for app instances
+- focus, title, close, resize, and open-app requests
+- namespacing app component ids before mounting app trees into a shared runtime
+
+They do not own:
+
+- scene placement
+- XR or DOM input objects
+- host rendering
+- security sandboxing for untrusted code
+
+The first implementation hosts app trees inside the panel runtime. Future child-runtime app windows can use the same public app contract while moving app content into isolated runtimes and embedded surfaces.
+
+### 6. Hosts
 
 Hosts adapt an environment to the runtime. They provide:
 

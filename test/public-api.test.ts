@@ -43,6 +43,10 @@ describe("public package api", () => {
         types: "./dist/apps/index.d.ts",
         import: "./dist/apps/index.js"
       },
+      "./window-manager": {
+        types: "./dist/window-manager/index.d.ts",
+        import: "./dist/window-manager/index.js"
+      },
       "./hosts/three": {
         types: "./dist/hosts/three.d.ts",
         import: "./dist/hosts/three.js"

@@ -1,8 +1,12 @@
 export type {
   ActionEvent,
+  AppEventOutput,
   ChangeRequestEvent,
   NavigationRequestEvent,
   RuntimeOutput,
+  WindowManagerChangeEvent,
+  WindowManagerChangeReason,
+  WindowManagerOpenAppRequest,
   WindowMode,
   WindowStateChangeEvent,
   WindowStateChangeReason

@@ -15,6 +15,9 @@ Shipped in `@found-in-space/touch-os` and `@found-in-space/touch-os/core`:
   - `action`
   - `change-request`
   - `navigation-request`
+  - `window-state-change`
+  - `app-event`
+  - `window-manager-change`
 - geometry helpers for points, sizes, rects, insets, clamping, intersection, and hit testing
 - draw-command model for:
   - rectangles
@@ -93,6 +96,20 @@ Shipped in `@found-in-space/touch-os/apps`:
 - context contracts for surface metrics, theme, actions, window requests, optional storage, and optional embedded-surface publication
 
 This is standardized packaging and lifecycle support for trusted same-runtime apps. It is not a security sandbox for untrusted third-party code.
+
+## Window Manager
+
+Shipped in `@found-in-space/touch-os/window-manager`:
+
+- `createWindowManager` for hosting registered apps inside one panel runtime
+- `TouchWindowState` and `WindowManagerProps` contracts for app windows
+- same-runtime app rendering through `createWindowLayer` and `createWindow`
+- app root id namespacing before mounting, so multiple apps can reuse local component ids safely
+- app output forwarding that strips the namespace before invoking the app instance's `handleOutput`
+- `app-event` outputs for events emitted through `ctx.actions.emit(...)`
+- `window-manager-change` outputs for title, close, resize, open-app, and window-state changes
+
+This is the first app-hosting phase. App windows share one runtime and are intended for trusted apps; child-runtime isolation remains future work.
 
 ## Runtime Services
 

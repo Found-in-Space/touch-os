@@ -53,6 +53,10 @@
       "types": "./dist/apps/index.d.ts",
       "import": "./dist/apps/index.js"
     },
+    "./window-manager": {
+      "types": "./dist/window-manager/index.d.ts",
+      "import": "./dist/window-manager/index.js"
+    },
     "./hosts": {
       "types": "./dist/hosts/index.d.ts",
       "import": "./dist/hosts/index.js"

@@ -163,6 +163,45 @@ Register apps explicitly with `createTouchAppRegistry([SettingsApp])`. The app c
 
 The app bundle contract is standardized packaging and lifecycle for trusted same-runtime modules. It is not a security sandbox.
 
+## Host Apps In A Window Manager
+
+Use `createWindowManager` when a panel should behave like an app host. The first implementation renders registered app roots inside the same runtime and scopes app component ids before mounting them.
+
+```ts
+import {
+  createRuntime,
+  createTouchAppRegistry,
+  createWindowManager
+} from "@found-in-space/touch-os";
+
+const registry = createTouchAppRegistry([SettingsApp]);
+
+const root = createWindowManager("tablet-os", {
+  registry,
+  windows: [
+    {
+      id: "settings-window",
+      appId: "space.found.settings",
+      instanceId: "settings-1",
+      title: "Settings",
+      rect: { x: 24, y: 24, width: 360, height: 260 },
+      zIndex: 1,
+      mode: "normal",
+      focused: true,
+      movable: true,
+      resizable: true
+    }
+  ]
+});
+
+const runtime = createRuntime({
+  root,
+  surface: { width: 1024, height: 720 }
+});
+```
+
+The manager forwards app outputs to each app instance after stripping the app namespace, so apps can continue to use local ids such as `"settings-sync"`. Hosts consume normal runtime outputs: app events arrive as `app-event`, and window manager requests arrive as `window-manager-change`.
+
 ## Feed Input And Consume Outputs
 
 The runtime accepts normalized input rather than DOM or XR-native event objects.
