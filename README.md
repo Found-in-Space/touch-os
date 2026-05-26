@@ -199,20 +199,25 @@ Planned but not shipped yet:
 - `npm test` runs the Vitest suite
 - `npm run build` builds `dist/`
 - `npm run typecheck` runs TypeScript without emitting
+- `npm run example:build` builds the Three.js example app
 - `npm run example:living-room` runs the Three.js example app
 
-## CI And Release Automation
+## CI, Pages, And Release Automation
 
-The repo now includes two GitHub Actions workflows:
+The repo includes three GitHub Actions workflows:
 
 - `.github/workflows/ci.yml`
   Runs a matrix of Node and Three.js versions, including the declared minimum supported Three.js version.
+- `.github/workflows/deploy-github-pages.yml`
+  Builds `examples/three-living-room` and deploys it to GitHub Pages from `main` or a manual dispatch.
 - `.github/workflows/release.yml`
   Publishes to npm from pushed `v*` tags after running typecheck, tests, and build.
 
+The Pages workflow expects Repository settings -> Pages -> Build and deployment -> Source to be set to GitHub Actions.
+
 The release workflow is designed for npm trusted publishing via GitHub Actions OIDC rather than a long-lived npm token.
 
-Expected setup:
+Release setup:
 
 1. Configure the package's trusted publisher on npm for this repository and the `release.yml` workflow.
 2. Optionally protect the `npm` GitHub environment with reviewer approval.
