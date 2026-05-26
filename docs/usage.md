@@ -103,6 +103,66 @@ Guidelines:
 - Use fixed heights only for content with a real aspect or data need, such as media and graphs.
 - Let hosts call `runtime.resize()` or pass updated surface metrics when the display size changes.
 
+## Define A Touch App
+
+Use the app bundle contracts when a panel shell or future window manager needs to launch standardized apps without exposing host details to the app.
+
+```ts
+import {
+  createButton,
+  createSurfaceShell,
+  createTextLabel,
+  defineTouchApp
+} from "@found-in-space/touch-os";
+
+export const SettingsApp = defineTouchApp({
+  manifest: {
+    id: "space.found.settings",
+    name: "Settings",
+    version: "1.0.0",
+    preferredWindow: {
+      width: 360,
+      height: 260,
+      minWidth: 280,
+      minHeight: 200,
+      resizable: true
+    }
+  },
+  createApp(ctx) {
+    return {
+      render() {
+        return createSurfaceShell("settings-root", {
+          header: createTextLabel("settings-title", {
+            text: "Settings"
+          }),
+          children: [
+            createButton("settings-sync", {
+              label: "Sync",
+              actionId: "settings.sync"
+            })
+          ]
+        });
+      },
+      handleOutput(output) {
+        if (output.type === "action" && output.actionId === "settings.sync") {
+          ctx.actions.emit({
+            type: "app-action",
+            appId: ctx.appId,
+            instanceId: ctx.instanceId,
+            windowId: ctx.windowId,
+            name: "sync"
+          });
+        }
+      }
+    };
+  }
+});
+```
+
+Register apps explicitly with `createTouchAppRegistry([SettingsApp])`. The app context exposes surface metrics, theme, action emission, window requests, optional storage, and optional embedded-surface publication; it does not expose Three.js, WebXR sessions, DOM events, controller rays, or scene placement.
+
+The app bundle contract is standardized packaging and lifecycle for trusted same-runtime modules. It is not a security sandbox.
+
 ## Feed Input And Consume Outputs
 
 The runtime accepts normalized input rather than DOM or XR-native event objects.

@@ -25,7 +25,7 @@ It must remain:
 The published surface is intentionally small and explicit:
 
 - `@found-in-space/touch-os`
-  Headless root entrypoint for the core runtime, built-in components, containers, services, and generic host contract types.
+  Headless root entrypoint for the core runtime, built-in components, containers, services, apps, coordination, and generic host contract types.
 - `@found-in-space/touch-os/core`
   Runtime contracts, geometry, normalized events, draw commands, and `createRuntime`.
 - `@found-in-space/touch-os/components`
@@ -36,6 +36,8 @@ The published surface is intentionally small and explicit:
   Service contracts and default implementations.
 - `@found-in-space/touch-os/coordination`
   Generic ordered panel routing, fallthrough, lower-priority clearing, and pointer-scoped ownership helpers.
+- `@found-in-space/touch-os/apps`
+  Standard app bundle, app context, registry, and lifecycle contracts.
 - `@found-in-space/touch-os/hosts`
   Generic host contract types only.
 - `@found-in-space/touch-os/hosts/three`

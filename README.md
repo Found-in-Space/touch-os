@@ -17,6 +17,7 @@ The runtime stays headless and display-space-only. Hosts own environment-specifi
 - a strict TypeScript, ESM-only core runtime
 - a small set of generic built-in components and containers
 - runtime services for layout, navigation, focus, scroll, theme, timing, bitmap assets, and embedded surfaces
+- standardized app manifest, lifecycle, context, and registry contracts
 - a generic multi-panel coordination helper for ordered routing and pointer ownership
 - a Three.js host package with scene, pose-anchored, tablet, and HUD panel helpers
 - host-side pointer interop helpers for screen, ray, surface, and direct-contact input
@@ -26,12 +27,13 @@ The runtime stays headless and display-space-only. Hosts own environment-specifi
 
 | Entrypoint | Purpose |
 | --- | --- |
-| `@found-in-space/touch-os` | Headless root package. Re-exports core runtime, components, containers, services, and generic host contract types. |
+| `@found-in-space/touch-os` | Headless root package. Re-exports core runtime, components, containers, services, apps, coordination, and generic host contract types. |
 | `@found-in-space/touch-os/core` | Core runtime types, geometry helpers, events, draw commands, and `createRuntime`. |
 | `@found-in-space/touch-os/components` | Built-in leaf components such as buttons, sliders, choice groups, graphs, and embedded surfaces. |
 | `@found-in-space/touch-os/containers` | Built-in containers such as row, column, stack, overlay, scroll, page, section, and dock layout. |
 | `@found-in-space/touch-os/services` | Runtime service contracts plus default in-memory implementations. |
 | `@found-in-space/touch-os/coordination` | Generic ordered panel routing, fallthrough, and pointer ownership helpers. |
+| `@found-in-space/touch-os/apps` | Standard app bundle, app context, registry, and lifecycle helpers. |
 | `@found-in-space/touch-os/hosts` | Generic host contract types only. |
 | `@found-in-space/touch-os/hosts/three` | Three.js host adapters, panel drivers, pointer sources, and panel interactor helpers. |
 | `@found-in-space/touch-os/adapters/schema` | Optional declarative schema adapter. |
@@ -166,6 +168,7 @@ Shipped now:
 - services: layout, navigation, scroll, focus, theme, timing, surface metrics, bitmap assets, embedded surfaces
 - embedded-surface composition through copy or host-composited surface commands
 - movable surface-local windows with drag handles, focus/z-order, clamping, and window-state-change outputs
+- app bundle contracts for manifests, lifecycle hooks, app context, registries, and instance wrappers
 - panel coordination for ordered multi-panel routing, fallthrough, lower-priority clearing, and pointer-scoped ownership
 - optional schema authoring for text, button, toggle, slider, choice group, value readout, and action card documents
 

@@ -82,6 +82,18 @@ These cover the core runtime composition patterns needed for panels, forms, HUD 
 
 `createWindowLayer` manages fixed rect windows, z-order, focus-on-press, drag-handle movement, clamping to the layer bounds, optional close/minimize/maximize controls, and `window-state-change` outputs for app persistence.
 
+## App Bundle Contracts
+
+Shipped in `@found-in-space/touch-os/apps`:
+
+- `defineTouchApp` for app modules with validated manifests
+- `createTouchAppRegistry` for explicit app registration, lookup, and manifest listing
+- `createTouchAppInstance` for building a narrow `TouchAppContext` and invoking lifecycle hooks
+- manifest contracts for app id, name, version, icon, capabilities, and preferred window size
+- context contracts for surface metrics, theme, actions, window requests, optional storage, and optional embedded-surface publication
+
+This is standardized packaging and lifecycle support for trusted same-runtime apps. It is not a security sandbox for untrusted third-party code.
+
 ## Runtime Services
 
 Shipped in `@found-in-space/touch-os/services`:
