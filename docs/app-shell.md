@@ -85,6 +85,7 @@ Tablet behavior:
 - Home shows apps from the registry.
 - Selecting an icon launches or resumes a session, activates it, and renders it full-screen.
 - The foreground app has no desktop title bar, resize handle, or window controls.
+- Foreground apps receive the already-available app area; the tablet presentation consumes the outer safe area and home control before updating `ctx.surface`.
 - The soft home bar or button routes to the same shell home behavior as a host home key.
 - `app-switcher` toggles the tablet task switcher.
 - `taskCloseControl: "button"` adds close controls to tablet task cards.

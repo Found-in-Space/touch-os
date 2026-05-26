@@ -1,6 +1,6 @@
 import type { DisplayNode } from "../core/component.js";
 import type { SystemCommandInputEvent } from "../core/events.js";
-import type { Rect } from "../core/geometry.js";
+import type { Insets, Rect } from "../core/geometry.js";
 import type { RuntimeServices } from "../services/contracts.js";
 import type { TouchAppManifest } from "../apps/manifest.js";
 import type { TouchAppRegistry } from "../apps/registry.js";
@@ -23,6 +23,18 @@ export interface AppShellPresentationContext {
   emitShellAction(action: AppShellAction): void;
 }
 
+/** Describes the app or running session whose presentation-owned surface is being resolved. */
+export interface AppShellPresentationAppSurfaceRequest {
+  app: TouchAppManifest;
+  session?: AppShellSession;
+}
+
+/** Presentation-owned app surface rect plus any safe area that remains local to the app. */
+export interface AppShellPresentationAppSurface {
+  rect: Rect;
+  safeArea: Insets;
+}
+
 export interface AppShellPresentation {
   readonly kind: string;
 
@@ -35,8 +47,9 @@ export interface AppShellPresentation {
     ctx: AppShellPresentationContext
   ): AppShellAction | undefined;
 
-  resolveLaunchRect?(
-    app: TouchAppManifest,
+  /** Resolves launch/session placement and the safe area exposed through the app context. */
+  resolveAppSurface(
+    request: AppShellPresentationAppSurfaceRequest,
     ctx: AppShellPresentationContext
-  ): Rect | undefined;
+  ): AppShellPresentationAppSurface | undefined;
 }

@@ -13,7 +13,7 @@ import {
   getRoomPanelTheme
 } from "../examples/three-living-room/src/panel-ui.js";
 import { createRoomDemoStore } from "../examples/three-living-room/src/store.js";
-import { pressAt } from "./helpers/runtime-helpers.js";
+import { clickComponentCenter, pressAt } from "./helpers/runtime-helpers.js";
 
 describe("living room panel ui", () => {
   it("renders TV from shared XR state while XR HUD uses a separate root", () => {
@@ -86,7 +86,7 @@ describe("living room panel ui", () => {
     expect(texts).not.toContain("Mirror offline");
   });
 
-  it("hosts the wrist panel as a compact window-managed app surface", () => {
+  it("hosts the wrist panel as a compact tablet app surface", () => {
     const surface = getRoomPanelSurface("arm");
     const runtime = createRuntime({
       root: createRoomPanelRoot("arm", createRoomDemoStore().getState()),
@@ -96,43 +96,37 @@ describe("living room panel ui", () => {
 
     const snapshot = runtime.render();
     const texts = collectTexts(snapshot.commands);
+    expect(texts).toContain("Apps");
     expect(texts).toContain("Settings");
     expect(texts).toContain("Rear View");
     expect(texts).toContain("Diagnostics");
     expect(texts).not.toContain("Movement");
 
-    const layerBounds = runtime.getBounds("arm-os:windows");
-    expect(layerBounds).toEqual({
-      x: 0,
-      y: 0,
-      width: surface.width,
-      height: surface.height
+    const tabletBounds = runtime.getBounds("arm-os:tablet-screen");
+    expect(tabletBounds).toEqual({
+      x: surface.safeArea?.left,
+      y: surface.safeArea?.top,
+      width: (surface.width ?? 0) - (surface.safeArea?.left ?? 0) - (surface.safeArea?.right ?? 0),
+      height: (surface.height ?? 0) - (surface.safeArea?.top ?? 0) - (surface.safeArea?.bottom ?? 0)
     });
 
-    const settingsWindowBounds = runtime.getBounds("arm-settings-window");
-    expect(settingsWindowBounds).toBeDefined();
-    expect((settingsWindowBounds?.x ?? 0) + (settingsWindowBounds?.width ?? 0)).toBeLessThanOrEqual(surface.width ?? 0);
-    expect((settingsWindowBounds?.y ?? 0) + (settingsWindowBounds?.height ?? 0)).toBeLessThanOrEqual(surface.height ?? 0);
+    clickComponentCenter(runtime, "arm-os:home:open:space-found-living-room-settings");
+    runtime.takeOutputs();
+    const appSnapshot = runtime.render();
 
     const settingsSurface = findSurfaceCommand(
-      snapshot.commands,
-      "space.found.living-room.settings:settings:arm-settings-window:surface"
+      appSnapshot.commands,
+      "space.found.living-room.settings:"
     );
     expect(settingsSurface).toBeDefined();
     const settingsHandle = settingsSurface ? getHostedSnapshotHandle(settingsSurface) : undefined;
     const lightToggle = settingsHandle?.snapshot.commands.find(
       (command): command is Extract<DrawCommand, { type: "rect" }> =>
         command.type === "rect" &&
-        command.componentId === "settings-light-toggle" &&
+        command.componentId === "lightOn-toggle" &&
         command.role === "toggle-switch"
     );
     expect(lightToggle).toBeDefined();
-    expect(
-      findSurfaceCommand(
-        snapshot.commands,
-        "space.found.living-room.rear-view:rear-view:arm-rear-view-window:surface"
-      )
-    ).toBeDefined();
 
     if (!settingsSurface || !settingsHandle || !lightToggle) {
       throw new Error("Expected the arm settings app to be hosted as an embedded child runtime.");
@@ -150,31 +144,32 @@ describe("living room panel ui", () => {
       type: "app-event",
       componentId: "arm-os",
       appId: "space.found.living-room.settings",
-      instanceId: "settings",
-      windowId: "arm-settings-window",
-      event: {
-        type: "app-action",
+      instanceId: "space-found-living-room-settings-1",
+      windowId: "space-found-living-room-settings-1-window",
+      event: expect.objectContaining({
+        type: "app-change",
         appId: "space.found.living-room.settings",
-        instanceId: "settings",
-        windowId: "arm-settings-window",
-        name: "light.set",
+        instanceId: "space-found-living-room-settings-1",
+        windowId: "space-found-living-room-settings-1-window",
+        name: "lightOn.change",
         payload: {
+          field: "lightOn",
           value: false
         }
-      }
+      })
     });
   });
 });
 
 function findSurfaceCommand(
   commands: readonly DrawCommand[],
-  componentId: string
+  componentIdPrefix: string
 ): SurfaceDrawCommand | undefined {
   return commands.find(
     (command): command is SurfaceDrawCommand =>
       command.type === "surface" &&
       command.role === "embedded-surface-viewport" &&
-      command.componentId === componentId
+      command.componentId.startsWith(componentIdPrefix)
   );
 }
 

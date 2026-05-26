@@ -7,7 +7,8 @@ import {
   type ChangeRequestEvent,
   type DisplayRuntime,
   type RuntimeOutput,
-  type SurfaceMetrics
+  type SurfaceMetrics,
+  type SystemCommandInputEvent
 } from "../../../src/index.js";
 import {
   createHudPanelDriver,
@@ -245,6 +246,10 @@ renderer.xr.addEventListener("sessionend", () => {
 });
 
 window.addEventListener("keydown", (event) => {
+  if (dispatchSystemCommandFromKeyboard(event)) {
+    return;
+  }
+
   if (pressedKeys.has(event.code)) {
     return;
   }
@@ -667,6 +672,9 @@ function applyRuntimeOutput(output: RuntimeOutput, state: RoomDemoState): void {
         ...(isRecord(event.payload) ? { payload: event.payload } : {})
       }, state);
     }
+    if (event.type === "app-change" && isRecord(event.payload)) {
+      applyPanelChange(event.payload);
+    }
     return;
   }
 
@@ -675,6 +683,15 @@ function applyRuntimeOutput(output: RuntimeOutput, state: RoomDemoState): void {
   }
 
   applyPanelAction(output, state);
+}
+
+function applyPanelChange(payload: Record<string, unknown>): void {
+  if (payload.field === "lightOn" && typeof payload.value === "boolean") {
+    dispatchStoreAction({
+      type: "light.set",
+      value: payload.value
+    });
+  }
 }
 
 function applyPanelAction(action: RoomPanelAction, state: RoomDemoState): void {
@@ -719,6 +736,42 @@ function applyPanelAction(action: RoomPanelAction, state: RoomDemoState): void {
       });
     }
   }
+}
+
+function dispatchSystemCommandFromKeyboard(event: KeyboardEvent): boolean {
+  const command = resolveSystemCommandFromKeyboard(event);
+  if (!command) {
+    return false;
+  }
+
+  event.preventDefault();
+  armRuntime.runtime.dispatchInput({
+    type: "system-command",
+    command,
+    timestamp: event.timeStamp,
+    source: "keyboard"
+  });
+  return true;
+}
+
+function resolveSystemCommandFromKeyboard(
+  event: KeyboardEvent
+): SystemCommandInputEvent["command"] | undefined {
+  if (event.code === "Tab" && (event.altKey || event.metaKey)) {
+    return "app-switcher";
+  }
+  if (
+    event.code === "Home" ||
+    event.key === "Home" ||
+    event.key === "Meta" ||
+    event.code === "MetaLeft" ||
+    event.code === "MetaRight" ||
+    event.code === "OSLeft" ||
+    event.code === "OSRight"
+  ) {
+    return "home";
+  }
+  return undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

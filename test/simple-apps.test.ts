@@ -102,6 +102,7 @@ describe("simple controls apps", () => {
     clickComponentCenter(runtime, "room-reset-button", 10);
     const outputs = runtime.takeOutputs();
 
+    expect(outputs.some((output) => output.type === "change-request" || output.type === "action")).toBe(false);
     expect(events).toContainEqual({
       type: "app-change",
       appId: "space.found.room.controls",
@@ -152,6 +153,41 @@ describe("simple controls apps", () => {
         xrActive: true,
         moveSpeed: 1
       }
+    });
+  });
+
+  it("can opt the single-app runtime into raw runtime output forwarding", () => {
+    const runtime = createTouchAppRuntime({
+      app: createRoomControlsApp(),
+      state: {
+        lightOn: false,
+        xrActive: true,
+        moveSpeed: 1
+      },
+      surface: { width: 360, height: 240 },
+      forwardRuntimeOutputs: true
+    });
+
+    runtime.render();
+    clickComponentCenter(runtime, "lightOn-toggle");
+    const outputs = runtime.takeOutputs();
+
+    expect(outputs).toContainEqual({
+      type: "change-request",
+      componentId: "lightOn-toggle",
+      field: "lightOn",
+      value: true
+    });
+    expect(outputs).toContainEqual({
+      type: "app-event",
+      componentId: "space-found-room-controls-surface",
+      appId: "space.found.room.controls",
+      instanceId: "space-found-room-controls-1",
+      windowId: "space-found-room-controls-surface",
+      event: expect.objectContaining({
+        type: "app-change",
+        name: "lightOn.change"
+      })
     });
   });
 

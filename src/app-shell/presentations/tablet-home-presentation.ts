@@ -7,6 +7,7 @@ import {
 } from "../../core/component.js";
 import type { DrawCommand } from "../../core/draw.js";
 import {
+  ZERO_INSETS,
   createRect,
   rectContainsPoint
 } from "../../core/geometry.js";
@@ -98,15 +99,18 @@ export function createTabletHomePresentation(
       }
       return undefined;
     },
-    resolveLaunchRect(_app, ctx) {
+    resolveAppSurface(_request, ctx) {
       const metrics = ctx.services.surface.getMetrics();
       const controlHeight = homeControl === "none" ? 0 : HOME_CONTROL_HEIGHT;
-      return createRect(
-        metrics.safeArea.left,
-        metrics.safeArea.top,
-        Math.max(0, metrics.width - metrics.safeArea.left - metrics.safeArea.right),
-        Math.max(0, metrics.height - metrics.safeArea.top - metrics.safeArea.bottom - controlHeight)
-      );
+      return {
+        rect: createRect(
+          metrics.safeArea.left,
+          metrics.safeArea.top,
+          Math.max(0, metrics.width - metrics.safeArea.left - metrics.safeArea.right),
+          Math.max(0, metrics.height - metrics.safeArea.top - metrics.safeArea.bottom - controlHeight)
+        ),
+        safeArea: ZERO_INSETS
+      };
     }
   };
 }

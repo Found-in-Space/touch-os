@@ -36,6 +36,8 @@ const runtime = createTouchAppRuntime({
 
 The generated app returns DisplayNodes. It never draws directly.
 
+`createTouchAppRuntime().takeOutputs()` returns app-level `app-event` outputs by default. Set `forwardRuntimeOutputs: true` only when the host also needs the raw control outputs such as `change-request` and `action`.
+
 When the host receives new application state, update the single-app runtime explicitly:
 
 ```ts

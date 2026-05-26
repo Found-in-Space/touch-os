@@ -1,25 +1,25 @@
 import {
+  createAppShell,
   createDPad,
   createEmbeddedSurface,
   createHoldButton,
   createRepeatButton,
+  createTabletHomePresentation,
   createTextLabel,
   createToggle,
   createTouchAppRegistry,
   createValueReadout,
-  createWindowManager,
+  defineControlsApp,
   defineTouchApp,
   type DisplayNode,
   type RuntimeOutput,
   type SurfaceMetrics,
   type ThemeTokens,
-  type TouchAppContext,
-  type TouchWindowState
+  type TouchAppContext
 } from "../../../src/index.js";
 import {
   createColumn,
   createDockLayout,
-  createRow,
   createSection,
   createSurfaceShell
 } from "../../../src/index.js";
@@ -48,48 +48,38 @@ interface ArmPanelAppState {
   diagnostics: RoomPanelDiagnostics;
 }
 
-const ARM_APP_STATE_IDS = {
-  settings: "settings",
-  rearView: "rear-view",
-  diagnostics: "diagnostics"
-} as const;
-
 const ARM_APP_IDS = {
   settings: "space.found.living-room.settings",
   rearView: "space.found.living-room.rear-view",
   diagnostics: "space.found.living-room.diagnostics"
 } as const;
 
-const ARM_WINDOW_IDS = {
-  settings: "arm-settings-window",
-  rearView: "arm-rear-view-window",
-  diagnostics: "arm-diagnostics-window"
-} as const;
-
 const ARM_APP_REGISTRY = createTouchAppRegistry([
-  defineTouchApp<ArmPanelAppState>({
-    manifest: {
-      id: ARM_APP_IDS.settings,
-      name: "Settings",
-      version: "1.0.0",
-      preferredWindow: {
-        width: 172,
-        height: 148,
-        minWidth: 150,
-        minHeight: 118,
-        resizable: false
-      }
+  defineControlsApp<RoomDemoState>({
+    id: ARM_APP_IDS.settings,
+    name: "Settings",
+    preferredSurface: {
+      width: 260,
+      height: 168,
+      minWidth: 220,
+      minHeight: 150,
+      resizable: false
     },
-    createApp(ctx) {
-      return {
-        render(state) {
-          return createSettingsAppRoot(state.room);
-        },
-        handleOutput(output) {
-          emitRoomAppOutput(ctx, output);
-        }
-      };
-    }
+    controls: ({ button, section, status, toggle }) => [
+      toggle("Lamp", "lightOn"),
+      status("Mode", (state) => state.xrActive ? "XR" : "Desktop"),
+      status("Speed", (state) => formatSpeed(state.moveSpeed)),
+      section("Speed", [
+        button("Slower", "moveSpeed.adjust", {
+          id: "move-speed-slower",
+          payload: { delta: -0.2 }
+        }),
+        button("Faster", "moveSpeed.adjust", {
+          id: "move-speed-faster",
+          payload: { delta: 0.2 }
+        })
+      ])
+    ]
   }),
   defineTouchApp<ArmPanelAppState>({
     manifest: {
@@ -174,7 +164,7 @@ export function createRoomPanelRoot(
         ]
       });
     case "arm":
-      return createArmWindowManagerRoot(state, diagnostics);
+      return createArmTabletRoot(state, diagnostics);
     case "hud":
     default:
       return createDockLayout("hud-root", {
@@ -311,7 +301,7 @@ export function createDefaultRoomPanelDiagnostics(): RoomPanelDiagnostics {
   };
 }
 
-function createArmWindowManagerRoot(
+function createArmTabletRoot(
   state: RoomDemoState,
   diagnostics: RoomPanelDiagnostics
 ): DisplayNode<unknown> {
@@ -320,111 +310,21 @@ function createArmWindowManagerRoot(
     diagnostics
   };
 
-  return createWindowManager("arm-os", {
+  return createAppShell("arm-os", {
     registry: ARM_APP_REGISTRY,
+    presentation: createTabletHomePresentation({
+      homeControl: "bar",
+      taskSwitcher: "cards",
+      taskCloseControl: "button"
+    }),
     appHostMode: "child-runtime",
-    pointerOpaque: true,
-    constraintPadding: 4,
-    focusOnPress: true,
-    launcher: true,
     taskSwitcher: true,
-    utilityWindows: "back",
-    windowControls: ["minimize", "fullscreen"],
+    homeKey: true,
     appStates: {
-      [ARM_APP_IDS.settings]: appState,
+      [ARM_APP_IDS.settings]: state,
       [ARM_APP_IDS.rearView]: appState,
       [ARM_APP_IDS.diagnostics]: appState
-    },
-    initialWindows: createArmWindowStates()
-  });
-}
-
-function createArmWindowStates(): readonly TouchWindowState[] {
-  return [
-    {
-      id: ARM_WINDOW_IDS.diagnostics,
-      appId: ARM_APP_IDS.diagnostics,
-      instanceId: ARM_APP_STATE_IDS.diagnostics,
-      title: "Diagnostics",
-      rect: { x: 124, y: 8, width: 172, height: 132 },
-      zIndex: 1,
-      mode: "normal",
-      focused: false,
-      movable: true,
-      resizable: false,
-      minSize: { width: 150, height: 112 }
-    },
-    {
-      id: ARM_WINDOW_IDS.rearView,
-      appId: ARM_APP_IDS.rearView,
-      instanceId: ARM_APP_STATE_IDS.rearView,
-      title: "Rear View",
-      rect: { x: 86, y: 88, width: 204, height: 122 },
-      zIndex: 2,
-      mode: "normal",
-      focused: false,
-      movable: true,
-      resizable: false,
-      minSize: { width: 160, height: 104 }
-    },
-    {
-      id: ARM_WINDOW_IDS.settings,
-      appId: ARM_APP_IDS.settings,
-      instanceId: ARM_APP_STATE_IDS.settings,
-      title: "Settings",
-      rect: { x: 8, y: 8, width: 176, height: 148 },
-      zIndex: 3,
-      mode: "normal",
-      focused: true,
-      movable: true,
-      resizable: false,
-      minSize: { width: 150, height: 118 }
     }
-  ];
-}
-
-function createSettingsAppRoot(state: RoomDemoState): DisplayNode<unknown> {
-  return createSurfaceShell("settings-root", {
-    padding: 6,
-    gap: 6,
-    bodyGap: 6,
-    bodyPadding: 0,
-    pointerOpaque: true,
-    backgroundColor: "#101826",
-    children: [
-      createToggle("settings-light-toggle", {
-        label: "Lamp",
-        value: state.lightOn,
-        field: "lightOn"
-      }),
-      createValueReadout("settings-mode-readout", {
-        label: "Mode",
-        value: state.xrActive ? "XR" : "Desktop"
-      }),
-      createValueReadout("settings-lamp-readout", {
-        label: "Lamp",
-        value: state.lightOn ? "On" : "Off"
-      }),
-      createRow("settings-speed-row", {
-        gap: 6,
-        children: [
-          createRepeatButton("settings-speed-down", {
-            label: "Slow",
-            actionId: "moveSpeed.adjust",
-            payload: { delta: -0.2 }
-          }),
-          createRepeatButton("settings-speed-up", {
-            label: "Fast",
-            actionId: "moveSpeed.adjust",
-            payload: { delta: 0.2 }
-          })
-        ]
-      }),
-      createValueReadout("settings-speed-readout", {
-        label: "Speed",
-        value: formatSpeed(state.moveSpeed)
-      })
-    ]
   });
 }
 
@@ -484,7 +384,12 @@ export function getRoomPanelSurface(
     case "tv":
       return { width: 440, height: 280 };
     case "arm":
-      return { width: 300, height: 220 };
+      return {
+        width: 300,
+        height: 220,
+        pixelDensity: 1,
+        safeArea: { top: 8, right: 8, bottom: 10, left: 8 }
+      };
     case "hud":
     default:
       return {

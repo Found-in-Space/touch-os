@@ -195,6 +195,8 @@ const runtime = createTouchAppRuntime({
 
 Generated controls emit `app-change` for field changes and `app-action` for buttons. The app still returns DisplayNodes; it never draws directly.
 
+`createTouchAppRuntime().takeOutputs()` reports those app-level events by default. Pass `forwardRuntimeOutputs: true` only when a host intentionally wants raw control outputs as well.
+
 ## Host Apps In A Window Manager
 
 Use `createWindowManager` when a panel should behave like an app host. Same-runtime mode renders registered app roots inside the panel runtime and scopes app component ids before mounting them.
@@ -295,6 +297,8 @@ const runtime = createRuntime({
 ```
 
 The tablet shell starts on the home screen, launches apps from registry icons, renders the foreground app without desktop chrome, and routes `home`/`app-switcher` system commands at the shell level. Tablet task switchers can optionally show session close controls with `taskCloseControl: "button"`.
+
+Foreground apps receive the available app area after tablet safe area and shell chrome are applied. The tablet presentation consumes the outer safe area, so app-local `ctx.surface.safeArea` is zero unless a custom presentation explicitly returns remaining local insets.
 
 The existing manager API can use the same presentation:
 

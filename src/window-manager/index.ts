@@ -30,6 +30,8 @@ export type {
   AppShellChange,
   AppShellMode,
   AppShellPresentation,
+  AppShellPresentationAppSurface,
+  AppShellPresentationAppSurfaceRequest,
   AppShellPresentationContext,
   AppShellProps,
   AppShellSession,

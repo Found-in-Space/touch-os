@@ -24,6 +24,8 @@ export interface CreateTouchAppRuntimeOptions<TState> {
   surface?: Partial<SurfaceMetrics>;
   theme?: Partial<ThemeTokens>;
   services?: RuntimeServiceOverrides;
+  /** Also include raw DisplayRuntime outputs from takeOutputs(); defaults to app events only. */
+  forwardRuntimeOutputs?: boolean;
   onAppEvent?(event: TouchAppEvent): void;
 }
 
@@ -77,7 +79,9 @@ export function createTouchAppRuntime<TState>(
 
   function drainOutputs(): void {
     const outputs = runtime.takeOutputs();
-    routedOutputs.push(...outputs);
+    if (options.forwardRuntimeOutputs) {
+      routedOutputs.push(...outputs);
+    }
     for (const output of outputs) {
       runtimeApp.handleOutput(output);
     }

@@ -8,6 +8,8 @@ export type {
 } from "./app-shell-events.js";
 export type {
   AppShellPresentation,
+  AppShellPresentationAppSurface,
+  AppShellPresentationAppSurfaceRequest,
   AppShellPresentationContext
 } from "./app-shell-presentations.js";
 export type {

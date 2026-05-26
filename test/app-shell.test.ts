@@ -57,7 +57,14 @@ describe("app shell presentations", () => {
   });
 
   it("applies safe area and shell chrome to tablet foreground app metrics", () => {
-    const registry = createTouchAppRegistry([createTextApp("space.test.safe", "Safe")]);
+    const observedSurfaces: Array<{
+      width: number;
+      height: number;
+      safeArea: { top: number; right: number; bottom: number; left: number };
+    }> = [];
+    const registry = createTouchAppRegistry([
+      createSurfaceProbeApp("space.test.safe", "Safe", observedSurfaces)
+    ]);
     const runtime = createRuntime({
       root: createAppShell("tablet-os", {
         registry,
@@ -81,6 +88,11 @@ describe("app shell presentations", () => {
       y: 10,
       width: 540,
       height: 326
+    });
+    expect(observedSurfaces.at(-1)).toEqual({
+      width: 540,
+      height: 326,
+      safeArea: { top: 0, right: 0, bottom: 0, left: 0 }
     });
   });
 
@@ -311,6 +323,38 @@ function createTextApp(
         },
         onClose() {
           lifecycle.push("close");
+        }
+      };
+    }
+  });
+}
+
+function createSurfaceProbeApp(
+  appId: string,
+  label: string,
+  observedSurfaces: Array<{
+    width: number;
+    height: number;
+    safeArea: { top: number; right: number; bottom: number; left: number };
+  }>
+) {
+  return defineTouchApp({
+    manifest: {
+      id: appId,
+      name: label,
+      version: "1.0.0"
+    },
+    createApp(ctx) {
+      return {
+        render() {
+          observedSurfaces.push({
+            width: ctx.surface.width,
+            height: ctx.surface.height,
+            safeArea: { ...ctx.surface.safeArea }
+          });
+          return createTextLabel(`${label.toLowerCase()}-root`, {
+            text: label
+          });
         }
       };
     }

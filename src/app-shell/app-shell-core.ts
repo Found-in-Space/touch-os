@@ -12,7 +12,6 @@ import {
   isRuntimeOutputEvent
 } from "../core/component.js";
 import {
-  ZERO_INSETS,
   copyInsets,
   copyRect,
   createInsets,
@@ -56,7 +55,10 @@ import {
   type WindowManagerUtilityWindowPolicy
 } from "../window-manager/window-state.js";
 import type { AppShellAction, AppShellChange, AppShellMode } from "./app-shell-events.js";
-import type { AppShellPresentation } from "./app-shell-presentations.js";
+import type {
+  AppShellPresentation,
+  AppShellPresentationAppSurface
+} from "./app-shell-presentations.js";
 import type { AppShellSession, AppShellSessionSeed } from "./app-session.js";
 import { createDesktopWindowPresentation } from "./presentations/desktop-window-presentation.js";
 import {
@@ -250,12 +252,11 @@ function syncLiveRecords(ctx: ShellContext): void {
 
 function syncPresentationSessionRect(ctx: ShellContext, record: WindowManagerAppWindow): void {
   const presentation = resolvePresentation(ctx.props);
-  if (presentation.kind !== "tablet-home" || record.window.mode === "minimized") {
+  if (presentation.kind === "desktop-window" || record.window.mode === "minimized") {
     return;
   }
 
-  const manifest = ctx.props.registry.get(record.window.appId)?.manifest ?? createFallbackManifest(record.window.appId);
-  const rect = presentation.resolveLaunchRect?.(manifest, createPresentationContext(ctx));
+  const rect = resolvePresentationAppSurface(ctx, record.window)?.rect;
   if (!rect || areRectsEqual(rect, record.window.rect)) {
     return;
   }
@@ -540,7 +541,8 @@ function createSeedWindowState(ctx: ShellContext, seed: AppShellSessionSeed): To
   const preferred = app?.manifest.preferredWindow;
   const rect = seed.rect
     ? copyRect(seed.rect)
-    : createCascadedLaunchRect(
+    : resolvePresentationLaunchSurface(ctx, app?.manifest ?? createFallbackManifest(seed.appId))?.rect ??
+      createCascadedLaunchRect(
         ctx,
         preferred
           ? { width: preferred.width, height: preferred.height }
@@ -578,7 +580,7 @@ function createLaunchedWindowState(
   const presentation = resolvePresentation(ctx.props);
   const resolvedRect = options.rect
     ? copyRect(options.rect)
-    : presentation.resolveLaunchRect?.(manifest ?? createFallbackManifest(appId), createPresentationContext(ctx)) ??
+    : resolvePresentationLaunchSurface(ctx, manifest ?? createFallbackManifest(appId))?.rect ??
       createCascadedLaunchRect(
         ctx,
         preferred
@@ -1099,18 +1101,43 @@ function resolvePresentation(props: AppShellProps): AppShellPresentation {
   });
 }
 
-function createSurfaceContext(ctx: Pick<ShellContext, "services" | "props">, window: TouchWindowState): TouchAppSurfaceContext {
+function createSurfaceContext(ctx: ShellContext, window: TouchWindowState): TouchAppSurfaceContext {
   const metrics = ctx.services.surface.getMetrics();
   const chromeHeight = resolvePresentation(ctx.props).kind === "desktop-window"
     ? resolveWindowChromeHeight(ctx.services.theme.getTokens())
     : 0;
-  const rect = resolveEffectiveWindowRect(ctx, window);
+  const surface = resolvePresentationAppSurface(ctx, window);
+  const rect = surface?.rect ?? resolveEffectiveWindowRect(ctx, window);
   return {
     width: rect.width,
     height: Math.max(0, rect.height - chromeHeight),
     pixelDensity: metrics.pixelDensity,
-    safeArea: metrics.safeArea ? copyInsets(metrics.safeArea) : ZERO_INSETS
+    safeArea: surface ? copyInsets(surface.safeArea) : copyInsets(metrics.safeArea)
   };
+}
+
+function resolvePresentationLaunchSurface(
+  ctx: ShellContext,
+  app: TouchAppManifest
+): AppShellPresentationAppSurface | undefined {
+  return resolvePresentation(ctx.props).resolveAppSurface(
+    { app },
+    createPresentationContext(ctx)
+  );
+}
+
+function resolvePresentationAppSurface(
+  ctx: ShellContext,
+  window: TouchWindowState
+): AppShellPresentationAppSurface | undefined {
+  const app = ctx.props.registry.get(window.appId)?.manifest ?? createFallbackManifest(window.appId);
+  return resolvePresentation(ctx.props).resolveAppSurface(
+    {
+      app,
+      session: createSessionFromWindow(window)
+    },
+    createPresentationContext(ctx)
+  );
 }
 
 function resolveEffectiveWindowRect(

@@ -9,6 +9,7 @@ import {
 import { createWindowLayer } from "../../containers/window-layer.js";
 import type { DisplayNode } from "../../core/component.js";
 import {
+  copyInsets,
   copyRect,
   createInsets,
   createRect,
@@ -81,13 +82,22 @@ export function createDesktopWindowPresentation(
       }
       return undefined;
     },
-    resolveLaunchRect(app, ctx) {
-      return app.preferredWindow
-        ? createCascadedLaunchRect(ctx, {
-            width: app.preferredWindow.width,
-            height: app.preferredWindow.height
-          }, options)
-        : undefined;
+    resolveAppSurface(request, ctx) {
+      const rect = request.session
+        ? resolveSessionRect(request.session, ctx, options)
+        : request.app.preferredWindow
+          ? createCascadedLaunchRect(ctx, {
+              width: request.app.preferredWindow.width,
+              height: request.app.preferredWindow.height
+            }, options)
+          : undefined;
+      if (!rect) {
+        return undefined;
+      }
+      return {
+        rect,
+        safeArea: copyInsets(ctx.services.surface.getMetrics().safeArea)
+      };
     }
   };
 }
@@ -283,6 +293,22 @@ function createTaskSwitcherRect(
     createRect(constraint.x + constraint.width - width, constraint.y + constraint.height - height, width, height),
     constraint
   );
+}
+
+function resolveSessionRect(
+  session: AppShellSession,
+  ctx: AppShellPresentationContext,
+  options: DesktopWindowPresentationOptions
+): Rect {
+  const metrics = ctx.services.surface.getMetrics();
+  const full = createRect(0, 0, metrics.width, metrics.height);
+  if (session.mode === "fullscreen") {
+    return full;
+  }
+  if (session.mode === "maximized") {
+    return insetRect(full, createInsets(options.constraintPadding ?? 0));
+  }
+  return copyRect(session.rect);
 }
 
 function createCascadedLaunchRect(
