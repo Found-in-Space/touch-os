@@ -18,6 +18,7 @@ import type {
   TouchAppSurfaceApi
 } from "../apps/context.js";
 import type { WindowControl } from "../containers/window.js";
+import type { AppShellPresentation } from "../app-shell/app-shell-presentations.js";
 
 export type TouchWindowMode = "normal" | "minimized" | "maximized" | "fullscreen";
 
@@ -59,6 +60,9 @@ export interface WindowManagerProps {
   initialWindows?: readonly TouchWindowState[];
   launcher?: boolean;
   taskSwitcher?: boolean;
+  presentation?: AppShellPresentation;
+  homeKey?: boolean;
+  keepAlive?: boolean;
   appHostMode?: WindowManagerAppHostMode;
   utilityWindows?: WindowManagerUtilityWindowPolicy;
   pointerOpaque?: boolean;

@@ -5,6 +5,7 @@ import { clearFocusableRegistration, syncFocusableRegistration } from "./focusab
 export interface ButtonProps {
   label: string;
   actionId: string;
+  payload?: Record<string, unknown>;
   disabled?: boolean;
 }
 
@@ -101,7 +102,8 @@ const ButtonComponent: DisplayComponent<ButtonProps, ButtonState> = {
         ctx.emit({
           type: "action",
           actionId: ctx.props.actionId,
-          componentId: ctx.id
+          componentId: ctx.id,
+          ...(ctx.props.payload ? { payload: ctx.props.payload } : {})
         });
         break;
     }

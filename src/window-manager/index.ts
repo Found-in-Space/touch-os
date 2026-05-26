@@ -25,3 +25,18 @@ export {
   mapTouchWindowModeToWindowMode
 } from "./window-state.js";
 export { createWindowManager } from "./window-manager.js";
+export type {
+  AppShellAction,
+  AppShellChange,
+  AppShellMode,
+  AppShellPresentation,
+  AppShellPresentationContext,
+  AppShellProps,
+  AppShellSession,
+  AppShellSessionSeed
+} from "../app-shell/index.js";
+export {
+  createAppShell,
+  createDesktopWindowPresentation,
+  createTabletHomePresentation
+} from "../app-shell/index.js";

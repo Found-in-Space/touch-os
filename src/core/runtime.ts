@@ -1233,6 +1233,13 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
         }
         break;
       }
+
+      case "system-command": {
+        handled = dispatchSystemCommandInput(event);
+        componentId = rootNode?.id;
+        targetId = rootNode?.id;
+        break;
+      }
     }
 
     const nextOutputs = outputs.slice(startOutputIndex);
@@ -1277,6 +1284,18 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
         )
       );
     }
+  }
+
+  function dispatchSystemCommandInput(event: InputEvent & { type: "system-command" }): boolean {
+    if (!rootNode) {
+      return false;
+    }
+
+    runComponentDispatch(() => {
+      rootNode?.component.handleEvent?.(createEventContext(rootNode, event));
+    });
+    invalidateRender();
+    return true;
   }
 
   function setRoot(root: DisplayNode<unknown>): void {

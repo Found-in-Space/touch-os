@@ -69,6 +69,7 @@ export type {
   PointerUpEvent,
   PressEvent,
   ScrollEvent,
+  SystemCommandInputEvent,
   TickEvent
 } from "./events.js";
 export { DEFAULT_MODIFIERS } from "./events.js";

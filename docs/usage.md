@@ -163,6 +163,38 @@ Register apps explicitly with `createTouchAppRegistry([SettingsApp])`. The app c
 
 The app bundle contract is standardized packaging and lifecycle for trusted same-runtime modules. It is not a security sandbox.
 
+## Create A Simple Controls App
+
+Use `defineControlsApp` for common control/status panels. The helper creates the manifest, default preferred surface, surface shell, scroll layout, safe-area padding, and default app-event routing.
+
+```ts
+import {
+  createTouchAppRuntime,
+  defineControlsApp
+} from "@found-in-space/touch-os";
+
+const RoomControlsApp = defineControlsApp<RoomState>({
+  id: "space.found.room.controls",
+  name: "Room",
+  controls: ({ toggle, status, slider }) => [
+    toggle("Lamp", "lightOn"),
+    status("Mode", (state) => state.xrActive ? "XR" : "Desktop"),
+    slider("Speed", "moveSpeed", { min: 0.2, max: 4, step: 0.2 })
+  ]
+});
+
+const runtime = createTouchAppRuntime({
+  app: RoomControlsApp,
+  state,
+  surface: { width: 320, height: 180 },
+  onAppEvent(event) {
+    dispatch(event);
+  }
+});
+```
+
+Generated controls emit `app-change` for field changes and `app-action` for buttons. The app still returns DisplayNodes; it never draws directly.
+
 ## Host Apps In A Window Manager
 
 Use `createWindowManager` when a panel should behave like an app host. Same-runtime mode renders registered app roots inside the panel runtime and scopes app component ids before mounting them.
@@ -221,9 +253,81 @@ const root = createWindowManager("tablet-os", {
 });
 ```
 
-In child-runtime mode, each app window owns a `DisplayRuntime`. The manager publishes each child runtime as an embedded surface and forwards viewport input into the child runtime in window-local coordinates. App instances still receive local ids such as `"settings-sync"` in `handleOutput`, while hosts consume the public app contract: app events arrive as `app-event`, and window manager requests arrive as `window-manager-change`.
+In child-runtime mode, each app session owns a `DisplayRuntime`. The app shell publishes each child runtime as an embedded surface and forwards viewport input into the child runtime in session-local coordinates. App instances still receive local ids such as `"settings-sync"` in `handleOutput`, while hosts consume the public app contract: app events arrive as `app-event`, and window manager requests arrive as `window-manager-change`.
 
 Apps should communicate outward by calling `ctx.actions.emit(...)` from `handleOutput`; hosts should listen for `app-event`. Set `forwardAppOutputs: true` only when the host intentionally wants transparent raw child-runtime outputs with component ids scoped to the app window.
+
+## Run Apps In Tablet Home Mode
+
+Use `createAppShell` and `createTabletHomePresentation` for a home-screen shell with full-screen foreground apps.
+
+```ts
+import {
+  createAppShell,
+  createRuntime,
+  createTabletHomePresentation,
+  createTouchAppRegistry
+} from "@found-in-space/touch-os";
+
+const registry = createTouchAppRegistry([
+  RoomControlsApp,
+  DiagnosticsApp
+]);
+
+const root = createAppShell("tablet-os", {
+  registry,
+  presentation: createTabletHomePresentation({
+    homeControl: "bar",
+    taskSwitcher: "cards",
+    taskCloseControl: "button"
+  }),
+  appHostMode: "child-runtime",
+  homeKey: true,
+  appStates: {
+    [RoomControlsApp.manifest.id]: state
+  }
+});
+
+const runtime = createRuntime({
+  root,
+  surface: { width: 1024, height: 720 }
+});
+```
+
+The tablet shell starts on the home screen, launches apps from registry icons, renders the foreground app without desktop chrome, and routes `home`/`app-switcher` system commands at the shell level. Tablet task switchers can optionally show session close controls with `taskCloseControl: "button"`.
+
+The existing manager API can use the same presentation:
+
+```ts
+const root = createWindowManager("tablet-os", {
+  registry,
+  presentation: createTabletHomePresentation(),
+  appHostMode: "child-runtime",
+  homeKey: true
+});
+```
+
+## Map Host Home Keys
+
+Hosts should translate platform input to `system-command` input events instead of special-casing presentations:
+
+```ts
+runtime.dispatchInput({
+  type: "system-command",
+  command: "home",
+  timestamp: performance.now(),
+  source: "keyboard"
+});
+```
+
+Recommended mappings:
+
+- Meta, Windows, or Home key -> `home`
+- Alt+Tab or Meta+Tab -> `app-switcher`
+- XR controller menu button -> `home`
+- wrist or hardware home gesture -> `home`
+
+The runtime dispatches system commands to the root component first. App shells consume supported commands; normal leaf controls ignore them.
 
 ## Feed Input And Consume Outputs
 

@@ -1,16 +1,7 @@
 import * as THREE from "three";
 import type { RuntimeOutput } from "../core/actions.js";
 import type { DisplayRuntime } from "../core/runtime.js";
-import type {
-  BitmapDrawCommand,
-  CircleDrawCommand,
-  DrawCommand,
-  LineDrawCommand,
-  RectDrawCommand,
-  RenderSnapshot,
-  SurfaceDrawCommand,
-  TextDrawCommand
-} from "../core/draw.js";
+import type { RenderSnapshot, SurfaceDrawCommand } from "../core/draw.js";
 import {
   DEFAULT_MODIFIERS,
   type InputEvent,
@@ -20,6 +11,7 @@ import {
 import type { Rect } from "../core/geometry.js";
 import type { SurfaceMetrics } from "../services/contracts.js";
 import type { CoordinatedPanel } from "../coordination/index.js";
+import { drawRenderSnapshotToCanvasContext } from "../rendering/canvas-snapshot-renderer.js";
 import type { HostAdapter } from "./contracts.js";
 
 export interface CanvasMeasureTextResult {
@@ -52,7 +44,7 @@ export interface CanvasContextLike {
   stroke(): void;
   arc(x: number, y: number, radius: number, startAngle: number, endAngle: number): void;
   fill(): void;
-  fillText(text: string, x: number, y: number): void;
+  fillText(text: string, x: number, y: number, maxWidth?: number): void;
   measureText(text: string): CanvasMeasureTextResult;
   drawImage?(image: unknown, x: number, y: number, width: number, height: number): void;
   closePath?(): void;
@@ -1224,9 +1216,10 @@ function createCanvasSurfaceRenderer(canvas: CanvasLike, metrics: SurfaceMetrics
     draw(snapshot: RenderSnapshot) {
       context.setTransform(metrics.pixelDensity, 0, 0, metrics.pixelDensity, 0, 0);
       context.clearRect(0, 0, metrics.width, metrics.height);
-      for (const command of snapshot.commands) {
-        drawCommand(context, command);
-      }
+      drawRenderSnapshotToCanvasContext(context, snapshot, {
+        sourceWidth: metrics.width,
+        sourceHeight: metrics.height
+      });
     }
   };
 }
@@ -1236,224 +1229,6 @@ function getSurfaceBackingSize(metrics: SurfaceMetrics): { width: number; height
     width: Math.max(1, Math.round(metrics.width * metrics.pixelDensity)),
     height: Math.max(1, Math.round(metrics.height * metrics.pixelDensity))
   };
-}
-
-function drawCommand(context: CanvasContextLike, command: DrawCommand): void {
-  context.save();
-  if (command.clipRect) {
-    context.beginPath();
-    context.rect(
-      command.clipRect.x,
-      command.clipRect.y,
-      command.clipRect.width,
-      command.clipRect.height
-    );
-    context.clip();
-  }
-
-  switch (command.type) {
-    case "rect":
-      drawRectCommand(context, command);
-      break;
-    case "text":
-      drawTextCommand(context, command);
-      break;
-    case "line":
-      drawLineCommand(context, command);
-      break;
-    case "circle":
-      drawCircleCommand(context, command);
-      break;
-    case "bitmap":
-      drawBitmapCommand(context, command);
-      break;
-    case "surface":
-      drawSurfaceCommand(context, command);
-      break;
-  }
-
-  context.restore();
-}
-
-function drawRectCommand(context: CanvasContextLike, command: RectDrawCommand): void {
-  if (command.radius && context.roundRect) {
-    context.beginPath();
-    context.roundRect(command.rect.x, command.rect.y, command.rect.width, command.rect.height, command.radius);
-    if (command.fill) {
-      context.fillStyle = command.fill;
-      context.fill();
-    }
-    if (command.stroke) {
-      context.strokeStyle = command.stroke;
-      context.lineWidth = command.strokeWidth ?? 1;
-      context.stroke();
-    }
-    return;
-  }
-
-  if (command.fill) {
-    context.fillStyle = command.fill;
-    context.fillRect(command.rect.x, command.rect.y, command.rect.width, command.rect.height);
-  }
-  if (command.stroke) {
-    context.strokeStyle = command.stroke;
-    context.lineWidth = command.strokeWidth ?? 1;
-    context.strokeRect(command.rect.x, command.rect.y, command.rect.width, command.rect.height);
-  }
-}
-
-function drawTextCommand(context: CanvasContextLike, command: TextDrawCommand): void {
-  context.fillStyle = command.color;
-  context.font = `${command.fontWeight ?? 400} ${command.fontSize ?? 14}px sans-serif`;
-  context.textAlign = command.align ?? "left";
-  context.textBaseline =
-    command.verticalAlign === "middle"
-      ? "middle"
-      : command.verticalAlign === "bottom"
-        ? "bottom"
-        : "top";
-
-  const x =
-    command.align === "center"
-      ? command.rect.x + command.rect.width / 2
-      : command.align === "right"
-        ? command.rect.x + command.rect.width
-        : command.rect.x;
-  const y =
-    command.verticalAlign === "middle"
-      ? command.rect.y + command.rect.height / 2
-      : command.verticalAlign === "bottom"
-        ? command.rect.y + command.rect.height
-        : command.rect.y;
-  context.fillText(command.text, x, y);
-}
-
-function drawLineCommand(context: CanvasContextLike, command: LineDrawCommand): void {
-  context.beginPath();
-  context.moveTo(command.x1, command.y1);
-  context.lineTo(command.x2, command.y2);
-  context.strokeStyle = command.stroke;
-  context.lineWidth = command.strokeWidth ?? 1;
-  context.stroke();
-}
-
-function drawCircleCommand(context: CanvasContextLike, command: CircleDrawCommand): void {
-  context.beginPath();
-  context.arc(command.cx, command.cy, command.radius, 0, Math.PI * 2);
-  if (command.fill) {
-    context.fillStyle = command.fill;
-    context.fill();
-  }
-  if (command.stroke) {
-    context.strokeStyle = command.stroke;
-    context.lineWidth = command.strokeWidth ?? 1;
-    context.stroke();
-  }
-}
-
-function drawBitmapCommand(context: CanvasContextLike, command: BitmapDrawCommand): void {
-  if (typeof context.drawImage !== "function") {
-    context.fillStyle = "#111827";
-    context.fillRect(command.rect.x, command.rect.y, command.rect.width, command.rect.height);
-    return;
-  }
-
-  const fit = command.fit ?? "stretch";
-  const opacity = command.opacity ?? 1;
-  const sampling = command.sampling ?? "linear";
-  const previousAlpha = context.globalAlpha;
-  const previousSmoothing = context.imageSmoothingEnabled;
-  context.globalAlpha = previousAlpha * opacity;
-
-  if (typeof context.imageSmoothingEnabled === "boolean") {
-    context.imageSmoothingEnabled = sampling === "linear";
-  }
-
-  const imageWidth = command.handle.width;
-  const imageHeight = command.handle.height;
-  if (imageWidth <= 0 || imageHeight <= 0 || fit === "stretch") {
-    context.drawImage(
-      command.handle.image,
-      command.rect.x,
-      command.rect.y,
-      command.rect.width,
-      command.rect.height
-    );
-  } else {
-    const scale =
-      fit === "contain"
-        ? Math.min(command.rect.width / imageWidth, command.rect.height / imageHeight)
-        : Math.max(command.rect.width / imageWidth, command.rect.height / imageHeight);
-    const drawWidth = imageWidth * scale;
-    const drawHeight = imageHeight * scale;
-    const drawX = command.rect.x + (command.rect.width - drawWidth) / 2;
-    const drawY = command.rect.y + (command.rect.height - drawHeight) / 2;
-
-    if (fit === "cover") {
-      context.beginPath();
-      context.rect(command.rect.x, command.rect.y, command.rect.width, command.rect.height);
-      context.clip();
-    }
-
-    context.drawImage(command.handle.image, drawX, drawY, drawWidth, drawHeight);
-  }
-
-  context.globalAlpha = previousAlpha;
-  if (typeof previousSmoothing === "boolean") {
-    context.imageSmoothingEnabled = previousSmoothing;
-  }
-}
-
-function drawSurfaceCommand(context: CanvasContextLike, command: SurfaceDrawCommand): void {
-  if ((command.compositionMode ?? "copy") === "composite") {
-    return;
-  }
-
-  const drawRect = command.mirrorX
-    ? { x: 0, y: 0, width: command.rect.width, height: command.rect.height }
-    : command.rect;
-
-  if (command.mirrorX) {
-    context.save();
-    context.translate(command.rect.x + command.rect.width, command.rect.y);
-    context.scale(-1, 1);
-  }
-
-  if (isThreeSurfaceRenderHandle(command.handle)) {
-    command.handle.draw(context, drawRect);
-    if (command.mirrorX) {
-      context.restore();
-    }
-    return;
-  }
-
-  if (typeof context.drawImage === "function" && isDrawImageHandle(command.handle)) {
-    context.drawImage(
-      command.handle.image,
-      drawRect.x,
-      drawRect.y,
-      drawRect.width,
-      drawRect.height
-    );
-    if (command.mirrorX) {
-      context.restore();
-    }
-    return;
-  }
-
-  context.fillStyle = "#111827";
-  context.fillRect(drawRect.x, drawRect.y, drawRect.width, drawRect.height);
-  if (command.mirrorX) {
-    context.restore();
-  }
-}
-
-function isThreeSurfaceRenderHandle(handle: unknown): handle is ThreeSurfaceRenderHandle {
-  return typeof handle === "object" && handle !== null && "draw" in handle && typeof handle.draw === "function";
-}
-
-function isDrawImageHandle(handle: unknown): handle is { image: unknown } {
-  return typeof handle === "object" && handle !== null && "image" in handle;
 }
 
 function createPanelDriver(

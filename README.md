@@ -18,7 +18,8 @@ The runtime stays headless and display-space-only. Hosts own environment-specifi
 - a small set of generic built-in components and containers
 - runtime services for layout, navigation, focus, scroll, theme, timing, bitmap assets, and embedded surfaces
 - standardized app manifest, lifecycle, context, and registry contracts
-- a window manager for hosting registered apps in same-runtime or child-runtime surface-local windows
+- an app shell for registered apps, with desktop-window and tablet-home presentations
+- a window-manager compatibility API for hosting registered apps in same-runtime or child-runtime windows
 - a generic multi-panel coordination helper for ordered routing and pointer ownership
 - a Three.js host package with scene, pose-anchored, tablet, and HUD panel helpers
 - host-side pointer interop helpers for screen, ray, surface, and direct-contact input
@@ -35,7 +36,8 @@ The runtime stays headless and display-space-only. Hosts own environment-specifi
 | `@found-in-space/touch-os/services` | Runtime service contracts plus default in-memory implementations. |
 | `@found-in-space/touch-os/coordination` | Generic ordered panel routing, fallthrough, and pointer ownership helpers. |
 | `@found-in-space/touch-os/apps` | Standard app bundle, app context, registry, and lifecycle helpers. |
-| `@found-in-space/touch-os/window-manager` | Same-runtime app window manager, window state contracts, and app-tree namespacing helpers. |
+| `@found-in-space/touch-os/app-shell` | App shell core, sessions, desktop-window presentation, and tablet-home presentation. |
+| `@found-in-space/touch-os/window-manager` | Compatibility window-manager API, window state contracts, and app-tree namespacing helpers. |
 | `@found-in-space/touch-os/hosts` | Generic host contract types only. |
 | `@found-in-space/touch-os/hosts/three` | Three.js host adapters, panel drivers, pointer sources, and panel interactor helpers. |
 | `@found-in-space/touch-os/adapters/schema` | Optional declarative schema adapter. |
@@ -171,7 +173,12 @@ Shipped now:
 - embedded-surface composition through copy or host-composited surface commands
 - movable surface-local windows with drag handles, focus/z-order, clamping, and window-state-change outputs
 - app bundle contracts for manifests, lifecycle hooks, app context, registries, and instance wrappers
-- same-runtime and child-runtime app windows through `createWindowManager`, with launcher/task-switcher support, app/window-manager events, and opt-in raw child-runtime output forwarding
+- app shell sessions with desktop-window and tablet-home presentations, including optional tablet `keepAlive`
+- same-runtime and child-runtime app hosting through `createAppShell` and `createWindowManager`, with launcher/task-switcher support, app/window-manager events, and opt-in raw child-runtime output forwarding
+- `defineControlsApp` for simple toggle/status/button/slider apps
+- `createTouchAppRuntime` for running one app on one surface without a shell, with explicit `setAppState`
+- host-neutral `system-command` input for home, app-switcher, and back commands
+- shared canvas snapshot renderer used by the Three host and child-runtime snapshot surfaces
 - panel coordination for ordered multi-panel routing, fallthrough, lower-priority clearing, and pointer-scoped ownership
 - Three panel sessions for reusable runtime/driver update, render, pointer routing, and output flushing
 - optional schema authoring for text, button, toggle, slider, choice group, value readout, and action card documents
@@ -180,12 +187,14 @@ Planned but not shipped yet:
 
 - browser and DOM-adjacent hosts in [docs/plan-browser-hosts.md](./docs/plan-browser-hosts.md)
 - bounded movable scene panels in [docs/plan-movable-components.md](./docs/plan-movable-components.md)
-- presentation variants and runtime bindings in [docs/plan-presentation-variants.md](./docs/plan-presentation-variants.md)
 - source-bound embedded-surface input sinks in [docs/plan-embedded-surface-input.md](./docs/plan-embedded-surface-input.md)
 
 ## Documentation
 
 - [docs/architecture.md](./docs/architecture.md): contributor-facing architectural contract and package boundaries
+- [docs/rendering.md](./docs/rendering.md): shared draw-command rendering semantics
+- [docs/app-shell.md](./docs/app-shell.md): app shell, desktop presentation, tablet presentation, and system commands
+- [docs/simple-apps.md](./docs/simple-apps.md): simple controls app authoring and single-app runtime helper
 - [docs/features.md](./docs/features.md): shipped feature inventory and roadmap links
 - [docs/usage.md](./docs/usage.md): integration patterns and code examples
 - [docs/plan-browser-hosts.md](./docs/plan-browser-hosts.md): browser host roadmap

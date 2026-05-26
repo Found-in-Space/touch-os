@@ -33,3 +33,22 @@ export type {
 export { validateTouchAppManifest } from "./manifest.js";
 export type { TouchAppRegistry } from "./registry.js";
 export { createTouchAppRegistry } from "./registry.js";
+export type {
+  ControlsAppActionEvent,
+  ControlsAppBuilder,
+  ControlsAppButtonItem,
+  ControlsAppChangeEvent,
+  ControlsAppItem,
+  ControlsAppOptions,
+  ControlsAppSectionItem,
+  ControlsAppSliderItem,
+  ControlsAppStatusItem,
+  ControlsAppToggleItem,
+  SurfaceSizeClass
+} from "./controls-app.js";
+export { defineControlsApp } from "./controls-app.js";
+export type {
+  CreateTouchAppRuntimeOptions,
+  TouchAppDisplayRuntime
+} from "./touch-app-runtime.js";
+export { createTouchAppRuntime } from "./touch-app-runtime.js";

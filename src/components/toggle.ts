@@ -6,15 +6,16 @@ export interface ToggleProps {
   label: string;
   value: boolean;
   field: string;
+  disabled?: boolean;
 }
 
 const ToggleComponent: DisplayComponent<ToggleProps> = {
   kind: "toggle",
   mount(ctx) {
-    syncFocusableRegistration(ctx, true, `${ctx.id}:switch`);
+    syncFocusableRegistration(ctx, !(ctx.props.disabled ?? false), `${ctx.id}:switch`);
   },
   update(ctx) {
-    syncFocusableRegistration(ctx, true, `${ctx.id}:switch`);
+    syncFocusableRegistration(ctx, !(ctx.props.disabled ?? false), `${ctx.id}:switch`);
   },
   measure(ctx) {
     const theme = ctx.services.theme.getTokens();
@@ -40,6 +41,7 @@ const ToggleComponent: DisplayComponent<ToggleProps> = {
       : switchRect.x + knobInset + knobRadius;
     const labelRight = ctx.bounds.x + ctx.bounds.width - switchWidth - theme.padding * 2;
     const focused = ctx.interaction.focusedComponentId === ctx.id;
+    const disabled = ctx.props.disabled ?? false;
 
     return [
       {
@@ -61,7 +63,7 @@ const ToggleComponent: DisplayComponent<ToggleProps> = {
           Math.max(0, labelRight - ctx.bounds.x - theme.padding),
           ctx.bounds.height
         ),
-        color: theme.textColor,
+        color: disabled ? theme.mutedTextColor : theme.textColor,
         align: "left",
         verticalAlign: "middle",
         fontSize: theme.typography.fontSize,
@@ -72,8 +74,16 @@ const ToggleComponent: DisplayComponent<ToggleProps> = {
         componentId: ctx.id,
         role: "toggle-switch",
         rect: switchRect,
-        fill: ctx.props.value ? theme.accentColor : theme.backgroundColor,
-        stroke: ctx.props.value ? theme.accentColor : theme.borderColor,
+        fill: disabled
+          ? theme.surfaceColor
+          : ctx.props.value
+            ? theme.accentColor
+            : theme.backgroundColor,
+        stroke: disabled
+          ? theme.borderColor
+          : ctx.props.value
+            ? theme.accentColor
+            : theme.borderColor,
         strokeWidth: 1,
         radius: switchRect.height / 2
       },
@@ -84,11 +94,18 @@ const ToggleComponent: DisplayComponent<ToggleProps> = {
         cx: knobX,
         cy: switchRect.y + switchRect.height / 2,
         radius: knobRadius,
-        fill: ctx.props.value ? theme.accentTextColor : theme.mutedTextColor
+        fill: disabled
+          ? theme.borderColor
+          : ctx.props.value
+            ? theme.accentTextColor
+            : theme.mutedTextColor
       }
     ];
   },
   hitTest(ctx) {
+    if (ctx.props.disabled) {
+      return null;
+    }
     if (!rectContainsPoint(ctx.bounds, ctx.point)) {
       return null;
     }
@@ -98,7 +115,7 @@ const ToggleComponent: DisplayComponent<ToggleProps> = {
     };
   },
   handleEvent(ctx) {
-    if (ctx.event.type !== "press") {
+    if (ctx.props.disabled || ctx.event.type !== "press") {
       return;
     }
 

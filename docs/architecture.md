@@ -138,28 +138,30 @@ Current service areas are:
 
 The default service implementations are in-memory, side-effect free, and test-friendly.
 
-### 5. Window And App Orchestration
+### 5. App Shell And Window Orchestration
 
-The app and window-manager layers sit above the core runtime.
+The app shell sits above the core runtime. The window-manager API is a desktop-presentation compatibility wrapper over that shell.
 
-They own:
+The shell owns:
 
 - standardized app manifests and lifecycle hooks
 - app registry lookup
-- seeded and subsequently live window state for app instances
-- launcher and task-switcher behavior inside the panel runtime
+- seeded and subsequently live session state for app instances
+- launcher, home, and task-switcher behavior inside the panel runtime
 - focus, title, close, resize, and open-app requests
 - namespacing app component ids before mounting app trees into a shared runtime
 - optional child runtimes for isolated app focus, scroll, navigation, and local component ids
 
-They do not own:
+The shell does not own:
 
 - scene placement
 - XR or DOM input objects
 - host rendering
 - security sandboxing for untrusted code
 
-The window manager supports two host modes. Same-runtime windows mount app trees inside the panel runtime and scope app component ids for built-in containers and the standard structural child props. Child-runtime windows give each app window its own `DisplayRuntime`, publish that runtime's render snapshot through an embedded surface, and forward viewport input into the child runtime in window-local coordinates.
+Presentations decide how sessions appear. The desktop presentation shows movable windows; the tablet presentation shows a home screen and full-screen foreground app.
+
+The shell supports two host modes. Same-runtime sessions mount app trees inside the shell runtime and scope app component ids for built-in containers and the standard structural child props. Child-runtime sessions give each app instance its own `DisplayRuntime`, publish that runtime's render snapshot through an embedded surface, and forward viewport input into the child runtime in surface-local coordinates.
 
 `WindowManagerProps.initialWindows` is a seed, not a controlled window list. To reseed the OS session, remount the manager with a new component id. External callers should observe `window-manager-change` outputs for persistence.
 

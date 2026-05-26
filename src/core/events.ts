@@ -103,6 +103,13 @@ export interface TickEvent extends EventBase {
   type: "tick";
 }
 
+export interface SystemCommandInputEvent extends EventBase {
+  type: "system-command";
+  command: "home" | "app-switcher" | "back";
+  source?: "keyboard" | "touch" | "xr" | "host" | "unknown";
+  repeated?: boolean;
+}
+
 export type DisplayEvent =
   | PointerEnterEvent
   | PointerMoveEvent
@@ -118,7 +125,8 @@ export type DisplayEvent =
   | ScrollEvent
   | FocusEvent
   | BlurEvent
-  | TickEvent;
+  | TickEvent
+  | SystemCommandInputEvent;
 
 export interface InputPointerEvent extends EventBase {
   type: "pointer-move" | "pointer-down" | "pointer-up" | "cancel";
@@ -148,7 +156,8 @@ export type InputEvent =
   | InputPointerEvent
   | InputScrollEvent
   | InputFocusEvent
-  | InputBlurEvent;
+  | InputBlurEvent
+  | SystemCommandInputEvent;
 
 export const DEFAULT_MODIFIERS: ModifierState = {
   altKey: false,

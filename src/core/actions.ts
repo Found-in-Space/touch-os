@@ -1,4 +1,5 @@
 import type { Rect, Size } from "./geometry.js";
+import type { SystemCommandInputEvent } from "./events.js";
 
 export interface ActionEvent {
   type: "action";
@@ -100,4 +101,5 @@ export type RuntimeOutput =
   | NavigationRequestEvent
   | WindowStateChangeEvent
   | AppEventOutput
-  | WindowManagerChangeEvent;
+  | WindowManagerChangeEvent
+  | SystemCommandInputEvent;

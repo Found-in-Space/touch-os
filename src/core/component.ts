@@ -131,6 +131,7 @@ export function isDisplayEvent(event: ComponentEvent): event is DisplayEvent {
     case "focus":
     case "blur":
     case "tick":
+    case "system-command":
       return true;
     default:
       return false;
