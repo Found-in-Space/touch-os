@@ -1,7 +1,11 @@
 export type {
-  ScopeDisplayNodeIdsOptions
+  HostedAppWindow,
+  ScopeDisplayNodeIdsOptions,
+  TouchRuntimeSurfaceHandle
 } from "./app-window.js";
 export {
+  createHostedAppSurfaceComponentId,
+  createHostedAppSurfaceSourceId,
   scopeDisplayNodeIds,
   stripDisplayNodeIdScope,
   stripRuntimeOutputScope
@@ -9,6 +13,7 @@ export {
 export type {
   TouchWindowMode,
   TouchWindowState,
+  WindowManagerAppHostMode,
   WindowManagerChange,
   WindowManagerProps
 } from "./window-state.js";

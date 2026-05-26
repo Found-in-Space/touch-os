@@ -7,6 +7,11 @@ import type {
   WindowStateChangeEvent
 } from "../core/actions.js";
 import type { DisplayNode } from "../core/component.js";
+import type { DrawCommand, RenderSnapshot } from "../core/draw.js";
+import type { DisplayEvent, InputEvent } from "../core/events.js";
+import type { Rect } from "../core/geometry.js";
+import { createRuntime, type DisplayRuntime } from "../core/runtime.js";
+import { createEmbeddedSurface } from "../components/embedded-surface.js";
 import { createTextLabel } from "../components/text-label.js";
 import {
   createTouchAppInstance,
@@ -20,21 +25,43 @@ import type {
   TouchAppSurfaceContext,
   TouchAppWindowApi
 } from "../apps/context.js";
-import type { ThemeService } from "../services/contracts.js";
-import { copyTouchWindowState, type TouchWindowState } from "./window-state.js";
+import type {
+  EmbeddedSurfaceChange,
+  EmbeddedSurfaceService,
+  ThemeService
+} from "../services/contracts.js";
+import {
+  copyTouchWindowState,
+  type TouchWindowState,
+  type WindowManagerAppHostMode
+} from "./window-state.js";
 
 export interface WindowManagerAppWindow {
   window: TouchWindowState;
+  hostMode: WindowManagerAppHostMode;
   namespacePrefix: string;
   runtime: TouchAppRuntimeInstance<unknown> | undefined;
+  hosted: HostedAppWindow | undefined;
+  hostedSurfaceComponentId: string;
+  forwardedEventCursor: number;
+  lastPublishedRevision: number | undefined;
+  lastPublishedWidth: number | undefined;
+  lastPublishedHeight: number | undefined;
   active: boolean;
   closed: boolean;
   titleOverridden: boolean;
 }
 
+export interface HostedAppWindow {
+  window: TouchWindowState;
+  runtime: DisplayRuntime;
+  surfaceSourceId: string;
+}
+
 export interface CreateWindowManagerAppWindowOptions {
   window: TouchWindowState;
   app: TouchAppModule<unknown> | undefined;
+  hostMode?: WindowManagerAppHostMode;
   surface: TouchAppSurfaceContext;
   theme: ThemeService;
   actions: TouchAppActions;
@@ -43,8 +70,51 @@ export interface CreateWindowManagerAppWindowOptions {
   surfaces?: TouchAppSurfaceApi;
 }
 
+export interface EnsureHostedAppWindowOptions {
+  root: DisplayNode<unknown, unknown>;
+  surface: TouchAppSurfaceContext;
+  theme: ThemeService;
+  surfaces: EmbeddedSurfaceService;
+}
+
 export interface ScopeDisplayNodeIdsOptions {
   prefix: string;
+}
+
+export interface TouchRuntimeSurfaceHandle {
+  kind: "touch-os-render-snapshot";
+  width: number;
+  height: number;
+  revision: number;
+  snapshot: RenderSnapshot;
+  draw(context: SurfaceDrawContext, rect: Rect): void;
+}
+
+interface SurfaceDrawContext {
+  save?(): void;
+  restore?(): void;
+  translate?(x: number, y: number): void;
+  scale?(x: number, y: number): void;
+  beginPath?(): void;
+  rect?(x: number, y: number, width: number, height: number): void;
+  clip?(): void;
+  fill?(): void;
+  stroke?(): void;
+  arc?(x: number, y: number, radius: number, startAngle: number, endAngle: number): void;
+  moveTo?(x: number, y: number): void;
+  lineTo?(x: number, y: number): void;
+  fillRect?(x: number, y: number, width: number, height: number): void;
+  strokeRect?(x: number, y: number, width: number, height: number): void;
+  fillText?(text: string, x: number, y: number, maxWidth?: number): void;
+  drawImage?(image: unknown, x: number, y: number, width: number, height: number): void;
+  fillStyle?: unknown;
+  strokeStyle?: unknown;
+  lineWidth?: number;
+  font?: string;
+  textAlign?: string;
+  textBaseline?: string;
+  globalAlpha?: number;
+  imageSmoothingEnabled?: boolean;
 }
 
 export function createWindowManagerAppWindow(
@@ -52,8 +122,15 @@ export function createWindowManagerAppWindow(
 ): WindowManagerAppWindow {
   const record: WindowManagerAppWindow = {
     window: copyTouchWindowState(options.window),
+    hostMode: options.hostMode ?? "same-runtime",
     namespacePrefix: createAppWindowNamespace(options.window),
     runtime: undefined,
+    hosted: undefined,
+    hostedSurfaceComponentId: createHostedAppSurfaceComponentId(options.window),
+    forwardedEventCursor: 0,
+    lastPublishedRevision: undefined,
+    lastPublishedWidth: undefined,
+    lastPublishedHeight: undefined,
     active: false,
     closed: false,
     titleOverridden: false
@@ -79,6 +156,17 @@ export function renderAppWindowContent(
   record: WindowManagerAppWindow,
   appState: unknown
 ): DisplayNode<unknown, unknown> {
+  if (record.hosted) {
+    return createEmbeddedSurface(record.hostedSurfaceComponentId, {
+      sourceId: record.hosted.surfaceSourceId,
+      interactive: true,
+      acceptsForwardedInput: true,
+      preserveAspectRatio: false,
+      viewportPadding: 0,
+      fallbackLabel: `${record.window.title} unavailable`
+    });
+  }
+
   const root = record.runtime
     ? record.runtime.render(appState)
     : createTextLabel("missing-app", {
@@ -87,6 +175,172 @@ export function renderAppWindowContent(
       });
 
   return scopeDisplayNodeIds(root, { prefix: record.namespacePrefix });
+}
+
+export function ensureHostedAppWindow(
+  record: WindowManagerAppWindow,
+  options: EnsureHostedAppWindowOptions
+): HostedAppWindow {
+  if (!record.hosted) {
+    record.hosted = {
+      window: copyTouchWindowState(record.window),
+      runtime: createRuntime({
+        root: options.root,
+        surface: options.surface,
+        services: {
+          theme: options.theme,
+          surfaces: createNamespacedEmbeddedSurfaceService(options.surfaces, record.namespacePrefix)
+        }
+      }),
+      surfaceSourceId: createHostedAppSurfaceSourceId(record.window)
+    };
+    return record.hosted;
+  }
+
+  record.hosted.window = copyTouchWindowState(record.window);
+  record.hosted.runtime.resize(options.surface);
+  record.hosted.runtime.setRoot(options.root);
+  return record.hosted;
+}
+
+export function publishHostedAppWindow(
+  record: WindowManagerAppWindow,
+  surfaces: EmbeddedSurfaceService
+): void {
+  if (!record.hosted) {
+    return;
+  }
+
+  const snapshot = record.hosted.runtime.render();
+  const metrics = record.hosted.runtime.getServices().surface.getMetrics();
+  if (
+    record.lastPublishedRevision === snapshot.revision &&
+    record.lastPublishedWidth === metrics.width &&
+    record.lastPublishedHeight === metrics.height
+  ) {
+    return;
+  }
+
+  record.lastPublishedRevision = snapshot.revision;
+  record.lastPublishedWidth = metrics.width;
+  record.lastPublishedHeight = metrics.height;
+  surfaces.publish(record.hosted.surfaceSourceId, {
+    available: true,
+    handle: createTouchRuntimeSurfaceHandle(snapshot, metrics.width, metrics.height),
+    sourceWidth: metrics.width,
+    sourceHeight: metrics.height,
+    refreshState: "updating",
+    sourceType: "touch-os-runtime"
+  });
+}
+
+export function createHostedAppInputEvent(
+  event: DisplayEvent,
+  surfaceBounds: Rect,
+  surface: TouchAppSurfaceContext
+): InputEvent | undefined {
+  if (!("localX" in event) || !("localY" in event)) {
+    return undefined;
+  }
+
+  if (surfaceBounds.width <= 0 || surfaceBounds.height <= 0) {
+    return undefined;
+  }
+
+  const scaleX = surface.width / surfaceBounds.width;
+  const scaleY = surface.height / surfaceBounds.height;
+  const surfaceX = clamp(event.localX * scaleX, 0, surface.width);
+  const surfaceY = clamp(event.localY * scaleY, 0, surface.height);
+  const base = createInputEventBase(event);
+
+  switch (event.type) {
+    case "pointer-enter":
+    case "pointer-move":
+    case "drag-start":
+    case "drag-move":
+      return {
+        ...base,
+        type: "pointer-move",
+        surfaceX,
+        surfaceY
+      };
+    case "pointer-down":
+      return {
+        ...base,
+        type: "pointer-down",
+        surfaceX,
+        surfaceY
+      };
+    case "pointer-up":
+      return {
+        ...base,
+        type: "pointer-up",
+        surfaceX,
+        surfaceY
+      };
+    case "pointer-leave":
+    case "cancel":
+      return {
+        ...base,
+        type: "cancel",
+        surfaceX,
+        surfaceY
+      };
+    case "scroll":
+      return {
+        ...base,
+        type: "scroll",
+        surfaceX,
+        surfaceY,
+        deltaX: event.deltaX * scaleX,
+        deltaY: event.deltaY * scaleY
+      };
+    default:
+      return undefined;
+  }
+}
+
+export function scopeRuntimeOutput(
+  output: RuntimeOutput,
+  prefix: string
+): RuntimeOutput {
+  switch (output.type) {
+    case "action":
+      return {
+        ...output,
+        componentId: scopeComponentId(output.componentId, prefix)
+      };
+    case "change-request":
+      return {
+        ...output,
+        componentId: scopeComponentId(output.componentId, prefix)
+      };
+    case "navigation-request":
+      return {
+        ...output,
+        componentId: scopeComponentId(output.componentId, prefix),
+        containerId: scopeComponentId(output.containerId, prefix),
+        ...(output.pageId ? { pageId: scopeComponentId(output.pageId, prefix) } : {})
+      };
+    case "window-state-change":
+      return {
+        ...output,
+        componentId: scopeComponentId(output.componentId, prefix),
+        windowId: scopeComponentId(output.windowId, prefix)
+      };
+    case "app-event":
+      return {
+        ...output,
+        componentId: scopeComponentId(output.componentId, prefix),
+        windowId: scopeComponentId(output.windowId, prefix)
+      };
+    case "window-manager-change":
+      return {
+        ...output,
+        componentId: scopeComponentId(output.componentId, prefix),
+        ...(output.windowId ? { windowId: scopeComponentId(output.windowId, prefix) } : {})
+      };
+  }
 }
 
 export function updateAppWindowSurface(
@@ -105,6 +359,14 @@ export function updateAppWindowSurface(
 
 export function createAppWindowNamespace(window: TouchWindowState): string {
   return `${window.appId}:${window.instanceId}:${window.id}:`;
+}
+
+export function createHostedAppSurfaceSourceId(window: TouchWindowState): string {
+  return `${createAppWindowNamespace(window)}surface-source`;
+}
+
+export function createHostedAppSurfaceComponentId(window: TouchWindowState): string {
+  return `${createAppWindowNamespace(window)}surface`;
 }
 
 export function scopeDisplayNodeIds(
@@ -178,6 +440,273 @@ function scopeValue(value: unknown, prefix: string, key?: string): unknown {
 
 function scopeComponentId(id: string, prefix: string): string {
   return id.startsWith(prefix) ? id : `${prefix}${id}`;
+}
+
+function createTouchRuntimeSurfaceHandle(
+  snapshot: RenderSnapshot,
+  width: number,
+  height: number
+): TouchRuntimeSurfaceHandle {
+  return {
+    kind: "touch-os-render-snapshot",
+    width,
+    height,
+    revision: snapshot.revision,
+    snapshot,
+    draw(context, rect) {
+      drawRenderSnapshot(context, snapshot, rect, width, height);
+    }
+  };
+}
+
+function drawRenderSnapshot(
+  context: SurfaceDrawContext,
+  snapshot: RenderSnapshot,
+  rect: Rect,
+  width: number,
+  height: number
+): void {
+  context.save?.();
+  context.translate?.(rect.x, rect.y);
+  context.scale?.(
+    width > 0 ? rect.width / width : 1,
+    height > 0 ? rect.height / height : 1
+  );
+  for (const command of snapshot.commands) {
+    drawSnapshotCommand(context, command);
+  }
+  context.restore?.();
+}
+
+function drawSnapshotCommand(context: SurfaceDrawContext, command: DrawCommand): void {
+  context.save?.();
+  if (command.clipRect && context.beginPath && context.rect && context.clip) {
+    context.beginPath();
+    context.rect(
+      command.clipRect.x,
+      command.clipRect.y,
+      command.clipRect.width,
+      command.clipRect.height
+    );
+    context.clip();
+  }
+
+  switch (command.type) {
+    case "rect":
+      if (command.fill && context.fillRect) {
+        context.fillStyle = command.fill;
+        context.fillRect(command.rect.x, command.rect.y, command.rect.width, command.rect.height);
+      }
+      if (command.stroke && context.strokeRect) {
+        context.strokeStyle = command.stroke;
+        context.lineWidth = command.strokeWidth ?? 1;
+        context.strokeRect(command.rect.x, command.rect.y, command.rect.width, command.rect.height);
+      }
+      break;
+    case "text":
+      if (context.fillText) {
+        context.fillStyle = command.color;
+        context.font = `${command.fontWeight ?? 400} ${command.fontSize ?? 14}px sans-serif`;
+        context.textAlign = command.align ?? "left";
+        context.textBaseline = resolveTextBaseline(command.verticalAlign);
+        context.fillText(
+          command.text,
+          resolveTextX(command),
+          resolveTextY(command),
+          command.rect.width
+        );
+      }
+      break;
+    case "line":
+      if (context.beginPath && context.moveTo && context.lineTo && context.stroke) {
+        context.beginPath();
+        context.moveTo(command.x1, command.y1);
+        context.lineTo(command.x2, command.y2);
+        context.strokeStyle = command.stroke;
+        context.lineWidth = command.strokeWidth ?? 1;
+        context.stroke();
+      }
+      break;
+    case "circle":
+      if (context.beginPath && context.arc) {
+        context.beginPath();
+        context.arc(command.cx, command.cy, command.radius, 0, Math.PI * 2);
+        if (command.fill && context.fill) {
+          context.fillStyle = command.fill;
+          context.fill();
+        }
+        if (command.stroke && context.stroke) {
+          context.strokeStyle = command.stroke;
+          context.lineWidth = command.strokeWidth ?? 1;
+          context.stroke();
+        }
+      }
+      break;
+    case "bitmap":
+      if (context.drawImage) {
+        context.drawImage(
+          command.handle.image,
+          command.rect.x,
+          command.rect.y,
+          command.rect.width,
+          command.rect.height
+        );
+      }
+      break;
+    case "surface":
+      drawNestedSurfaceCommand(context, command);
+      break;
+  }
+  context.restore?.();
+}
+
+function drawNestedSurfaceCommand(
+  context: SurfaceDrawContext,
+  command: Extract<DrawCommand, { type: "surface" }>
+): void {
+  if (isTouchRuntimeSurfaceHandle(command.handle)) {
+    command.handle.draw(context, command.rect);
+    return;
+  }
+  if (isDrawableSurfaceHandle(command.handle)) {
+    command.handle.draw(context, command.rect);
+    return;
+  }
+  if (context.drawImage && isImageSurfaceHandle(command.handle)) {
+    context.drawImage(
+      command.handle.image,
+      command.rect.x,
+      command.rect.y,
+      command.rect.width,
+      command.rect.height
+    );
+  }
+}
+
+function resolveTextX(command: Extract<DrawCommand, { type: "text" }>): number {
+  switch (command.align) {
+    case "center":
+      return command.rect.x + command.rect.width / 2;
+    case "right":
+      return command.rect.x + command.rect.width;
+    case "left":
+    default:
+      return command.rect.x;
+  }
+}
+
+function resolveTextY(command: Extract<DrawCommand, { type: "text" }>): number {
+  switch (command.verticalAlign) {
+    case "middle":
+      return command.rect.y + command.rect.height / 2;
+    case "bottom":
+      return command.rect.y + command.rect.height;
+    case "top":
+    default:
+      return command.rect.y;
+  }
+}
+
+function resolveTextBaseline(verticalAlign: "top" | "middle" | "bottom" | undefined): string {
+  switch (verticalAlign) {
+    case "middle":
+      return "middle";
+    case "bottom":
+      return "bottom";
+    case "top":
+    default:
+      return "top";
+  }
+}
+
+function isTouchRuntimeSurfaceHandle(handle: unknown): handle is TouchRuntimeSurfaceHandle {
+  return (
+    typeof handle === "object" &&
+    handle !== null &&
+    (handle as { kind?: unknown }).kind === "touch-os-render-snapshot" &&
+    typeof (handle as { draw?: unknown }).draw === "function"
+  );
+}
+
+function isDrawableSurfaceHandle(handle: unknown): handle is { draw(context: SurfaceDrawContext, rect: Rect): void } {
+  return typeof handle === "object" && handle !== null && typeof (handle as { draw?: unknown }).draw === "function";
+}
+
+function isImageSurfaceHandle(handle: unknown): handle is { image: unknown } {
+  return typeof handle === "object" && handle !== null && "image" in handle;
+}
+
+function createInputEventBase(event: DisplayEvent): Omit<InputEvent, "type" | "surfaceX" | "surfaceY" | "deltaX" | "deltaY" | "componentId"> {
+  return {
+    timestamp: event.timestamp,
+    ...(event.pointerId ? { pointerId: event.pointerId } : {}),
+    ...(event.pointerType ? { pointerType: event.pointerType } : {}),
+    ...(event.pressure !== undefined ? { pressure: event.pressure } : {}),
+    ...(event.modifiers ? { modifiers: event.modifiers } : {})
+  };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(value, max));
+}
+
+function createNamespacedEmbeddedSurfaceService(
+  service: EmbeddedSurfaceService,
+  prefix: string
+): EmbeddedSurfaceService {
+  const mapComponentId = (componentId: string) => scopeComponentId(componentId, prefix);
+  const unmapComponentId = (componentId: string) => stripDisplayNodeIdScope(componentId, prefix);
+
+  return {
+    attach(componentId, config) {
+      service.attach(mapComponentId(componentId), config);
+    },
+    configure(componentId, config) {
+      service.configure(mapComponentId(componentId), config);
+    },
+    release(componentId) {
+      service.release(mapComponentId(componentId));
+    },
+    subscribe(listener) {
+      return service.subscribe((change) => {
+        listener(createNamespacedEmbeddedSurfaceChange(change, prefix, unmapComponentId));
+      });
+    },
+    getAttachment(componentId) {
+      return service.getAttachment(mapComponentId(componentId));
+    },
+    getSource(sourceId) {
+      return service.getSource(sourceId);
+    },
+    isAvailable(componentId) {
+      return service.isAvailable(mapComponentId(componentId));
+    },
+    getHandle(componentId) {
+      return service.getHandle(mapComponentId(componentId));
+    },
+    publish(sourceId, update) {
+      service.publish(sourceId, update);
+    },
+    unpublish(sourceId) {
+      service.unpublish(sourceId);
+    },
+    forwardEvent(componentId, event) {
+      service.forwardEvent(mapComponentId(componentId), event);
+    }
+  };
+}
+
+function createNamespacedEmbeddedSurfaceChange(
+  change: EmbeddedSurfaceChange,
+  prefix: string,
+  unmapComponentId: (componentId: string) => string
+): EmbeddedSurfaceChange {
+  return {
+    componentIds: change.componentIds
+      .filter((componentId) => componentId.startsWith(prefix))
+      .map(unmapComponentId),
+    sourceIds: [...change.sourceIds]
+  };
 }
 
 function shouldScopeReferenceKey(key: string): boolean {

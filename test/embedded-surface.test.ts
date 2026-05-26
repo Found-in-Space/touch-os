@@ -131,7 +131,11 @@ describe("embedded surface", () => {
     );
 
     const forwardedBeforeDismiss = surfaces.getAttachment("monitor")?.forwardedEvents ?? [];
-    expect(forwardedBeforeDismiss.map((event) => event.type)).toEqual(["pointer-down", "press"]);
+    expect(forwardedBeforeDismiss.map((event) => event.type)).toEqual([
+      "pointer-down",
+      "pointer-up",
+      "press"
+    ]);
     expect(
       forwardedBeforeDismiss.every(
         (event) => "targetId" in event && event.targetId === "monitor:viewport"

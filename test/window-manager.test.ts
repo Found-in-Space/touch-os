@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createButton,
+  createEmbeddedSurfaceService,
   createRuntime,
   createTextLabel,
   createTouchAppRegistry,
@@ -10,7 +11,11 @@ import {
   type TouchAppEvent,
   type TouchWindowState
 } from "../src/index.js";
-import { clickComponentCenter, pressAt } from "./helpers/runtime-helpers.js";
+import {
+  clickComponentCenter,
+  findCommandByRole,
+  pressAt
+} from "./helpers/runtime-helpers.js";
 
 describe("window manager", () => {
   it("hosts app roots in one runtime with scoped component ids", () => {
@@ -210,6 +215,98 @@ describe("window manager", () => {
           command.text === "Renamed"
       )
     ).toBe(true);
+  });
+
+  it("hosts app content in child runtimes through embedded surfaces", () => {
+    const handledOutputs: RuntimeOutput[] = [];
+    const surfaces = createEmbeddedSurfaceService();
+    const registry = createTouchAppRegistry([
+      defineTouchApp({
+        manifest: {
+          id: "space.test.child",
+          name: "Child",
+          version: "1.0.0"
+        },
+        createApp(ctx) {
+          return {
+            render() {
+              return createButton("shared-button", {
+                label: "Run",
+                actionId: "child.run"
+              });
+            },
+            handleOutput(output) {
+              handledOutputs.push(output);
+              if (output.type === "action") {
+                ctx.actions.emit({
+                  type: "app-action",
+                  name: output.componentId
+                });
+              }
+            }
+          };
+        }
+      })
+    ]);
+    const runtime = createRuntime({
+      root: createWindowManager("tablet-os", {
+        registry,
+        appHostMode: "child-runtime",
+        windows: [createManagedWindow("child-window", "space.test.child", "child-1", 1)]
+      }),
+      surface: { width: 420, height: 280 },
+      services: { surfaces }
+    });
+
+    const snapshot = runtime.render();
+    const viewport = findCommandByRole(snapshot.commands, "embedded-surface-viewport");
+    if (viewport.type !== "surface") {
+      throw new Error("Expected the hosted app viewport to render as a surface command.");
+    }
+
+    expect(runtime.getBounds("shared-button")).toBeUndefined();
+    expect(runtime.getBounds("space.test.child:child-1:child-window:surface")).toBeDefined();
+    expect(viewport.sourceId).toBe("space.test.child:child-1:child-window:surface-source");
+    expect(viewport.handle).toMatchObject({
+      kind: "touch-os-render-snapshot",
+      width: 180
+    });
+    expect(surfaces.getSource("space.test.child:child-1:child-window:surface-source")).toMatchObject({
+      available: true,
+      sourceType: "touch-os-runtime"
+    });
+
+    pressAt(
+      runtime,
+      viewport.rect.x + viewport.rect.width / 2,
+      viewport.rect.y + viewport.rect.height / 2
+    );
+    const outputs = runtime.takeOutputs();
+
+    expect(outputs).toContainEqual({
+      type: "action",
+      actionId: "child.run",
+      componentId: "space.test.child:child-1:child-window:shared-button"
+    });
+    expect(handledOutputs).toContainEqual({
+      type: "action",
+      actionId: "child.run",
+      componentId: "shared-button"
+    });
+    expect(outputs).toContainEqual({
+      type: "app-event",
+      componentId: "tablet-os",
+      appId: "space.test.child",
+      instanceId: "child-1",
+      windowId: "child-window",
+      event: {
+        type: "app-action",
+        appId: "space.test.child",
+        instanceId: "child-1",
+        windowId: "child-window",
+        name: "shared-button"
+      }
+    });
   });
 });
 

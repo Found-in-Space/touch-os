@@ -7,6 +7,7 @@ import {
   type DisplayComponent,
   type DisplayNode,
   createNode,
+  isDisplayEvent,
   isRuntimeOutputEvent
 } from "../core/component.js";
 import {
@@ -14,7 +15,11 @@ import {
   copyRect,
   copyInsets
 } from "../core/geometry.js";
-import { createWindow } from "../containers/window.js";
+import {
+  createWindow,
+  resolveWindowChromeHeight,
+  type WindowProps
+} from "../containers/window.js";
 import { createWindowLayer } from "../containers/window-layer.js";
 import type {
   OpenAppOptions,
@@ -23,8 +28,12 @@ import type {
 } from "../apps/context.js";
 import type { RuntimeServices } from "../services/contracts.js";
 import {
+  createHostedAppInputEvent,
   createWindowManagerAppWindow,
+  ensureHostedAppWindow,
+  publishHostedAppWindow,
   renderAppWindowContent,
+  scopeRuntimeOutput,
   stripRuntimeOutputScope,
   updateAppWindowSurface,
   type WindowManagerAppWindow
@@ -60,15 +69,7 @@ const WindowManagerComponent: DisplayComponent<WindowManagerProps, WindowManager
   getChildren(ctx) {
     syncAppWindows(ctx.state, ctx);
     const windows = getVisibleAppWindows(ctx).map((record) =>
-      createWindow(record.window.id, {
-        title: record.window.title,
-        rect: copyRect(record.window.rect),
-        zIndex: record.window.zIndex,
-        mode: mapTouchWindowModeToWindowMode(record.window.mode),
-        movable: record.window.movable,
-        controls: ctx.props.windowControls ?? DEFAULT_WINDOW_CONTROLS,
-        child: renderAppWindowContent(record, resolveAppState(ctx.props, record.window))
-      })
+      createWindowForRecord(ctx, record)
     );
 
     return [
@@ -104,6 +105,11 @@ const WindowManagerComponent: DisplayComponent<WindowManagerProps, WindowManager
     return [];
   },
   handleEvent(ctx) {
+    if (isDisplayEvent(ctx.event)) {
+      handleHostedDisplayEvent(ctx, ctx.event);
+      return;
+    }
+
     if (!isRuntimeOutputEvent(ctx.event)) {
       return;
     }
@@ -150,7 +156,9 @@ function syncAppWindows(
     const existing = state.records.get(window.id);
     if (
       existing &&
-      (existing.window.appId !== window.appId || existing.window.instanceId !== window.instanceId)
+      (existing.window.appId !== window.appId ||
+        existing.window.instanceId !== window.instanceId ||
+        existing.hostMode !== resolveAppHostMode(ctx.props))
     ) {
       closeRecord(existing);
       state.records.delete(window.id);
@@ -171,6 +179,7 @@ function syncAppWindows(
     record = createWindowManagerAppWindow({
       window,
       app: ctx.props.registry.get(window.appId),
+      hostMode: resolveAppHostMode(ctx.props),
       surface: createSurfaceContext(ctx, window),
       theme: ctx.services.theme,
       actions: {
@@ -264,6 +273,52 @@ function syncExistingRecord(
   };
 }
 
+function createWindowForRecord(
+  ctx: {
+    props: WindowManagerProps;
+    services: RuntimeServices;
+    emit(output: RuntimeOutput): void;
+    invalidateLayout(): void;
+  },
+  record: WindowManagerAppWindow
+): DisplayNode<WindowProps, unknown> {
+  syncAppWindowContent(ctx, record);
+  return createWindow(record.window.id, {
+    title: record.window.title,
+    rect: copyRect(record.window.rect),
+    zIndex: record.window.zIndex,
+    mode: mapTouchWindowModeToWindowMode(record.window.mode),
+    movable: record.window.movable,
+    controls: ctx.props.windowControls ?? DEFAULT_WINDOW_CONTROLS,
+    child: renderAppWindowContent(record, resolveAppState(ctx.props, record.window))
+  });
+}
+
+function syncAppWindowContent(
+  ctx: {
+    props: WindowManagerProps;
+    services: RuntimeServices;
+    emit(output: RuntimeOutput): void;
+    invalidateLayout(): void;
+  },
+  record: WindowManagerAppWindow
+): void {
+  if (record.hostMode !== "child-runtime" || !record.runtime || record.closed) {
+    return;
+  }
+
+  const surface = createSurfaceContext(ctx, record.window);
+  updateAppWindowSurface(record, surface);
+  ensureHostedAppWindow(record, {
+    root: record.runtime.render(resolveAppState(ctx.props, record.window)),
+    surface,
+    theme: ctx.services.theme,
+    surfaces: ctx.services.surfaces
+  });
+  flushHostedAppOutputs(ctx, record);
+  publishHostedAppWindow(record, ctx.services.surfaces);
+}
+
 function getVisibleAppWindows(ctx: {
   state: WindowManagerState;
 }): readonly WindowManagerAppWindow[] {
@@ -307,6 +362,85 @@ function handleWindowLayerOutput(
     window: record.window,
     output
   });
+}
+
+function handleHostedDisplayEvent(
+  ctx: {
+    state: WindowManagerState;
+    services: RuntimeServices;
+    props: WindowManagerProps;
+    emit(output: RuntimeOutput): void;
+    invalidateLayout(): void;
+  },
+  event: ComponentEvent
+): void {
+  for (const record of ctx.state.records.values()) {
+    if (!record.hosted || record.closed) {
+      continue;
+    }
+
+    if (event.type === "tick") {
+      record.hosted.runtime.tick(event.timestamp);
+      flushHostedAppOutputs(ctx, record);
+      publishHostedAppWindow(record, ctx.services.surfaces);
+      continue;
+    }
+
+    drainHostedForwardedInput(ctx, record);
+  }
+}
+
+function drainHostedForwardedInput(
+  ctx: {
+    services: RuntimeServices;
+    props: WindowManagerProps;
+    emit(output: RuntimeOutput): void;
+    invalidateLayout(): void;
+  },
+  record: WindowManagerAppWindow
+): void {
+  if (!record.hosted) {
+    return;
+  }
+
+  const attachment = ctx.services.surfaces.getAttachment(record.hostedSurfaceComponentId);
+  const forwardedEvents = attachment?.forwardedEvents ?? [];
+  if (record.forwardedEventCursor > forwardedEvents.length) {
+    record.forwardedEventCursor = 0;
+  }
+
+  const bounds = ctx.services.layout.getBounds(record.hostedSurfaceComponentId);
+  if (!bounds) {
+    record.forwardedEventCursor = forwardedEvents.length;
+    return;
+  }
+
+  const surface = createSurfaceContext(ctx, record.window);
+  for (const event of forwardedEvents.slice(record.forwardedEventCursor)) {
+    const input = createHostedAppInputEvent(event, bounds, surface);
+    if (input) {
+      record.hosted.runtime.dispatchInput(input);
+    }
+  }
+  record.forwardedEventCursor = forwardedEvents.length;
+  flushHostedAppOutputs(ctx, record);
+  publishHostedAppWindow(record, ctx.services.surfaces);
+}
+
+function flushHostedAppOutputs(
+  ctx: {
+    emit(output: RuntimeOutput): void;
+  },
+  record: WindowManagerAppWindow
+): void {
+  if (!record.hosted) {
+    return;
+  }
+
+  for (const output of record.hosted.runtime.takeOutputs()) {
+    ctx.emit(scopeRuntimeOutput(output, record.namespacePrefix));
+    record.runtime?.handleOutput(output);
+  }
 }
 
 function emitAppEvent(
@@ -385,6 +519,8 @@ function closeRecord(record: WindowManagerAppWindow): void {
     record.active = false;
   }
   record.runtime?.close();
+  record.hosted?.runtime.dispose();
+  record.hosted = undefined;
   record.closed = true;
   record.window.focused = false;
 }
@@ -418,6 +554,10 @@ function resolveAppState(props: WindowManagerProps, window: TouchWindowState): u
   return props.appStates?.[window.instanceId] ?? props.appStates?.[window.id];
 }
 
+function resolveAppHostMode(props: WindowManagerProps): "same-runtime" | "child-runtime" {
+  return props.appHostMode ?? "same-runtime";
+}
+
 function createSurfaceContext(
   ctx: {
     services: RuntimeServices;
@@ -425,9 +565,10 @@ function createSurfaceContext(
   window: TouchWindowState
 ): TouchAppSurfaceContext {
   const metrics = ctx.services.surface.getMetrics();
+  const chromeHeight = resolveWindowChromeHeight(ctx.services.theme.getTokens());
   return {
     width: window.rect.width,
-    height: window.rect.height,
+    height: Math.max(0, window.rect.height - chromeHeight),
     pixelDensity: metrics.pixelDensity,
     safeArea: metrics.safeArea ? copyInsets(metrics.safeArea) : ZERO_INSETS
   };

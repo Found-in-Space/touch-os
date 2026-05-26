@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createRuntime } from "../src/index.js";
-import type { TextDrawCommand } from "../src/core/draw.js";
+import type { DrawCommand, SurfaceDrawCommand, TextDrawCommand } from "../src/core/draw.js";
 import {
   createXrHudRoot,
   createWallPictureRoot,
@@ -80,7 +80,8 @@ describe("living room panel ui", () => {
       theme: getWallPictureTheme()
     });
 
-    const texts = collectTexts(runtime.render().commands);
+    const snapshot = runtime.render();
+    const texts = collectTexts(snapshot.commands);
     expect(texts).toContain("Picture offline");
     expect(texts).not.toContain("Mirror offline");
   });
@@ -93,7 +94,8 @@ describe("living room panel ui", () => {
       theme: getRoomPanelTheme("arm")
     });
 
-    const texts = collectTexts(runtime.render().commands);
+    const snapshot = runtime.render();
+    const texts = collectTexts(snapshot.commands);
     expect(texts).toContain("Movement");
     expect(texts).toContain("Settings");
     expect(texts).toContain("Rear View");
@@ -114,21 +116,34 @@ describe("living room panel ui", () => {
 
     const movementDpadId =
       "space.found.living-room.movement:movement:arm-movement-window:movement-dpad";
-    const movementDpadBounds = runtime.getBounds(movementDpadId);
-    expect(movementDpadBounds).toBeDefined();
+    const movementSurface = findSurfaceCommand(
+      snapshot.commands,
+      "space.found.living-room.movement:movement:arm-movement-window:surface"
+    );
+    expect(movementSurface).toBeDefined();
+    const movementHandle = movementSurface ? getHostedSnapshotHandle(movementSurface) : undefined;
+    const dpadUp = movementHandle?.snapshot.commands.find(
+      (command): command is Extract<DrawCommand, { type: "rect" }> =>
+        command.type === "rect" && command.componentId === "movement-dpad" && command.role === "d-pad-up"
+    );
+    expect(dpadUp).toBeDefined();
     expect(
-      runtime.getBounds(
-        "space.found.living-room.rear-view:rear-view:arm-rear-view-window:rear-view-surface"
+      findSurfaceCommand(
+        snapshot.commands,
+        "space.found.living-room.rear-view:rear-view:arm-rear-view-window:surface"
       )
     ).toBeDefined();
 
-    if (!movementDpadBounds) {
-      throw new Error("Expected the arm movement d-pad to be mounted.");
+    if (!movementSurface || !movementHandle || !dpadUp) {
+      throw new Error("Expected the arm movement app to be hosted as an embedded child runtime.");
     }
+
+    const dpadUpCenterX = dpadUp.rect.x + dpadUp.rect.width / 2;
+    const dpadUpCenterY = dpadUp.rect.y + dpadUp.rect.height / 2;
     pressAt(
       runtime,
-      movementDpadBounds.x + movementDpadBounds.width / 2,
-      movementDpadBounds.y + movementDpadBounds.height / 6
+      movementSurface.rect.x + (dpadUpCenterX / movementHandle.width) * movementSurface.rect.width,
+      movementSurface.rect.y + (dpadUpCenterY / movementHandle.height) * movementSurface.rect.height
     );
 
     expect(runtime.takeOutputs()).toContainEqual({
@@ -142,6 +157,37 @@ describe("living room panel ui", () => {
     });
   });
 });
+
+function findSurfaceCommand(
+  commands: readonly DrawCommand[],
+  componentId: string
+): SurfaceDrawCommand | undefined {
+  return commands.find(
+    (command): command is SurfaceDrawCommand =>
+      command.type === "surface" &&
+      command.role === "embedded-surface-viewport" &&
+      command.componentId === componentId
+  );
+}
+
+function getHostedSnapshotHandle(command: SurfaceDrawCommand): {
+  width: number;
+  height: number;
+  snapshot: { commands: readonly DrawCommand[] };
+} | undefined {
+  if (
+    typeof command.handle === "object" &&
+    command.handle !== null &&
+    (command.handle as { kind?: unknown }).kind === "touch-os-render-snapshot"
+  ) {
+    return command.handle as {
+      width: number;
+      height: number;
+      snapshot: { commands: readonly DrawCommand[] };
+    };
+  }
+  return undefined;
+}
 
 function collectTexts(commands: readonly { type: string }[]): string[] {
   return commands

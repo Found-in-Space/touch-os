@@ -20,6 +20,8 @@ import type { WindowControl } from "../containers/window.js";
 
 export type TouchWindowMode = "normal" | "minimized" | "maximized" | "fullscreen";
 
+export type WindowManagerAppHostMode = "same-runtime" | "child-runtime";
+
 export interface TouchWindowState {
   id: string;
   appId: string;
@@ -54,6 +56,7 @@ export interface WindowManagerProps {
   windows: readonly TouchWindowState[];
   launcher?: boolean;
   taskSwitcher?: boolean;
+  appHostMode?: WindowManagerAppHostMode;
   pointerOpaque?: boolean;
   constraintPadding?: number | Partial<Insets>;
   focusOnPress?: boolean;

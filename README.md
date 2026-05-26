@@ -18,7 +18,7 @@ The runtime stays headless and display-space-only. Hosts own environment-specifi
 - a small set of generic built-in components and containers
 - runtime services for layout, navigation, focus, scroll, theme, timing, bitmap assets, and embedded surfaces
 - standardized app manifest, lifecycle, context, and registry contracts
-- a same-runtime window manager for hosting registered apps inside surface-local windows
+- a window manager for hosting registered apps in same-runtime or child-runtime surface-local windows
 - a generic multi-panel coordination helper for ordered routing and pointer ownership
 - a Three.js host package with scene, pose-anchored, tablet, and HUD panel helpers
 - host-side pointer interop helpers for screen, ray, surface, and direct-contact input
@@ -171,7 +171,7 @@ Shipped now:
 - embedded-surface composition through copy or host-composited surface commands
 - movable surface-local windows with drag handles, focus/z-order, clamping, and window-state-change outputs
 - app bundle contracts for manifests, lifecycle hooks, app context, registries, and instance wrappers
-- same-runtime app windows through `createWindowManager`, with scoped app component IDs and app/window-manager outputs
+- same-runtime and child-runtime app windows through `createWindowManager`, with scoped app outputs and app/window-manager events
 - panel coordination for ordered multi-panel routing, fallthrough, lower-priority clearing, and pointer-scoped ownership
 - optional schema authoring for text, button, toggle, slider, choice group, value readout, and action card documents
 

@@ -101,15 +101,18 @@ This is standardized packaging and lifecycle support for trusted same-runtime ap
 
 Shipped in `@found-in-space/touch-os/window-manager`:
 
-- `createWindowManager` for hosting registered apps inside one panel runtime
+- `createWindowManager` for hosting registered apps inside panel windows
 - `TouchWindowState` and `WindowManagerProps` contracts for app windows
+- `appHostMode: "same-runtime" | "child-runtime"` for choosing the app hosting model
 - same-runtime app rendering through `createWindowLayer` and `createWindow`
 - app root id namespacing before mounting, so multiple apps can reuse local component ids safely
+- child-runtime app rendering through embedded surfaces, with one `DisplayRuntime` per app window
+- forwarded embedded-surface input translated into child-runtime display-space input
 - app output forwarding that strips the namespace before invoking the app instance's `handleOutput`
 - `app-event` outputs for events emitted through `ctx.actions.emit(...)`
 - `window-manager-change` outputs for title, close, resize, open-app, and window-state changes
 
-This is the first app-hosting phase. App windows share one runtime and are intended for trusted apps; child-runtime isolation remains future work.
+Same-runtime mode is still the simplest path for first-party panels. Child-runtime mode isolates app focus, scroll, navigation, and local component ids while still running trusted app code in the same JavaScript environment.
 
 ## Runtime Services
 

@@ -141,6 +141,7 @@ They own:
 - window state for app instances
 - focus, title, close, resize, and open-app requests
 - namespacing app component ids before mounting app trees into a shared runtime
+- optional child runtimes for isolated app focus, scroll, navigation, and local component ids
 
 They do not own:
 
@@ -149,7 +150,7 @@ They do not own:
 - host rendering
 - security sandboxing for untrusted code
 
-The first implementation hosts app trees inside the panel runtime. Future child-runtime app windows can use the same public app contract while moving app content into isolated runtimes and embedded surfaces.
+The window manager supports two host modes. Same-runtime windows mount app trees inside the panel runtime and scope app component ids. Child-runtime windows give each app window its own `DisplayRuntime`, publish that runtime's render snapshot through an embedded surface, and forward viewport input into the child runtime in window-local coordinates.
 
 ### 6. Hosts
 

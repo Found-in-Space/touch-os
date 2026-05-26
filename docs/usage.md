@@ -165,7 +165,7 @@ The app bundle contract is standardized packaging and lifecycle for trusted same
 
 ## Host Apps In A Window Manager
 
-Use `createWindowManager` when a panel should behave like an app host. The first implementation renders registered app roots inside the same runtime and scopes app component ids before mounting them.
+Use `createWindowManager` when a panel should behave like an app host. Same-runtime mode renders registered app roots inside the panel runtime and scopes app component ids before mounting them.
 
 ```ts
 import {
@@ -178,6 +178,7 @@ const registry = createTouchAppRegistry([SettingsApp]);
 
 const root = createWindowManager("tablet-os", {
   registry,
+  appHostMode: "same-runtime",
   windows: [
     {
       id: "settings-window",
@@ -200,7 +201,17 @@ const runtime = createRuntime({
 });
 ```
 
-The manager forwards app outputs to each app instance after stripping the app namespace, so apps can continue to use local ids such as `"settings-sync"`. Hosts consume normal runtime outputs: app events arrive as `app-event`, and window manager requests arrive as `window-manager-change`.
+For OS-style isolation, switch to child-runtime mode:
+
+```ts
+const root = createWindowManager("tablet-os", {
+  registry,
+  appHostMode: "child-runtime",
+  windows
+});
+```
+
+In child-runtime mode, each app window owns a `DisplayRuntime`. The manager publishes each child runtime as an embedded surface and forwards viewport input into the child runtime in window-local coordinates. App instances still receive local ids such as `"settings-sync"` in `handleOutput`, while hosts consume normal runtime outputs: app events arrive as `app-event`, and window manager requests arrive as `window-manager-change`.
 
 ## Feed Input And Consume Outputs
 

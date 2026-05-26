@@ -335,6 +335,7 @@ function createArmWindowManagerRoot(
 
   return createWindowManager("arm-os", {
     registry: ARM_APP_REGISTRY,
+    appHostMode: "child-runtime",
     pointerOpaque: true,
     constraintPadding: 4,
     focusOnPress: true,

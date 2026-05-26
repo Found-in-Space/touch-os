@@ -14,6 +14,7 @@ export interface EmbeddedSurfaceProps {
   interactive?: boolean;
   preserveAspectRatio?: boolean;
   mirrorX?: boolean;
+  viewportPadding?: number;
   acceptsForwardedInput?: boolean;
   desiredSourceType?: string;
   refreshPolicy?: "manual" | "always";
@@ -62,7 +63,7 @@ const EmbeddedSurfaceComponent: DisplayComponent<EmbeddedSurfaceProps, EmbeddedS
     const attachment = ctx.services.surfaces.getAttachment(ctx.id);
     const viewportRect = getViewportRect(
       ctx.bounds,
-      theme.padding,
+      ctx.props.viewportPadding ?? theme.padding,
       Boolean(ctx.props.title),
       attachment?.preserveAspectRatio ?? ctx.props.preserveAspectRatio ?? true,
       attachment?.aspectRatio
@@ -190,7 +191,7 @@ const EmbeddedSurfaceComponent: DisplayComponent<EmbeddedSurfaceProps, EmbeddedS
     const attachment = ctx.services.surfaces.getAttachment(ctx.id);
     const viewportRect = getViewportRect(
       ctx.bounds,
-      theme.padding,
+      ctx.props.viewportPadding ?? theme.padding,
       Boolean(ctx.props.title),
       attachment?.preserveAspectRatio ?? ctx.props.preserveAspectRatio ?? true,
       attachment?.aspectRatio
@@ -210,6 +211,9 @@ const EmbeddedSurfaceComponent: DisplayComponent<EmbeddedSurfaceProps, EmbeddedS
       case "pointer-enter":
       case "pointer-move":
         ctx.state.hoveredTargetId = ctx.event.targetId;
+        if (ctx.event.type === "pointer-move") {
+          forwardViewportInput(ctx);
+        }
         break;
       case "pointer-leave":
         ctx.state.hoveredTargetId = undefined;
@@ -217,17 +221,12 @@ const EmbeddedSurfaceComponent: DisplayComponent<EmbeddedSurfaceProps, EmbeddedS
         break;
       case "pointer-down":
         ctx.state.pressedTargetId = ctx.event.targetId;
-        if (
-          ctx.event.targetId === `${ctx.id}:viewport` &&
-          ctx.props.interactive &&
-          ctx.props.acceptsForwardedInput
-        ) {
-          ctx.services.surfaces.forwardEvent(ctx.id, ctx.event);
-        }
+        forwardViewportInput(ctx);
         break;
       case "pointer-up":
       case "cancel":
         ctx.state.pressedTargetId = undefined;
+        forwardViewportInput(ctx);
         break;
       case "press":
         if (ctx.event.targetId === `${ctx.id}:dismiss`) {
@@ -318,6 +317,20 @@ function getDismissRect(bounds: Rect, padding: number): Rect {
 
 function isEmbeddedSurfaceFocusable(props: EmbeddedSurfaceProps): boolean {
   return Boolean(props.dismissible || props.interactive);
+}
+
+function forwardViewportInput(
+  ctx: Parameters<NonNullable<typeof EmbeddedSurfaceComponent.handleEvent>>[0]
+): void {
+  if (
+    isDisplayEvent(ctx.event) &&
+    "targetId" in ctx.event &&
+    ctx.event.targetId === `${ctx.id}:viewport` &&
+    ctx.props.interactive &&
+    ctx.props.acceptsForwardedInput
+  ) {
+    ctx.services.surfaces.forwardEvent(ctx.id, ctx.event);
+  }
 }
 
 function resolveEmbeddedSurfaceDefaultTargetId(
