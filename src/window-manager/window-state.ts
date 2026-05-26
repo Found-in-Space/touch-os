@@ -1,5 +1,6 @@
 import type {
   WindowManagerChangeEvent,
+  WindowMode,
   WindowStateChangeEvent
 } from "../core/actions.js";
 import {
@@ -53,7 +54,7 @@ export interface WindowManagerChange {
 
 export interface WindowManagerProps {
   registry: TouchAppRegistry;
-  windows: readonly TouchWindowState[];
+  initialWindows?: readonly TouchWindowState[];
   launcher?: boolean;
   taskSwitcher?: boolean;
   appHostMode?: WindowManagerAppHostMode;
@@ -151,6 +152,6 @@ export function createWindowManagerChangeOutput(
 
 export function mapTouchWindowModeToWindowMode(
   mode: TouchWindowMode
-): "normal" | "minimized" | "maximized" {
-  return mode === "fullscreen" ? "maximized" : mode;
+): Exclude<WindowMode, "closed"> {
+  return mode;
 }

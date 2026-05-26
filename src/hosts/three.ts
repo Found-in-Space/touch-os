@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { RuntimeOutput } from "../core/actions.js";
 import type { DisplayRuntime } from "../core/runtime.js";
 import type {
   BitmapDrawCommand,
@@ -18,6 +19,7 @@ import {
 } from "../core/events.js";
 import type { Rect } from "../core/geometry.js";
 import type { SurfaceMetrics } from "../services/contracts.js";
+import type { CoordinatedPanel } from "../coordination/index.js";
 import type { HostAdapter } from "./contracts.js";
 
 export interface CanvasMeasureTextResult {
@@ -331,6 +333,33 @@ export interface ThreePanelDriver extends HostAdapter<ThreePanelHostFrame> {
   getCompositeSurfaces(): readonly SurfaceDrawCommand[];
   getPointerState(pointerId: string): PointerPresentationState | undefined;
   clearPointer(pointerId?: string): void;
+}
+
+export type ThreePanelSessionOutputHandler = (
+  output: RuntimeOutput,
+  session: ThreePanelSession
+) => void;
+
+export interface ThreePanelSessionOptions {
+  key: string;
+  runtime: DisplayRuntime;
+  driver: ThreePanelDriver;
+  enabled?: boolean;
+  outputHandler?: ThreePanelSessionOutputHandler;
+}
+
+export interface ThreePanelSession
+  extends CoordinatedPanel<ThreePointerSample, ThreePanelHostFrame> {
+  readonly runtime: DisplayRuntime;
+  readonly driver: ThreePanelDriver;
+  enabled: boolean;
+  attach(): void;
+  update(frame: ThreePanelHostFrame): void;
+  render(): RenderSnapshot;
+  hide(): void;
+  dispose(): void;
+  flushOutputs(): void;
+  getPointerState(pointerId: string): PointerPresentationState | undefined;
 }
 
 export type ThreePanelMesh = THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
@@ -1058,6 +1087,71 @@ export function createHudPanelDriver(options: HudPanelDriverOptions): ThreePanel
     options.pointerSources,
     options.pointerPresenter
   );
+}
+
+export function createThreePanelSession(options: ThreePanelSessionOptions): ThreePanelSession {
+  const session: ThreePanelSession = {
+    key: options.key,
+    runtime: options.runtime,
+    driver: options.driver,
+    enabled: options.enabled ?? true,
+    attach() {
+      options.driver.attach();
+    },
+    update(frame) {
+      if (!session.enabled) {
+        session.hide();
+        return;
+      }
+      options.driver.update(frame);
+      session.flushOutputs();
+    },
+    render() {
+      const snapshot = options.driver.render();
+      session.flushOutputs();
+      return snapshot;
+    },
+    hide() {
+      options.driver.clearPointer();
+      options.driver.host.mesh.visible = false;
+    },
+    dispose() {
+      options.driver.detach();
+    },
+    process(sample, frame) {
+      if (!session.enabled) {
+        options.driver.clearPointer(sample.pointerId);
+        return {
+          claimed: false,
+          blocked: false
+        };
+      }
+
+      const result = options.driver.interactor.process(sample, frame);
+      session.flushOutputs();
+      return {
+        claimed: result.claimed,
+        blocked: result.blocked
+      };
+    },
+    clearPointer(pointerId) {
+      options.driver.clearPointer(pointerId);
+    },
+    flushOutputs() {
+      if (!options.outputHandler) {
+        return;
+      }
+
+      for (const output of options.runtime.takeOutputs()) {
+        options.outputHandler(output, session);
+      }
+    },
+    getPointerState(pointerId) {
+      return options.driver.getPointerState(pointerId);
+    }
+  };
+
+  return session;
 }
 
 function resolveSurfaceMetrics(

@@ -103,11 +103,13 @@ Shipped in `@found-in-space/touch-os/window-manager`:
 
 - `createWindowManager` for hosting registered apps inside panel windows
 - `TouchWindowState` and `WindowManagerProps` contracts for app windows
+- `initialWindows` seeding, with live window state owned by the mounted manager session
+- built-in launcher and task switcher windows backed by the app registry and running windows
 - `appHostMode: "same-runtime" | "child-runtime"` for choosing the app hosting model
 - same-runtime app rendering through `createWindowLayer` and `createWindow`
 - app root id namespacing before mounting, so multiple apps can reuse local component ids safely
 - child-runtime app rendering through embedded surfaces, with one `DisplayRuntime` per app window
-- forwarded embedded-surface input translated into child-runtime display-space input
+- draining forwarded embedded-surface input translated into child-runtime display-space input
 - app output forwarding that strips the namespace before invoking the app instance's `handleOutput`
 - `app-event` outputs for events emitted through `ctx.actions.emit(...)`
 - `window-manager-change` outputs for title, close, resize, open-app, and window-state changes
@@ -186,6 +188,7 @@ Shipped in `@found-in-space/touch-os/hosts/three`:
 - `createScenePanelDriver`
 - `createPoseAnchoredPanelDriver`
 - `createHudPanelDriver`
+- `createThreePanelSession`
 - `createPanelInteractor`
 - `createScreenPointerSource`
 - `createXrRayPointerSource`
@@ -196,6 +199,7 @@ Current Three.js host coverage includes:
 - scene-mounted panels
 - explicit-pose attached panels
 - tablet and HUD helpers
+- reusable session orchestration for panel update, render, pointer routing, and output flushing
 - screen, ray, surface, and direct-contact pointer transport
 - pointer claim and blocking policies
 - pluggable pointer presentation integration

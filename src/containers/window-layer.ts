@@ -24,6 +24,7 @@ import {
 import { resolvePadding, resolvePointerOpaqueHit, type PointerOpaqueProps } from "./shared.js";
 import {
   isWindowDragHandleTargetId,
+  isWindowResizeHandleTargetId,
   resolveWindowChromeHeight,
   resolveWindowControlFromTargetId,
   type WindowControl,
@@ -44,11 +45,15 @@ interface WindowLayerEntry {
   focused: boolean;
   previousRect: Rect | undefined;
   sourceIndex: number;
+  sourceRect: Rect;
+  sourceZIndex: number;
+  sourceMode: WindowMode;
 }
 
 interface WindowDragState {
   windowId: string;
   pointerId: string;
+  kind: "move" | "resize";
   startPoint: Point;
   startRect: Rect;
   active: boolean;
@@ -85,7 +90,13 @@ const WindowLayerComponent: DisplayComponent<WindowLayerProps, WindowLayerState>
     );
     for (const window of getOrderedVisibleWindows(ctx.props, ctx.state)) {
       const entry = getRequiredEntry(ctx.state, window.id);
-      const rect = resolveWindowLayoutRect(entry, constraint, chromeHeight);
+      const rect = resolveWindowLayoutRect(
+        entry,
+        window,
+        constraint,
+        createFullscreenRect(createRect(0, 0, ctx.constraints.maxWidth, ctx.constraints.maxHeight)),
+        chromeHeight
+      );
       ctx.measureChild(window.id, {
         minWidth: 0,
         minHeight: 0,
@@ -103,14 +114,21 @@ const WindowLayerComponent: DisplayComponent<WindowLayerProps, WindowLayerState>
     syncWindowEntries(ctx.state, ctx.props);
     const chromeHeight = resolveWindowChromeHeight(ctx.services.theme.getTokens());
     const constraint = createLocalConstraintRect(ctx.bounds, ctx.props.constraintPadding);
+    const fullscreenConstraint = createFullscreenRect(ctx.bounds);
     for (const window of getOrderedVisibleWindows(ctx.props, ctx.state)) {
       const entry = getRequiredEntry(ctx.state, window.id);
-      const clamped = clampWindowRect(entry.rect, constraint);
+      const clamped = clampWindowRect(entry.rect, window.props, constraint);
       if (!rectsEqual(entry.rect, clamped)) {
         entry.rect = clamped;
       }
 
-      const localRect = resolveWindowLayoutRect(entry, constraint, chromeHeight);
+      const localRect = resolveWindowLayoutRect(
+        entry,
+        window,
+        constraint,
+        fullscreenConstraint,
+        chromeHeight
+      );
       ctx.setChildBounds(
         window.id,
         createRect(
@@ -200,18 +218,18 @@ function handlePointerDown(ctx: {
   if (
     !window ||
     !entry ||
-    entry.mode === "closed" ||
-    entry.mode === "maximized" ||
-    (window.props.movable ?? true) === false ||
-    !isWindowDragHandleTargetId(windowId, ctx.event.targetId)
+    entry.mode !== "normal" ||
+    !isSupportedDragTarget(window, windowId, ctx.event.targetId)
   ) {
     return;
   }
 
+  const kind = isWindowResizeHandleTargetId(windowId, ctx.event.targetId) ? "resize" : "move";
   const pointerId = ctx.event.pointerId ?? "default";
   ctx.state.drags.set(pointerId, {
     windowId,
     pointerId,
+    kind,
     startPoint: createPoint(ctx.event.surfaceX, ctx.event.surfaceY),
     startRect: copyRect(entry.rect),
     active: false
@@ -239,7 +257,7 @@ function handleDragMove(ctx: {
   }
 
   drag.active = true;
-  applyDraggedRect(ctx, drag, ctx.event.surfaceX, ctx.event.surfaceY);
+  applyDragChange(ctx, drag, ctx.event.surfaceX, ctx.event.surfaceY);
 }
 
 function handlePointerUp(ctx: {
@@ -259,7 +277,7 @@ function handlePointerUp(ctx: {
   const pointerId = ctx.event.pointerId ?? "default";
   const drag = ctx.state.drags.get(pointerId);
   if (drag?.active) {
-    applyDraggedRect(ctx, drag, ctx.event.surfaceX, ctx.event.surfaceY);
+    applyDragChange(ctx, drag, ctx.event.surfaceX, ctx.event.surfaceY);
   }
   clearDrag(ctx.state, pointerId);
 }
@@ -291,7 +309,7 @@ function handlePress(ctx: {
   applyControl(ctx, windowId, control);
 }
 
-function applyDraggedRect(
+function applyDragChange(
   ctx: {
     id: string;
     props: WindowLayerProps;
@@ -313,16 +331,26 @@ function applyDraggedRect(
   }
 
   const constraint = createLocalConstraintRect(ctx.bounds, ctx.props.constraintPadding);
+  const deltaX = surfaceX - drag.startPoint.x;
+  const deltaY = surfaceY - drag.startPoint.y;
   const next = clampWindowRect(
-    createRect(
-      drag.startRect.x + surfaceX - drag.startPoint.x,
-      drag.startRect.y + surfaceY - drag.startPoint.y,
-      drag.startRect.width,
-      drag.startRect.height
-    ),
+    drag.kind === "resize"
+      ? createRect(
+          drag.startRect.x,
+          drag.startRect.y,
+          drag.startRect.width + deltaX,
+          drag.startRect.height + deltaY
+        )
+      : createRect(
+          drag.startRect.x + deltaX,
+          drag.startRect.y + deltaY,
+          drag.startRect.width,
+          drag.startRect.height
+        ),
+    window.props,
     constraint
   );
-  applyRectChange(ctx, window, entry, next, "move");
+  applyRectChange(ctx, window, entry, next, drag.kind === "resize" ? "resize" : "move");
 }
 
 function applyControl(
@@ -344,7 +372,7 @@ function applyControl(
     return;
   }
 
-  const previousRect = resolveCurrentOutputRect(ctx, entry);
+  const previousRect = resolveCurrentOutputRect(ctx, window, entry);
   const previousMode = entry.mode;
   switch (control) {
     case "close":
@@ -380,6 +408,22 @@ function applyControl(
         emitWindowStateChange(ctx, window, entry, "maximize", previousRect, previousMode);
       }
       break;
+    case "fullscreen":
+      if (entry.mode === "fullscreen") {
+        entry.mode = "normal";
+        if (entry.previousRect) {
+          entry.rect = entry.previousRect;
+          entry.previousRect = undefined;
+        }
+        ctx.invalidateLayout();
+        emitWindowStateChange(ctx, window, entry, "restore", previousRect, previousMode);
+      } else {
+        entry.previousRect = copyRect(entry.rect);
+        entry.mode = "fullscreen";
+        ctx.invalidateLayout();
+        emitWindowStateChange(ctx, window, entry, "fullscreen", previousRect, previousMode);
+      }
+      break;
   }
 }
 
@@ -401,7 +445,7 @@ function focusWindow(
     return;
   }
 
-  const previousRect = resolveCurrentOutputRect(ctx, entry);
+  const previousRect = resolveCurrentOutputRect(ctx, window, entry);
   const previousZIndex = entry.zIndex;
   let changed = false;
   for (const candidate of ctx.state.entries.values()) {
@@ -446,7 +490,7 @@ function applyRectChange(
     return;
   }
 
-  const previousRect = resolveCurrentOutputRect(ctx, entry);
+  const previousRect = resolveCurrentOutputRect(ctx, window, entry);
   entry.rect = next;
   ctx.invalidateLayout();
   emitWindowStateChange(ctx, window, entry, change, previousRect, entry.mode);
@@ -472,7 +516,7 @@ function emitWindowStateChange(
     componentId: ctx.id,
     windowId: entry.id,
     change,
-    rect: resolveCurrentOutputRect(ctx, entry),
+    rect: resolveCurrentOutputRect(ctx, window, entry),
     zIndex: entry.zIndex,
     focused: entry.focused,
     mode: entry.mode
@@ -501,23 +545,57 @@ function syncWindowEntries(state: WindowLayerState, props: WindowLayerProps): vo
     const existing = state.entries.get(window.id);
     if (existing) {
       existing.sourceIndex = index;
+      syncEntryFromChangedSourceProps(existing, window, index);
       return;
     }
 
+    const rect = sanitizeRect(window.props.rect);
+    const zIndex = window.props.zIndex ?? index;
+    const mode = window.props.mode ?? "normal";
     state.entries.set(window.id, {
       id: window.id,
-      rect: sanitizeRect(window.props.rect),
-      zIndex: window.props.zIndex ?? index,
-      mode: window.props.mode ?? "normal",
+      rect,
+      zIndex,
+      mode,
       focused: false,
       previousRect: undefined,
-      sourceIndex: index
+      sourceIndex: index,
+      sourceRect: copyRect(rect),
+      sourceZIndex: zIndex,
+      sourceMode: mode
     });
   });
 
   for (const id of state.entries.keys()) {
     if (!activeIds.has(id)) {
       state.entries.delete(id);
+    }
+  }
+}
+
+function syncEntryFromChangedSourceProps(
+  entry: WindowLayerEntry,
+  window: DisplayNode<WindowProps, unknown>,
+  index: number
+): void {
+  const nextRect = sanitizeRect(window.props.rect);
+  if (!rectsEqual(nextRect, entry.sourceRect)) {
+    entry.rect = nextRect;
+    entry.sourceRect = copyRect(nextRect);
+  }
+
+  const nextZIndex = window.props.zIndex ?? index;
+  if (nextZIndex !== entry.sourceZIndex) {
+    entry.zIndex = nextZIndex;
+    entry.sourceZIndex = nextZIndex;
+  }
+
+  const nextMode = window.props.mode ?? "normal";
+  if (nextMode !== entry.sourceMode) {
+    entry.mode = nextMode;
+    entry.sourceMode = nextMode;
+    if (nextMode === "normal") {
+      entry.previousRect = undefined;
     }
   }
 }
@@ -565,11 +643,12 @@ function findTopWindowAtPoint(
   chromeHeight: number
 ): string | undefined {
   const constraint = createLocalConstraintRect(bounds, props.constraintPadding);
+  const fullscreenConstraint = createFullscreenRect(bounds);
   const windows = [...getOrderedVisibleWindows(props, state)].reverse();
   return windows.find((window) => {
     const entry = state.entries.get(window.id);
     return entry
-      ? rectContainsPoint(resolveWindowLayoutRect(entry, constraint, chromeHeight), point)
+      ? rectContainsPoint(resolveWindowLayoutRect(entry, window, constraint, fullscreenConstraint, chromeHeight), point)
       : false;
   })?.id;
 }
@@ -584,21 +663,25 @@ function createLocalConstraintRect(
 
 function resolveWindowLayoutRect(
   entry: WindowLayerEntry,
+  window: DisplayNode<WindowProps, unknown>,
   constraint: Rect,
+  fullscreenConstraint: Rect,
   chromeHeight: number
 ): Rect {
   switch (entry.mode) {
     case "maximized":
       return copyRect(constraint);
+    case "fullscreen":
+      return copyRect(fullscreenConstraint);
     case "minimized": {
-      const rect = clampWindowRect(entry.rect, constraint);
+      const rect = clampWindowRect(entry.rect, window.props, constraint);
       return createRect(rect.x, rect.y, rect.width, Math.min(rect.height, chromeHeight));
     }
     case "closed":
       return createRect(entry.rect.x, entry.rect.y, 0, 0);
     case "normal":
     default:
-      return clampWindowRect(entry.rect, constraint);
+      return clampWindowRect(entry.rect, window.props, constraint);
   }
 }
 
@@ -608,24 +691,48 @@ function resolveCurrentOutputRect(
     props: WindowLayerProps;
     services: { theme: { getTokens(): { controlHeight: number } } };
   },
+  window: DisplayNode<WindowProps, unknown>,
   entry: WindowLayerEntry
 ): Rect {
+  const constraint = createLocalConstraintRect(ctx.bounds, ctx.props.constraintPadding);
   return resolveWindowLayoutRect(
     entry,
-    createLocalConstraintRect(ctx.bounds, ctx.props.constraintPadding),
+    window,
+    constraint,
+    createFullscreenRect(ctx.bounds),
     resolveWindowChromeHeight(ctx.services.theme.getTokens())
   );
 }
 
-function clampWindowRect(rect: Rect, constraint: Rect): Rect {
-  const width = Math.min(Math.max(0, rect.width), constraint.width);
-  const height = Math.min(Math.max(0, rect.height), constraint.height);
+function clampWindowRect(rect: Rect, props: WindowProps, constraint: Rect): Rect {
+  const minWidth = Math.max(0, props.minSize?.width ?? 0);
+  const minHeight = Math.max(0, props.minSize?.height ?? 0);
+  const maxWidth = Math.max(minWidth, props.maxSize?.width ?? constraint.width);
+  const maxHeight = Math.max(minHeight, props.maxSize?.height ?? constraint.height);
+  const width = Math.min(Math.max(minWidth, rect.width), Math.min(maxWidth, constraint.width));
+  const height = Math.min(Math.max(minHeight, rect.height), Math.min(maxHeight, constraint.height));
   return createRect(
     clamp(rect.x, constraint.x, constraint.x + Math.max(0, constraint.width - width)),
     clamp(rect.y, constraint.y, constraint.y + Math.max(0, constraint.height - height)),
     width,
     height
   );
+}
+
+function createFullscreenRect(bounds: Pick<Rect, "width" | "height">): Rect {
+  return createRect(0, 0, bounds.width, bounds.height);
+}
+
+function isSupportedDragTarget(
+  window: DisplayNode<WindowProps, unknown>,
+  windowId: string,
+  targetId: string
+): boolean {
+  if ((window.props.resizable ?? false) && isWindowResizeHandleTargetId(windowId, targetId)) {
+    return true;
+  }
+
+  return (window.props.movable ?? true) !== false && isWindowDragHandleTargetId(windowId, targetId);
 }
 
 function sanitizeRect(rect: Rect): Rect {

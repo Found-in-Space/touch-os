@@ -6,7 +6,8 @@ import {
 import {
   createRect,
   rectContainsPoint,
-  type Rect
+  type Rect,
+  type Size
 } from "../core/geometry.js";
 import type { DrawCommand } from "../core/draw.js";
 import type { WindowMode } from "../core/actions.js";
@@ -18,7 +19,7 @@ export type WindowDragHandle = "none" | "top" | "bottom";
 
 export type WindowHandleVisibility = "always" | "hover" | "focus" | "dragging";
 
-export type WindowControl = "close" | "minimize" | "maximize";
+export type WindowControl = "close" | "minimize" | "maximize" | "fullscreen";
 
 export interface WindowProps {
   child: DisplayNode<unknown, unknown>;
@@ -27,6 +28,9 @@ export interface WindowProps {
   zIndex?: number;
   mode?: WindowMode;
   movable?: boolean;
+  resizable?: boolean;
+  minSize?: Size;
+  maxSize?: Size;
   dragHandle?: WindowDragHandle;
   handleVisibility?: WindowHandleVisibility;
   controls?: readonly WindowControl[];
@@ -42,6 +46,7 @@ interface WindowInteractionState {
 }
 
 const CONTROL_TARGET_PREFIX = "control:";
+const RESIZE_HANDLE_TARGET_SUFFIX = ":resize-handle";
 
 const WindowComponent: DisplayComponent<WindowProps, WindowInteractionState> = {
   kind: "window",
@@ -74,10 +79,14 @@ const WindowComponent: DisplayComponent<WindowProps, WindowInteractionState> = {
   },
   layout(ctx) {
     const chromeHeight = resolveWindowChromeHeight(ctx.services.theme.getTokens());
-    const contentRect = resolveWindowContentRect(
+    const contentRect = reserveResizeHandleSpace(
+      resolveWindowContentRect(
+        ctx.bounds,
+        chromeHeight,
+        resolveWindowChromeEdge(ctx.props)
+      ),
       ctx.bounds,
-      chromeHeight,
-      resolveWindowChromeEdge(ctx.props)
+      ctx.props
     );
     ctx.setChildBounds(ctx.props.child.id, contentRect);
     ctx.setContentBounds(contentRect);
@@ -176,11 +185,34 @@ const WindowComponent: DisplayComponent<WindowProps, WindowInteractionState> = {
       }
     }
 
+    if ((ctx.props.resizable ?? false) && (ctx.props.mode ?? "normal") === "normal") {
+      const resizeRect = createResizeHandleRect(ctx.bounds);
+      commands.push({
+        type: "rect" as const,
+        componentId: ctx.id,
+        role: "window-resize-handle",
+        rect: resizeRect,
+        fill: focused || ctx.state.dragging ? theme.accentColor : theme.borderColor,
+        radius: Math.max(2, theme.radius / 2)
+      });
+    }
+
     return commands;
   },
   hitTest(ctx) {
     if (!rectContainsPoint(ctx.bounds, ctx.point)) {
       return null;
+    }
+
+    if (
+      (ctx.props.resizable ?? false) &&
+      (ctx.props.mode ?? "normal") === "normal" &&
+      rectContainsPoint(createResizeHandleRect(ctx.bounds), ctx.point)
+    ) {
+      return {
+        targetId: createWindowResizeHandleTargetId(ctx.id),
+        role: "window-resize-handle"
+      };
     }
 
     const chromeHeight = resolveWindowChromeHeight(ctx.services.theme.getTokens());
@@ -231,7 +263,10 @@ const WindowComponent: DisplayComponent<WindowProps, WindowInteractionState> = {
       case "pointer-down": {
         const control = resolveWindowControlFromTargetId(ctx.id, ctx.event.targetId);
         ctx.state.pressedControl = control;
-        if (ctx.event.targetId === createWindowDragHandleTargetId(ctx.id)) {
+        if (
+          ctx.event.targetId === createWindowDragHandleTargetId(ctx.id) ||
+          ctx.event.targetId === createWindowResizeHandleTargetId(ctx.id)
+        ) {
           ctx.state.dragging = true;
         }
         ctx.invalidateRender();
@@ -239,7 +274,10 @@ const WindowComponent: DisplayComponent<WindowProps, WindowInteractionState> = {
       }
       case "drag-start":
       case "drag-move":
-        if (ctx.event.targetId === createWindowDragHandleTargetId(ctx.id)) {
+        if (
+          ctx.event.targetId === createWindowDragHandleTargetId(ctx.id) ||
+          ctx.event.targetId === createWindowResizeHandleTargetId(ctx.id)
+        ) {
           ctx.state.dragging = true;
           ctx.invalidateRender();
         }
@@ -270,6 +308,10 @@ export function createWindowDragHandleTargetId(windowId: string): string {
   return `${windowId}:drag-handle`;
 }
 
+export function createWindowResizeHandleTargetId(windowId: string): string {
+  return `${windowId}${RESIZE_HANDLE_TARGET_SUFFIX}`;
+}
+
 export function createWindowControlTargetId(
   windowId: string,
   control: WindowControl
@@ -292,6 +334,10 @@ export function resolveWindowControlFromTargetId(
 
 export function isWindowDragHandleTargetId(windowId: string, targetId: string): boolean {
   return targetId === createWindowDragHandleTargetId(windowId);
+}
+
+export function isWindowResizeHandleTargetId(windowId: string, targetId: string): boolean {
+  return targetId === createWindowResizeHandleTargetId(windowId);
 }
 
 function resolveWindowChromeEdge(props: WindowProps): Exclude<WindowDragHandle, "none"> | undefined {
@@ -371,6 +417,32 @@ function createHandleBarRect(chromeRect: Rect): Rect {
   );
 }
 
+function createResizeHandleRect(bounds: Rect): Rect {
+  const size = Math.min(18, Math.max(12, Math.min(bounds.width, bounds.height) * 0.12));
+  return createRect(
+    bounds.x + bounds.width - size - 3,
+    bounds.y + bounds.height - size - 3,
+    size,
+    size
+  );
+}
+
+function reserveResizeHandleSpace(contentRect: Rect, bounds: Rect, props: WindowProps): Rect {
+  if (!(props.resizable ?? false) || (props.mode ?? "normal") !== "normal") {
+    return contentRect;
+  }
+
+  const resizeRect = createResizeHandleRect(bounds);
+  const rightGutter = Math.max(0, bounds.x + bounds.width - resizeRect.x);
+  const bottomGutter = Math.max(0, bounds.y + bounds.height - resizeRect.y);
+  return createRect(
+    contentRect.x,
+    contentRect.y,
+    Math.max(0, contentRect.width - rightGutter),
+    Math.max(0, contentRect.height - bottomGutter)
+  );
+}
+
 function createTitleRect(chromeRect: Rect, controlCount: number): Rect {
   const rightInset = controlCount > 0 ? controlCount * (getControlButtonSize(chromeRect) + 4) + 8 : 8;
   return createRect(
@@ -410,9 +482,11 @@ function getControlLabel(control: WindowControl): string {
       return "-";
     case "maximize":
       return "+";
+    case "fullscreen":
+      return "[]";
   }
 }
 
 function isWindowControl(value: string): value is WindowControl {
-  return value === "close" || value === "minimize" || value === "maximize";
+  return value === "close" || value === "minimize" || value === "maximize" || value === "fullscreen";
 }

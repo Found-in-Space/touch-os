@@ -215,6 +215,7 @@ export interface EmbeddedSurfaceService {
   publish(sourceId: string, update: EmbeddedSurfaceSourceUpdate): void;
   unpublish(sourceId: string): void;
   forwardEvent(componentId: string, event: DisplayEvent): void;
+  takeForwardedEvents(componentId: string): readonly DisplayEvent[];
 }
 
 export interface RuntimeServices {

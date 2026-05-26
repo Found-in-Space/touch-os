@@ -43,11 +43,11 @@ export interface WindowManagerAppWindow {
   runtime: TouchAppRuntimeInstance<unknown> | undefined;
   hosted: HostedAppWindow | undefined;
   hostedSurfaceComponentId: string;
-  forwardedEventCursor: number;
   lastPublishedRevision: number | undefined;
   lastPublishedWidth: number | undefined;
   lastPublishedHeight: number | undefined;
   active: boolean;
+  suspended: boolean;
   closed: boolean;
   titleOverridden: boolean;
 }
@@ -127,11 +127,11 @@ export function createWindowManagerAppWindow(
     runtime: undefined,
     hosted: undefined,
     hostedSurfaceComponentId: createHostedAppSurfaceComponentId(options.window),
-    forwardedEventCursor: 0,
     lastPublishedRevision: undefined,
     lastPublishedWidth: undefined,
     lastPublishedHeight: undefined,
     active: false,
+    suspended: false,
     closed: false,
     titleOverridden: false
   };
@@ -201,6 +201,20 @@ export function ensureHostedAppWindow(
   record.hosted.runtime.resize(options.surface);
   record.hosted.runtime.setRoot(options.root);
   return record.hosted;
+}
+
+export function unpublishHostedAppWindow(
+  record: WindowManagerAppWindow,
+  surfaces: EmbeddedSurfaceService
+): void {
+  if (!record.hosted) {
+    return;
+  }
+
+  surfaces.unpublish(record.hosted.surfaceSourceId);
+  record.lastPublishedRevision = undefined;
+  record.lastPublishedWidth = undefined;
+  record.lastPublishedHeight = undefined;
 }
 
 export function publishHostedAppWindow(
@@ -410,15 +424,31 @@ function scopeDisplayNode(
   return {
     id: scopeComponentId(node.id, prefix),
     component: node.component,
-    props: scopeValue(node.props, prefix)
+    props: scopeComponentProps(node.props, prefix)
   };
 }
 
-function scopeValue(value: unknown, prefix: string, key?: string): unknown {
-  if (typeof value === "string") {
-    return key && shouldScopeReferenceKey(key) ? scopeComponentId(value, prefix) : value;
+function scopeComponentProps(props: unknown, prefix: string): unknown {
+  if (!isPlainObject(props)) {
+    return props;
   }
 
+  const scoped: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(props)) {
+    if (shouldPreservePayloadKey(key)) {
+      scoped[key] = value;
+    } else if (shouldScopeReferenceKey(key)) {
+      scoped[key] = typeof value === "string" ? scopeComponentId(value, prefix) : value;
+    } else if (shouldScopeStructuralKey(key)) {
+      scoped[key] = scopeValue(value, prefix);
+    } else {
+      scoped[key] = value;
+    }
+  }
+  return scoped;
+}
+
+function scopeValue(value: unknown, prefix: string): unknown {
   if (isDisplayNodeValue(value)) {
     return scopeDisplayNode(value, prefix);
   }
@@ -427,15 +457,23 @@ function scopeValue(value: unknown, prefix: string, key?: string): unknown {
     return value.map((entry) => scopeValue(entry, prefix));
   }
 
-  if (isPlainObject(value)) {
-    const scoped: Record<string, unknown> = {};
-    for (const [entryKey, entryValue] of Object.entries(value)) {
-      scoped[entryKey] = scopeValue(entryValue, prefix, entryKey);
-    }
-    return scoped;
+  if (!isPlainObject(value)) {
+    return value;
   }
 
-  return value;
+  const scoped: Record<string, unknown> = {};
+  for (const [key, entryValue] of Object.entries(value)) {
+    if (shouldPreservePayloadKey(key)) {
+      scoped[key] = entryValue;
+    } else if (shouldScopeReferenceKey(key)) {
+      scoped[key] = typeof entryValue === "string" ? scopeComponentId(entryValue, prefix) : entryValue;
+    } else if (shouldScopeStructuralKey(key)) {
+      scoped[key] = scopeValue(entryValue, prefix);
+    } else {
+      scoped[key] = entryValue;
+    }
+  }
+  return scoped;
 }
 
 function scopeComponentId(id: string, prefix: string): string {
@@ -692,6 +730,9 @@ function createNamespacedEmbeddedSurfaceService(
     },
     forwardEvent(componentId, event) {
       service.forwardEvent(mapComponentId(componentId), event);
+    },
+    takeForwardedEvents(componentId) {
+      return service.takeForwardedEvents(mapComponentId(componentId));
     }
   };
 }
@@ -711,13 +752,30 @@ function createNamespacedEmbeddedSurfaceChange(
 
 function shouldScopeReferenceKey(key: string): boolean {
   return (
-    key === "componentId" ||
     key === "containerId" ||
     key === "defaultTargetId" ||
     key === "initialPageId" ||
     key === "pageId" ||
-    key === "targetId" ||
-    key === "windowId"
+    key === "scrollId"
+  );
+}
+
+function shouldPreservePayloadKey(key: string): boolean {
+  return key === "payload" || key.endsWith("Payload");
+}
+
+function shouldScopeStructuralKey(key: string): boolean {
+  return (
+    key === "child" ||
+    key === "children" ||
+    key === "header" ||
+    key === "footer" ||
+    key === "topLeft" ||
+    key === "topCenter" ||
+    key === "topRight" ||
+    key === "bottomLeft" ||
+    key === "bottomCenter" ||
+    key === "bottomRight"
   );
 }
 

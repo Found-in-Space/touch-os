@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   createButton,
   createEmbeddedSurfaceService,
+  createRepeatButton,
   createRuntime,
   createTextLabel,
   createTouchAppRegistry,
   createWindowManager,
   defineTouchApp,
+  type DrawCommand,
   type RuntimeOutput,
   type TouchAppEvent,
   type TouchWindowState
@@ -26,7 +28,7 @@ describe("window manager", () => {
     const runtime = createRuntime({
       root: createWindowManager("tablet-os", {
         registry,
-        windows: [
+        initialWindows: [
           createManagedWindow("one-window", "space.test.one", "one-1", 1),
           createManagedWindow("two-window", "space.test.two", "two-1", 2)
         ]
@@ -76,7 +78,7 @@ describe("window manager", () => {
         onAppEvent(event) {
           appEvents.push(event);
         },
-        windows: [
+        initialWindows: [
           createManagedWindow("settings-window", "space.test.settings", "settings-1", 1)
         ]
       }),
@@ -125,7 +127,7 @@ describe("window manager", () => {
     const runtime = createRuntime({
       root: createWindowManager("tablet-os", {
         registry,
-        windows: [
+        initialWindows: [
           {
             ...createManagedWindow("first-window", "space.test.first", "first-1", 1),
             focused: true
@@ -153,7 +155,7 @@ describe("window manager", () => {
       appId: "space.test.second",
       instanceId: "second-1",
       rect: { x: 240, y: 20, width: 180, height: 130 },
-      zIndex: 2,
+      zIndex: 4,
       focused: true,
       mode: "normal"
     });
@@ -187,7 +189,7 @@ describe("window manager", () => {
     const runtime = createRuntime({
       root: createWindowManager("tablet-os", {
         registry,
-        windows: [createManagedWindow("title-window", "space.test.title", "title-1", 1)]
+        initialWindows: [createManagedWindow("title-window", "space.test.title", "title-1", 1)]
       }),
       surface: { width: 420, height: 280 }
     });
@@ -252,7 +254,7 @@ describe("window manager", () => {
       root: createWindowManager("tablet-os", {
         registry,
         appHostMode: "child-runtime",
-        windows: [createManagedWindow("child-window", "space.test.child", "child-1", 1)]
+        initialWindows: [createManagedWindow("child-window", "space.test.child", "child-1", 1)]
       }),
       surface: { width: 420, height: 280 },
       services: { surfaces }
@@ -307,6 +309,373 @@ describe("window manager", () => {
         name: "shared-button"
       }
     });
+
+    const minimizeControl = findCommandByRole<DrawCommand>(
+      runtime.render().commands,
+      "window-control-minimize"
+    );
+    if (minimizeControl.type !== "rect") {
+      throw new Error("Expected a minimize control rect.");
+    }
+    pressAt(
+      runtime,
+      minimizeControl.rect.x + minimizeControl.rect.width / 2,
+      minimizeControl.rect.y + minimizeControl.rect.height / 2,
+      10
+    );
+    runtime.takeOutputs();
+    runtime.render();
+    expect(surfaces.getSource("space.test.child:child-1:child-window:surface-source")).toBeUndefined();
+
+    const restoreControl = findCommandByRole<DrawCommand>(
+      runtime.render().commands,
+      "window-control-minimize"
+    );
+    if (restoreControl.type !== "rect") {
+      throw new Error("Expected a restore control rect.");
+    }
+    pressAt(
+      runtime,
+      restoreControl.rect.x + restoreControl.rect.width / 2,
+      restoreControl.rect.y + restoreControl.rect.height / 2,
+      12
+    );
+    runtime.takeOutputs();
+    runtime.render();
+    expect(surfaces.getSource("space.test.child:child-1:child-window:surface-source")).toMatchObject({
+      available: true,
+      sourceType: "touch-os-runtime"
+    });
+
+    const closeControl = findCommandByRole<DrawCommand>(
+      runtime.render().commands,
+      "window-control-close"
+    );
+    if (closeControl.type !== "rect") {
+      throw new Error("Expected a close control rect.");
+    }
+    pressAt(
+      runtime,
+      closeControl.rect.x + closeControl.rect.width / 2,
+      closeControl.rect.y + closeControl.rect.height / 2,
+      14
+    );
+    runtime.takeOutputs();
+    runtime.render();
+    expect(runtime.getBounds("space.test.child:child-1:child-window:surface")).toBeUndefined();
+    expect(surfaces.getSource("space.test.child:child-1:child-window:surface-source")).toBeUndefined();
+  });
+
+  it("opens registered apps from the launcher with generated ids and preferred placement", () => {
+    const registry = createTouchAppRegistry([
+      defineTouchApp({
+        manifest: {
+          id: "space.test.launch",
+          name: "Launch Me",
+          version: "1.0.0",
+          preferredWindow: {
+            width: 360,
+            height: 260,
+            minWidth: 240,
+            minHeight: 160,
+            resizable: true
+          }
+        },
+        createApp() {
+          return {
+            render() {
+              return createTextLabel("launch-root", {
+                text: "Launched"
+              });
+            }
+          };
+        }
+      })
+    ]);
+    const runtime = createRuntime({
+      root: createWindowManager("tablet-os", {
+        registry,
+        launcher: true,
+        constraintPadding: 8
+      }),
+      surface: { width: 420, height: 300 }
+    });
+
+    runtime.render();
+    clickComponentCenter(runtime, "tablet-os:launcher:open:space-test-launch");
+    const outputs = runtime.takeOutputs();
+    runtime.render();
+
+    expect(outputs).toContainEqual({
+      type: "window-manager-change",
+      componentId: "tablet-os",
+      change: "open-app",
+      windowId: "space-test-launch-1-window",
+      appId: "space.test.launch",
+      instanceId: "space-test-launch-1",
+      rect: { x: 8, y: 8, width: 360, height: 260 },
+      zIndex: 0,
+      focused: true,
+      mode: "normal",
+      targetAppId: "space.test.launch",
+      options: {
+        appId: "space.test.launch"
+      }
+    });
+    expect(runtime.getBounds("space-test-launch-1-window")).toEqual({
+      x: 8,
+      y: 8,
+      width: 360,
+      height: 260
+    });
+  });
+
+  it("restores and focuses minimized windows from the task switcher", () => {
+    const lifecycle: string[] = [];
+    const registry = createTouchAppRegistry([
+      createLifecycleApp("space.test.tasks", lifecycle)
+    ]);
+    const runtime = createRuntime({
+      root: createWindowManager("tablet-os", {
+        registry,
+        taskSwitcher: true,
+        initialWindows: [
+          {
+            ...createManagedWindow("task-window", "space.test.tasks", "task-1", 1),
+            mode: "minimized"
+          }
+        ]
+      }),
+      surface: { width: 520, height: 300 }
+    });
+
+    runtime.render();
+    expect(lifecycle).toEqual(["launch", "suspend"]);
+
+    clickComponentCenter(runtime, "tablet-os:tasks:focus:task-window");
+    const outputs = runtime.takeOutputs();
+    runtime.render();
+
+    expect(lifecycle).toEqual(["launch", "suspend", "resume", "activate"]);
+    expect(runtime.getBounds("task-window")).toEqual({
+      x: 40,
+      y: 30,
+      width: 180,
+      height: 130
+    });
+    expect(outputs).toContainEqual({
+      type: "window-manager-change",
+      componentId: "tablet-os",
+      change: "window-state",
+      windowId: "task-window",
+      appId: "space.test.tasks",
+      instanceId: "task-1",
+      rect: { x: 40, y: 30, width: 180, height: 130 },
+      zIndex: 1,
+      focused: true,
+      mode: "normal"
+    });
+  });
+
+  it("honors resize constraints, app requestResize, and fullscreen window state", () => {
+    const registry = createTouchAppRegistry([
+      defineTouchApp({
+        manifest: {
+          id: "space.test.resize",
+          name: "Resize",
+          version: "1.0.0"
+        },
+        createApp(ctx) {
+          return {
+            render() {
+              return createButton("resize-button", {
+                label: "Resize",
+                actionId: "resize.request"
+              });
+            },
+            handleOutput(output) {
+              if (output.type === "action") {
+                ctx.windows.requestResize({ width: 500, height: 500 });
+              }
+            }
+          };
+        }
+      })
+    ]);
+    const runtime = createRuntime({
+      root: createWindowManager("tablet-os", {
+        registry,
+        windowControls: ["fullscreen"],
+        initialWindows: [
+          {
+            ...createManagedWindow("resize-window", "space.test.resize", "resize-1", 1),
+            minSize: { width: 160, height: 110 },
+            maxSize: { width: 260, height: 180 }
+          }
+        ]
+      }),
+      surface: { width: 420, height: 300 },
+      dragThreshold: 1
+    });
+
+    runtime.render();
+    clickComponentCenter(runtime, "space.test.resize:resize-1:resize-window:resize-button");
+    let outputs = runtime.takeOutputs();
+    runtime.render();
+
+    expect(outputs).toContainEqual({
+      type: "window-manager-change",
+      componentId: "tablet-os",
+      change: "request-resize",
+      windowId: "resize-window",
+      appId: "space.test.resize",
+      instanceId: "resize-1",
+      rect: { x: 40, y: 30, width: 260, height: 180 },
+      size: { width: 260, height: 180 },
+      zIndex: 1,
+      focused: true,
+      mode: "normal"
+    });
+    expect(runtime.getBounds("resize-window")).toEqual({
+      x: 40,
+      y: 30,
+      width: 260,
+      height: 180
+    });
+
+    const resizeHandle = findCommandByRole<DrawCommand>(
+      runtime.render().commands,
+      "window-resize-handle"
+    );
+    if (resizeHandle.type !== "rect") {
+      throw new Error("Expected a resize handle rect.");
+    }
+    runtime.dispatchInput({
+      type: "pointer-down",
+      pointerId: "mouse",
+      surfaceX: resizeHandle.rect.x + resizeHandle.rect.width / 2,
+      surfaceY: resizeHandle.rect.y + resizeHandle.rect.height / 2,
+      timestamp: 3
+    });
+    runtime.dispatchInput({
+      type: "pointer-move",
+      pointerId: "mouse",
+      surfaceX: 0,
+      surfaceY: 0,
+      timestamp: 4
+    });
+    runtime.dispatchInput({
+      type: "pointer-up",
+      pointerId: "mouse",
+      surfaceX: 0,
+      surfaceY: 0,
+      timestamp: 5
+    });
+    outputs = runtime.takeOutputs();
+    runtime.render();
+    expect(outputs.some((output) =>
+      output.type === "window-manager-change" &&
+      output.change === "window-state" &&
+      output.windowId === "resize-window" &&
+      output.rect?.width === 160 &&
+      output.rect.height === 110
+    )).toBe(true);
+
+    const fullscreenControl = findCommandByRole<DrawCommand>(
+      runtime.render().commands,
+      "window-control-fullscreen"
+    );
+    if (fullscreenControl.type !== "rect") {
+      throw new Error("Expected a fullscreen control rect.");
+    }
+    pressAt(
+      runtime,
+      fullscreenControl.rect.x + fullscreenControl.rect.width / 2,
+      fullscreenControl.rect.y + fullscreenControl.rect.height / 2,
+      6
+    );
+    outputs = runtime.takeOutputs();
+    runtime.render();
+    expect(outputs).toContainEqual({
+      type: "window-manager-change",
+      componentId: "tablet-os",
+      change: "window-state",
+      windowId: "resize-window",
+      appId: "space.test.resize",
+      instanceId: "resize-1",
+      rect: { x: 0, y: 0, width: 420, height: 300 },
+      zIndex: 1,
+      focused: true,
+      mode: "fullscreen"
+    });
+  });
+
+  it("keeps same-runtime app payload ids unscoped", () => {
+    const handledOutputs: RuntimeOutput[] = [];
+    const registry = createTouchAppRegistry([
+      defineTouchApp({
+        manifest: {
+          id: "space.test.payload",
+          name: "Payload",
+          version: "1.0.0"
+        },
+        createApp() {
+          return {
+            render() {
+              return createRepeatButton("payload-button", {
+                label: "Payload",
+                actionId: "payload.emit",
+                payload: {
+                  componentId: "raw-component",
+                  targetId: "raw-target",
+                  windowId: "raw-window",
+                  pageId: "raw-page"
+                }
+              });
+            },
+            handleOutput(output) {
+              handledOutputs.push(output);
+            }
+          };
+        }
+      })
+    ]);
+    const runtime = createRuntime({
+      root: createWindowManager("tablet-os", {
+        registry,
+        initialWindows: [
+          createManagedWindow("payload-window", "space.test.payload", "payload-1", 1)
+        ]
+      }),
+      surface: { width: 420, height: 280 }
+    });
+
+    runtime.render();
+    clickComponentCenter(runtime, "space.test.payload:payload-1:payload-window:payload-button");
+    const outputs = runtime.takeOutputs();
+
+    expect(outputs).toContainEqual({
+      type: "action",
+      actionId: "payload.emit",
+      componentId: "space.test.payload:payload-1:payload-window:payload-button",
+      payload: {
+        componentId: "raw-component",
+        targetId: "raw-target",
+        windowId: "raw-window",
+        pageId: "raw-page"
+      }
+    });
+    expect(handledOutputs).toContainEqual({
+      type: "action",
+      actionId: "payload.emit",
+      componentId: "payload-button",
+      payload: {
+        componentId: "raw-component",
+        targetId: "raw-target",
+        windowId: "raw-window",
+        pageId: "raw-page"
+      }
+    });
   });
 });
 
@@ -352,6 +721,15 @@ function createLifecycleApp(appId: string, lifecycle: string[]) {
         },
         onDeactivate() {
           lifecycle.push("deactivate");
+        },
+        onSuspend() {
+          lifecycle.push("suspend");
+        },
+        onResume() {
+          lifecycle.push("resume");
+        },
+        onClose() {
+          lifecycle.push("close");
         }
       };
     }

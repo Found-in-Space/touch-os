@@ -14,13 +14,13 @@ import {
   createHudPanelDriver,
   createPoseAnchoredPanelDriver,
   createScenePanelDriver,
+  createThreePanelSession,
+  type ThreePanelHostFrame,
   type ThreePanelDriver,
+  type ThreePanelSession,
   type ThreePointerSample
 } from "../../../src/hosts/three.js";
-import {
-  createPanelCoordinator,
-  type CoordinatedPanel
-} from "../../../src/coordination/index.js";
+import { createPanelCoordinator } from "../../../src/coordination/index.js";
 import {
   createXrHudRoot,
   createWallMirrorRoot,
@@ -98,59 +98,44 @@ mirrorRenderer.setSize(room.mirrorSize.width, room.mirrorSize.height, false);
 
 const sharedSurfaces = createEmbeddedSurfaceService();
 
-interface RuntimeBinding {
+interface RoomRuntimeController {
   runtime: DisplayRuntime;
   sync(state: RoomDemoState): void;
   syncDiagnostics(diagnostics: RoomPanelDiagnostics): void;
 }
 
-interface StaticRuntimeBinding {
+interface StaticRuntimeController {
   runtime: DisplayRuntime;
 }
 
-interface DriverBinding {
-  key: "desktop-hud" | "xr-hud" | "tv" | "arm" | "wall-mirror" | "wall-picture";
-  runtime: DisplayRuntime;
-  driver: ThreePanelDriver;
-  enabled: boolean;
-  update(frame: THREEFrame): void;
-  render(): void;
-  hide(): void;
-}
-
-interface THREEFrame {
+interface THREEFrame extends ThreePanelHostFrame {
   scene: THREE.Scene;
   camera: THREE.Camera;
-  anchorPose?: {
-    position: { x: number; y: number; z: number };
-    orientation: { x: number; y: number; z: number; w: number };
-  };
-  surfaceMetrics?: Partial<SurfaceMetrics>;
 }
 
-const desktopHudBinding = createRuntimeBinding("hud");
-const tvBinding = createRuntimeBinding("tv");
-const armBinding = createRuntimeBinding("arm");
-const xrHudBinding = createXrHudRuntimeBinding();
-const wallMirrorBinding = createWallMirrorRuntimeBinding();
-const wallPictureBinding = createWallPictureRuntimeBinding();
+const desktopHudRuntime = createRoomRuntimeController("hud");
+const tvRuntime = createRoomRuntimeController("tv");
+const armRuntime = createRoomRuntimeController("arm");
+const xrHudRuntime = createXrHudRuntimeController();
+const wallMirrorRuntime = createWallMirrorRuntimeController();
+const wallPictureRuntime = createWallPictureRuntimeController();
 
-const desktopHudDriverBinding = createDesktopHudDriverBinding(desktopHudBinding.runtime);
-const tvDriverBinding = createTvDriverBinding(tvBinding.runtime);
-const armDriverBinding = createArmDriverBinding(armBinding.runtime);
-const xrHudDriverBinding = createXrHudDriverBinding(xrHudBinding.runtime);
-const wallMirrorDriverBinding = createWallMirrorDriverBinding(wallMirrorBinding.runtime);
-const wallPictureDriverBinding = createWallPictureDriverBinding(wallPictureBinding.runtime);
+const desktopHudPanel = createDesktopHudPanelSession(desktopHudRuntime.runtime);
+const tvPanel = createTvPanelSession(tvRuntime.runtime);
+const armPanel = createArmPanelSession(armRuntime.runtime);
+const xrHudPanel = createXrHudPanelSession(xrHudRuntime.runtime);
+const wallMirrorPanel = createWallMirrorPanelSession(wallMirrorRuntime.runtime);
+const wallPicturePanel = createWallPicturePanelSession(wallPictureRuntime.runtime);
 
-desktopHudDriverBinding.driver.attach();
-tvDriverBinding.driver.attach();
-armDriverBinding.driver.attach();
-xrHudDriverBinding.driver.attach();
-wallMirrorDriverBinding.driver.attach();
-wallPictureDriverBinding.driver.attach();
+desktopHudPanel.attach();
+tvPanel.attach();
+armPanel.attach();
+xrHudPanel.attach();
+wallMirrorPanel.attach();
+wallPicturePanel.attach();
 
 const shaderPictureSource = createShaderPictureSource();
-const shaderPicturePresenter = createShaderPicturePresenter(wallPictureDriverBinding.driver.host);
+const shaderPicturePresenter = createShaderPicturePresenter(wallPicturePanel.driver.host);
 
 const pressedKeys = new Set<string>();
 let lookActive = false;
@@ -218,14 +203,8 @@ for (const binding of xrBindings) {
   });
 }
 
-const desktopPanels: CoordinatedPanel<ScreenPointerSample, THREEFrame>[] = [
-  toCoordinatedPanel(desktopHudDriverBinding),
-  toCoordinatedPanel(tvDriverBinding)
-];
-const xrPanels: CoordinatedPanel<ThreePointerSample, THREEFrame>[] = [
-  toCoordinatedPanel(armDriverBinding),
-  toCoordinatedPanel(tvDriverBinding)
-];
+const desktopPanels = [desktopHudPanel, tvPanel];
+const xrPanels = [armPanel, tvPanel];
 const desktopPanelCoordinator = createPanelCoordinator({
   panels: desktopPanels
 });
@@ -235,17 +214,17 @@ const xrPanelCoordinator = createPanelCoordinator({
 
 store.subscribe(() => {
   const state = store.getState();
-  syncRuntimeBindings(state);
+  syncRoomRuntimeControllers(state);
   room.applyState(state);
   if (isXrPresentationActive()) {
-    desktopHudDriverBinding.driver.clearPointer();
-    xrHudDriverBinding.driver.clearPointer();
+    desktopHudPanel.driver.clearPointer();
+    xrHudPanel.driver.clearPointer();
   } else {
-    armDriverBinding.driver.clearPointer();
+    armPanel.driver.clearPointer();
   }
 });
 const initialState = store.getState();
-syncRuntimeBindings(initialState);
+syncRoomRuntimeControllers(initialState);
 room.applyState(initialState);
 
 renderer.xr.addEventListener("sessionstart", () => {
@@ -371,16 +350,16 @@ renderer.setAnimationLoop(() => {
   const viewerCamera = room.camera;
 
   room.syncRearViewCamera(viewerCamera);
-  const desktopHudVisible = desktopHudDriverBinding.driver.host.mesh.visible;
-  const xrHudVisible = xrHudDriverBinding.driver.host.mesh.visible;
-  const armVisible = armDriverBinding.driver.host.mesh.visible;
-  desktopHudDriverBinding.driver.host.mesh.visible = false;
-  xrHudDriverBinding.driver.host.mesh.visible = false;
-  armDriverBinding.driver.host.mesh.visible = false;
+  const desktopHudVisible = desktopHudPanel.driver.host.mesh.visible;
+  const xrHudVisible = xrHudPanel.driver.host.mesh.visible;
+  const armVisible = armPanel.driver.host.mesh.visible;
+  desktopHudPanel.driver.host.mesh.visible = false;
+  xrHudPanel.driver.host.mesh.visible = false;
+  armPanel.driver.host.mesh.visible = false;
   mirrorRenderer.render(room.scene, room.rearViewCamera);
-  desktopHudDriverBinding.driver.host.mesh.visible = desktopHudVisible;
-  xrHudDriverBinding.driver.host.mesh.visible = xrHudVisible;
-  armDriverBinding.driver.host.mesh.visible = armVisible;
+  desktopHudPanel.driver.host.mesh.visible = desktopHudVisible;
+  xrHudPanel.driver.host.mesh.visible = xrHudVisible;
+  armPanel.driver.host.mesh.visible = armVisible;
   publishMirrorSurface(sharedSurfaces, REAR_VIEW_SOURCE_ID, mirrorCanvas, now);
   shaderPictureSource.render(renderer, now);
   shaderPictureSource.publish(sharedSurfaces, now);
@@ -390,20 +369,20 @@ renderer.setAnimationLoop(() => {
     camera: viewerCamera
   };
 
-  tvDriverBinding.enabled = true;
-  tvDriverBinding.update(baseFrame);
-  wallMirrorDriverBinding.enabled = true;
-  wallMirrorDriverBinding.update(baseFrame);
-  wallPictureDriverBinding.enabled = true;
-  wallPictureDriverBinding.update(baseFrame);
+  tvPanel.enabled = true;
+  tvPanel.update(baseFrame);
+  wallMirrorPanel.enabled = true;
+  wallMirrorPanel.update(baseFrame);
+  wallPicturePanel.enabled = true;
+  wallPicturePanel.update(baseFrame);
 
   if (xrActive) {
-    desktopHudDriverBinding.enabled = false;
-    desktopHudDriverBinding.hide();
+    desktopHudPanel.enabled = false;
+    desktopHudPanel.hide();
 
     const headPose = resolveHeadPose(viewerCamera);
-    xrHudDriverBinding.enabled = Boolean(headPose);
-    xrHudDriverBinding.update(
+    xrHudPanel.enabled = Boolean(headPose);
+    xrHudPanel.update(
       headPose
         ? {
             ...baseFrame,
@@ -413,8 +392,8 @@ renderer.setAnimationLoop(() => {
     );
 
     const armPose = resolveArmPose();
-    armDriverBinding.enabled = Boolean(armPose);
-    armDriverBinding.update(
+    armPanel.enabled = Boolean(armPose);
+    armPanel.update(
       armPose
         ? {
             ...baseFrame,
@@ -423,16 +402,16 @@ renderer.setAnimationLoop(() => {
         : baseFrame
     );
   } else {
-    desktopHudDriverBinding.enabled = true;
-    desktopHudDriverBinding.update({
+    desktopHudPanel.enabled = true;
+    desktopHudPanel.update({
       ...baseFrame,
       surfaceMetrics: getDesktopSurfaceMetrics()
     });
 
-    armDriverBinding.enabled = false;
-    armDriverBinding.hide();
-    xrHudDriverBinding.enabled = false;
-    xrHudDriverBinding.hide();
+    armPanel.enabled = false;
+    armPanel.hide();
+    xrHudPanel.enabled = false;
+    xrHudPanel.hide();
   }
 
   syncArmDiagnostics(now, deltaSeconds, xrActive);
@@ -467,35 +446,35 @@ renderer.setAnimationLoop(() => {
     }
   }
 
-  tickActiveRuntime(tvDriverBinding, now);
-  tickActiveRuntime(wallMirrorDriverBinding, now);
-  tickActiveRuntime(wallPictureDriverBinding, now);
-  if (desktopHudDriverBinding.enabled) {
-    tickActiveRuntime(desktopHudDriverBinding, now);
+  tickActiveRuntime(tvPanel, now);
+  tickActiveRuntime(wallMirrorPanel, now);
+  tickActiveRuntime(wallPicturePanel, now);
+  if (desktopHudPanel.enabled) {
+    tickActiveRuntime(desktopHudPanel, now);
   }
-  if (xrHudDriverBinding.enabled) {
-    tickActiveRuntime(xrHudDriverBinding, now);
+  if (xrHudPanel.enabled) {
+    tickActiveRuntime(xrHudPanel, now);
   }
-  if (armDriverBinding.enabled) {
-    tickActiveRuntime(armDriverBinding, now);
+  if (armPanel.enabled) {
+    tickActiveRuntime(armPanel, now);
   }
 
-  tvDriverBinding.render();
-  wallMirrorDriverBinding.render();
-  wallPictureDriverBinding.render();
-  shaderPicturePresenter.update(wallPictureDriverBinding.driver.host);
-  desktopHudDriverBinding.render();
-  xrHudDriverBinding.render();
-  if (armDriverBinding.enabled) {
-    armDriverBinding.render();
+  tvPanel.render();
+  wallMirrorPanel.render();
+  wallPicturePanel.render();
+  shaderPicturePresenter.update(wallPicturePanel.driver.host);
+  desktopHudPanel.render();
+  xrHudPanel.render();
+  if (armPanel.enabled) {
+    armPanel.render();
   }
 
   renderer.render(room.scene, viewerCamera);
 });
 
-function createRuntimeBinding(
+function createRoomRuntimeController(
   variant: "hud" | "tv" | "arm"
-): RuntimeBinding {
+): RoomRuntimeController {
   let lastState = store.getState();
   let lastDiagnostics = createDefaultRoomPanelDiagnostics();
   const runtime = createRuntime({
@@ -528,7 +507,7 @@ function createRuntimeBinding(
   };
 }
 
-function createXrHudRuntimeBinding(): StaticRuntimeBinding {
+function createXrHudRuntimeController(): StaticRuntimeController {
   const runtime = createRuntime({
     root: createXrHudRoot(),
     surface: getXrHudSurface(),
@@ -543,7 +522,7 @@ function createXrHudRuntimeBinding(): StaticRuntimeBinding {
   };
 }
 
-function createDesktopHudDriverBinding(runtime: DisplayRuntime): DriverBinding {
+function createDesktopHudPanelSession(runtime: DisplayRuntime): ThreePanelSession {
   const driver = createHudPanelDriver({
     runtime,
     surface: getRoomPanelSurface("hud"),
@@ -551,10 +530,10 @@ function createDesktopHudDriverBinding(runtime: DisplayRuntime): DriverBinding {
     sizing: "viewport"
   });
 
-  return createDriverBinding("desktop-hud", driver, runtime);
+  return createPanelSession("desktop-hud", driver, runtime);
 }
 
-function createXrHudDriverBinding(runtime: DisplayRuntime): DriverBinding {
+function createXrHudPanelSession(runtime: DisplayRuntime): ThreePanelSession {
   const driver = createPoseAnchoredPanelDriver({
     runtime,
     surface: getXrHudSurface(),
@@ -564,10 +543,10 @@ function createXrHudDriverBinding(runtime: DisplayRuntime): DriverBinding {
     offset: { x: 0.08, y: 0.02, z: -0.42 }
   });
 
-  return createDriverBinding("xr-hud", driver, runtime);
+  return createPanelSession("xr-hud", driver, runtime);
 }
 
-function createTvDriverBinding(runtime: DisplayRuntime): DriverBinding {
+function createTvPanelSession(runtime: DisplayRuntime): ThreePanelSession {
   const driver = createScenePanelDriver({
     runtime,
     surface: getRoomPanelSurface("tv"),
@@ -577,10 +556,10 @@ function createTvDriverBinding(runtime: DisplayRuntime): DriverBinding {
     quaternion: room.tvAnchor.quaternion
   });
 
-  return createDriverBinding("tv", driver, runtime);
+  return createPanelSession("tv", driver, runtime);
 }
 
-function createWallMirrorRuntimeBinding(): StaticRuntimeBinding {
+function createWallMirrorRuntimeController(): StaticRuntimeController {
   const runtime = createRuntime({
     root: createWallMirrorRoot(),
     surface: getWallMirrorSurface(),
@@ -595,7 +574,7 @@ function createWallMirrorRuntimeBinding(): StaticRuntimeBinding {
   };
 }
 
-function createWallPictureRuntimeBinding(): StaticRuntimeBinding {
+function createWallPictureRuntimeController(): StaticRuntimeController {
   const runtime = createRuntime({
     root: createWallPictureRoot(),
     surface: getWallPictureSurface(),
@@ -610,7 +589,7 @@ function createWallPictureRuntimeBinding(): StaticRuntimeBinding {
   };
 }
 
-function createWallMirrorDriverBinding(runtime: DisplayRuntime): DriverBinding {
+function createWallMirrorPanelSession(runtime: DisplayRuntime): ThreePanelSession {
   const driver = createScenePanelDriver({
     runtime,
     surface: getWallMirrorSurface(),
@@ -620,10 +599,10 @@ function createWallMirrorDriverBinding(runtime: DisplayRuntime): DriverBinding {
     quaternion: room.mirrorAnchor.quaternion
   });
 
-  return createDriverBinding("wall-mirror", driver, runtime);
+  return createPanelSession("wall-mirror", driver, runtime);
 }
 
-function createWallPictureDriverBinding(runtime: DisplayRuntime): DriverBinding {
+function createWallPicturePanelSession(runtime: DisplayRuntime): ThreePanelSession {
   const driver = createScenePanelDriver({
     runtime,
     surface: getWallPictureSurface(),
@@ -633,10 +612,10 @@ function createWallPictureDriverBinding(runtime: DisplayRuntime): DriverBinding 
     quaternion: room.pictureAnchor.quaternion
   });
 
-  return createDriverBinding("wall-picture", driver, runtime);
+  return createPanelSession("wall-picture", driver, runtime);
 }
 
-function createArmDriverBinding(runtime: DisplayRuntime): DriverBinding {
+function createArmPanelSession(runtime: DisplayRuntime): ThreePanelSession {
   const driver = createPoseAnchoredPanelDriver({
     runtime,
     surface: getRoomPanelSurface("arm"),
@@ -646,80 +625,22 @@ function createArmDriverBinding(runtime: DisplayRuntime): DriverBinding {
     offset: { x: 0.04, y: 0.05, z: -0.03 }
   });
 
-  return createDriverBinding("arm", driver, runtime);
+  return createPanelSession("arm", driver, runtime);
 }
 
-function createDriverBinding(
+function createPanelSession(
   key: "desktop-hud" | "xr-hud" | "tv" | "arm" | "wall-mirror" | "wall-picture",
   driver: ThreePanelDriver,
   runtime: DisplayRuntime
-): DriverBinding {
-  return {
+): ThreePanelSession {
+  return createThreePanelSession({
     key,
     runtime,
     driver,
-    enabled: true,
-    update(frame) {
-      if (!this.enabled) {
-        this.hide();
-        return;
-      }
-      if ((key === "arm" || key === "xr-hud") && !frame.anchorPose) {
-        this.hide();
-        return;
-      }
-      driver.host.update({
-        scene: frame.scene,
-        camera: frame.camera,
-        ...(frame.anchorPose ? { anchorPose: frame.anchorPose } : {}),
-        ...(frame.surfaceMetrics ? { surfaceMetrics: frame.surfaceMetrics } : {})
-      });
-    },
-    render() {
-      if (!this.enabled) {
-        return;
-      }
-      driver.render();
-      flushRuntimeOutputs(runtime);
-    },
-    hide() {
-      driver.clearPointer();
-      driver.host.mesh.visible = false;
+    outputHandler(output) {
+      applyRuntimeOutput(output, store.getState());
     }
-  };
-}
-
-function toCoordinatedPanel<TSample extends ThreePointerSample>(
-  binding: DriverBinding
-): CoordinatedPanel<TSample, THREEFrame> {
-  return {
-    key: binding.key,
-    get enabled() {
-      return binding.enabled;
-    },
-    process(sample, frame) {
-      const result = binding.driver.interactor.process(sample, {
-        scene: frame.scene,
-        camera: frame.camera,
-        ...(frame.anchorPose ? { anchorPose: frame.anchorPose } : {}),
-        ...(frame.surfaceMetrics ? { surfaceMetrics: frame.surfaceMetrics } : {})
-      });
-      flushRuntimeOutputs(binding.runtime);
-      return {
-        claimed: result.claimed,
-        blocked: result.blocked
-      };
-    },
-    clearPointer(pointerId) {
-      binding.driver.clearPointer(pointerId);
-    }
-  };
-}
-
-function flushRuntimeOutputs(runtime: DisplayRuntime): void {
-  for (const output of runtime.takeOutputs()) {
-    applyRuntimeOutput(output, store.getState());
-  }
+  });
 }
 
 function applyRuntimeOutput(output: RuntimeOutput, state: RoomDemoState): void {
@@ -997,13 +918,13 @@ function getPointerStateForOwner(
 ): ReturnType<ThreePanelDriver["getPointerState"]> {
   switch (ownerKey) {
     case "arm":
-      return armDriverBinding.driver.getPointerState(pointerId);
+      return armPanel.driver.getPointerState(pointerId);
     case "tv":
-      return tvDriverBinding.driver.getPointerState(pointerId);
+      return tvPanel.driver.getPointerState(pointerId);
     case "xr-hud":
-      return xrHudDriverBinding.driver.getPointerState(pointerId);
+      return xrHudPanel.driver.getPointerState(pointerId);
     case "desktop-hud":
-      return desktopHudDriverBinding.driver.getPointerState(pointerId);
+      return desktopHudPanel.driver.getPointerState(pointerId);
     default:
       return undefined;
   }
@@ -1082,17 +1003,17 @@ function resolveXrBinding(
   return xrBindings.find(predicate);
 }
 
-function tickActiveRuntime(binding: DriverBinding, timestamp: number): void {
+function tickActiveRuntime(binding: ThreePanelSession, timestamp: number): void {
   binding.runtime.tick(timestamp);
-  flushRuntimeOutputs(binding.runtime);
+  binding.flushOutputs();
 }
 
-function syncRuntimeBindings(
+function syncRoomRuntimeControllers(
   state: RoomDemoState
 ): void {
-  desktopHudBinding.sync(state);
-  tvBinding.sync(state);
-  armBinding.sync(state);
+  desktopHudRuntime.sync(state);
+  tvRuntime.sync(state);
+  armRuntime.sync(state);
 }
 
 function syncArmDiagnostics(
@@ -1107,10 +1028,10 @@ function syncArmDiagnostics(
   lastArmDiagnosticsSync = timestamp;
   const fps = deltaSeconds > 0 ? Math.round(1 / deltaSeconds) : 0;
   const frameMs = (deltaSeconds * 1000).toFixed(1);
-  armBinding.syncDiagnostics({
+  armRuntime.syncDiagnostics({
     pointerMode: xrActive ? "XR ray/contact" : "Desktop hidden",
     timing: `${fps} fps / ${frameMs} ms`,
-    activePanel: armDriverBinding.enabled ? "Arm tablet" : xrActive ? "No arm pose" : "HUD only"
+    activePanel: armPanel.enabled ? "Arm tablet" : xrActive ? "No arm pose" : "HUD only"
   });
 }
 
@@ -1193,12 +1114,12 @@ for (const [intent, keys] of Object.entries(KEY_BINDINGS) as Array<[MovementInte
 }
 
 window.addEventListener("beforeunload", () => {
-  desktopHudDriverBinding.driver.detach();
-  tvDriverBinding.driver.detach();
-  armDriverBinding.driver.detach();
-  xrHudDriverBinding.driver.detach();
-  wallMirrorDriverBinding.driver.detach();
-  wallPictureDriverBinding.driver.detach();
+  desktopHudPanel.dispose();
+  tvPanel.dispose();
+  armPanel.dispose();
+  xrHudPanel.dispose();
+  wallMirrorPanel.dispose();
+  wallPicturePanel.dispose();
   shaderPicturePresenter.dispose();
   shaderPictureSource.dispose();
   mirrorRenderer.dispose();

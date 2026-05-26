@@ -179,7 +179,9 @@ const registry = createTouchAppRegistry([SettingsApp]);
 const root = createWindowManager("tablet-os", {
   registry,
   appHostMode: "same-runtime",
-  windows: [
+  launcher: true,
+  taskSwitcher: true,
+  initialWindows: [
     {
       id: "settings-window",
       appId: "space.found.settings",
@@ -201,13 +203,15 @@ const runtime = createRuntime({
 });
 ```
 
+`initialWindows` seeds the panel OS session. After mount, the manager owns live window state for launch, focus, move, resize, minimize, restore, fullscreen, and close. Persist state by observing `window-manager-change` outputs; remount with a new manager id when you intentionally want a fresh seed.
+
 For OS-style isolation, switch to child-runtime mode:
 
 ```ts
 const root = createWindowManager("tablet-os", {
   registry,
   appHostMode: "child-runtime",
-  windows
+  initialWindows
 });
 ```
 
@@ -557,8 +561,26 @@ For more advanced Three.js integrations, the host package also includes:
 - pose-anchored panel hosts
 - tablet and HUD helpers
 - panel drivers
+- `createThreePanelSession` for wrapping a runtime and driver as a coordinated panel that flushes outputs
 - `PanelInteractor` for app-owned pointer pipelines
 - screen, XR ray, and direct-touch pointer-source helpers
+
+When multiple Three panels share a pointer source, pass sessions directly to `createPanelCoordinator`:
+
+```ts
+const session = createThreePanelSession({
+  key: "tablet",
+  runtime,
+  driver,
+  outputHandler(output) {
+    handlePanelOutput(output);
+  }
+});
+
+const coordinator = createPanelCoordinator({
+  panels: [session]
+});
+```
 
 See [`examples/three-living-room`](../examples/three-living-room) for a fuller end-to-end example.
 

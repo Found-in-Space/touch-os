@@ -339,14 +339,16 @@ function createArmWindowManagerRoot(
     pointerOpaque: true,
     constraintPadding: 4,
     focusOnPress: true,
-    windowControls: ["minimize", "maximize"],
+    launcher: true,
+    taskSwitcher: true,
+    windowControls: ["minimize", "maximize", "fullscreen"],
     appStates: {
       [ARM_APP_STATE_IDS.movement]: appState,
       [ARM_APP_STATE_IDS.settings]: appState,
       [ARM_APP_STATE_IDS.rearView]: appState,
       [ARM_APP_STATE_IDS.diagnostics]: appState
     },
-    windows: createArmWindowStates()
+    initialWindows: createArmWindowStates()
   });
 }
 

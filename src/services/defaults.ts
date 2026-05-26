@@ -825,6 +825,23 @@ export function createEmbeddedSurfaceService(onChange?: ChangeListener): Embedde
         componentIds: [componentId],
         sourceIds: [attachment.sourceId]
       });
+    },
+    takeForwardedEvents(componentId) {
+      const attachment = requireAttachment(componentId);
+      const events = [...attachment.forwardedEvents];
+      if (events.length === 0) {
+        return events;
+      }
+
+      attachments.set(componentId, {
+        ...attachment,
+        forwardedEvents: []
+      });
+      emitChanges({
+        componentIds: [componentId],
+        sourceIds: [attachment.sourceId]
+      });
+      return events;
     }
   };
 }

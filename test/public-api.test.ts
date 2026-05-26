@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import * as rootApi from "../src/index.js";
 import { createEmbeddedSurfaceService } from "../src/services/index.js";
 import * as threeHost from "../src/hosts/three.js";
 
@@ -64,6 +65,11 @@ describe("public package api", () => {
         optional: true
       }
     });
+  });
+
+  it("root-exports coordination helpers promised by the README", () => {
+    expect(rootApi.createPanelCoordinator).toBeTypeOf("function");
+    expect(rootApi.routePointerSample).toBeTypeOf("function");
   });
 
   it("includes repository metadata for npm consumers", () => {

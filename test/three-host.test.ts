@@ -1,9 +1,11 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import {
+  createPanelCoordinator,
   createEmbeddedSurface,
   createEmbeddedSurfaceService,
-  createRuntime
+  createRuntime,
+  type RuntimeOutput
 } from "../src/index.js";
 import { createButtonFixture } from "../src/examples/reference-fixtures.js";
 import {
@@ -12,6 +14,7 @@ import {
   createScenePanelDriver,
   createScenePanelHost,
   createThreeTextureCompositePresenter,
+  createThreePanelSession,
   isThreeTextureSurfaceHandle,
   resolveCompositeSurfacePlacements
 } from "../src/hosts/three.js";
@@ -76,6 +79,77 @@ describe("three host adapters", () => {
     expect(host.getHit()?.surfaceY).toBeCloseTo(50, 0);
 
     host.detach();
+  });
+
+  it("wraps Three panel drivers as coordinated sessions and drains runtime outputs", () => {
+    const outputs: RuntimeOutput[] = [];
+    const runtime = createRuntime({
+      root: createButtonFixture(),
+      surface: { width: 160, height: 100 }
+    });
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1.6, 0.1, 10);
+    camera.position.set(0, 0, 1);
+    camera.lookAt(0, 0, 0);
+    scene.add(camera);
+
+    const driver = createScenePanelDriver({
+      runtime,
+      surface: { width: 160, height: 100 },
+      panelWidth: 1,
+      panelHeight: 0.625,
+      createCanvas: createFakeCanvas
+    });
+    const session = createThreePanelSession({
+      key: "panel",
+      runtime,
+      driver,
+      outputHandler(output) {
+        outputs.push(output);
+      }
+    });
+    const coordinator = createPanelCoordinator({
+      panels: [session]
+    });
+
+    session.attach();
+    session.update({ scene, camera });
+    const down = coordinator.route({
+      pointerId: "pointer",
+      pointerType: "mouse",
+      transport: "screen",
+      phase: "down",
+      timestamp: 1,
+      ndcX: 0,
+      ndcY: 0
+    }, { scene, camera });
+    coordinator.route({
+      pointerId: "pointer",
+      pointerType: "mouse",
+      transport: "screen",
+      phase: "up",
+      timestamp: 2,
+      ndcX: 0,
+      ndcY: 0
+    }, { scene, camera });
+
+    expect(down).toMatchObject({
+      ownerKey: "panel",
+      claimed: true,
+      blocked: true
+    });
+    expect(outputs).toContainEqual({
+      type: "action",
+      actionId: "fixture.confirm",
+      componentId: "fixture-button"
+    });
+    expect(runtime.takeOutputs()).toEqual([]);
+    expect(session.render().commands.length).toBeGreaterThan(0);
+
+    session.hide();
+    expect(driver.host.mesh.visible).toBe(false);
+    session.dispose();
   });
 
   it("applies explicit pose placement while reusing the shared ray-input host path", () => {

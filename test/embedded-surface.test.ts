@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createEmbeddedSurface,
+  createEmbeddedSurfaceService,
   createRuntime,
   type DisplayEvent,
   type EmbeddedSurfaceAttachment,
@@ -156,6 +157,31 @@ describe("embedded surface", () => {
 
     const forwardedAfterDismiss = surfaces.getAttachment("monitor")?.forwardedEvents ?? [];
     expect(forwardedAfterDismiss).toHaveLength(forwardedBeforeDismiss.length);
+  });
+
+  it("drains forwarded viewport input from the default service", () => {
+    const surfaces = createEmbeddedSurfaceService();
+    const runtime = createRuntime({
+      root: createEmbeddedSurface("monitor", {
+        sourceId: "camera.rear",
+        interactive: true,
+        acceptsForwardedInput: true
+      }),
+      surface: { width: 320, height: 180 },
+      services: { surfaces }
+    });
+
+    runtime.render();
+    pressAt(runtime, 160, 90);
+
+    const drained = surfaces.takeForwardedEvents("monitor");
+    expect(drained.map((event) => event.type)).toEqual([
+      "pointer-down",
+      "pointer-up",
+      "press"
+    ]);
+    expect(surfaces.getAttachment("monitor")?.forwardedEvents).toEqual([]);
+    expect(surfaces.takeForwardedEvents("monitor")).toEqual([]);
   });
 
   it("supports explicit composition mode and host-reported surface metadata", () => {
@@ -462,6 +488,15 @@ function createMockEmbeddedSurfaceService(options?: {
         ...attachment,
         forwardedEvents: [...attachment.forwardedEvents, cloneDisplayEvent(event)]
       });
+    },
+    takeForwardedEvents(componentId) {
+      const attachment = requireAttachment(componentId);
+      const events = [...attachment.forwardedEvents];
+      attachments.set(componentId, {
+        ...attachment,
+        forwardedEvents: []
+      });
+      return events;
     }
   };
 }

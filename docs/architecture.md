@@ -53,6 +53,14 @@ The root package stays headless by design. Host-specific runtime code belongs be
 
 `touch-os` is organized into six layers.
 
+### ADR: Panel OS Realignment
+
+`touch-os` remains a headless display-space runtime at core. "Panel OS" behavior is implemented above that runtime as app, window, and session orchestration, not as a monolithic XR operating system.
+
+Hosts continue to own world placement, XR/DOM/native input objects, Three.js scene graph details, and pointer projection. Panel sessions own reusable host/runtime orchestration for a panel. The window manager owns running app/window session state after its initial seed. Apps see only `TouchAppContext`, runtime outputs, app state, and app/window APIs.
+
+The first app-hosting implementation keeps same-runtime windows as the default and supports child-runtime windows for trusted runtime-state isolation. Neither mode is a security sandbox for untrusted third-party code.
+
 ### 1. Core Runtime
 
 The runtime owns:
@@ -138,7 +146,8 @@ They own:
 
 - standardized app manifests and lifecycle hooks
 - app registry lookup
-- window state for app instances
+- seeded and subsequently live window state for app instances
+- launcher and task-switcher behavior inside the panel runtime
 - focus, title, close, resize, and open-app requests
 - namespacing app component ids before mounting app trees into a shared runtime
 - optional child runtimes for isolated app focus, scroll, navigation, and local component ids
@@ -151,6 +160,8 @@ They do not own:
 - security sandboxing for untrusted code
 
 The window manager supports two host modes. Same-runtime windows mount app trees inside the panel runtime and scope app component ids. Child-runtime windows give each app window its own `DisplayRuntime`, publish that runtime's render snapshot through an embedded surface, and forward viewport input into the child runtime in window-local coordinates.
+
+`WindowManagerProps.initialWindows` is a seed, not a controlled window list. To reseed the OS session, remount the manager with a new component id. External callers should observe `window-manager-change` outputs for persistence.
 
 ### 6. Hosts
 
@@ -230,6 +241,8 @@ Architectural rules for host code:
 - host adapters may expose higher-level helper contracts when those helpers stay host-scoped
 
 The current Three.js package follows this boundary by keeping panel placement, raycasting, pointer sources, and panel interop in `@found-in-space/touch-os/hosts/three`.
+
+Reusable Three panel sessions wrap a `DisplayRuntime` and `ThreePanelDriver` as a coordinated panel: attach/update/render/hide/dispose, route pointer samples, clear pointer ownership, and flush runtime outputs through a host callback.
 
 ## Declarative Schema Layer
 

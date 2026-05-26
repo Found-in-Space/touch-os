@@ -22,14 +22,16 @@ export interface NavigationRequestEvent {
   pageId?: string;
 }
 
-export type WindowMode = "normal" | "minimized" | "maximized" | "closed";
+export type WindowMode = "normal" | "minimized" | "maximized" | "fullscreen" | "closed";
 
 export type WindowStateChangeReason =
   | "focus"
   | "move"
+  | "resize"
   | "close"
   | "minimize"
   | "maximize"
+  | "fullscreen"
   | "restore";
 
 export interface WindowStateChangeEvent {
