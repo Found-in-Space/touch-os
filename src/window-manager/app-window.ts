@@ -99,6 +99,7 @@ interface SurfaceDrawContext {
   scale?(x: number, y: number): void;
   beginPath?(): void;
   rect?(x: number, y: number, width: number, height: number): void;
+  roundRect?(x: number, y: number, width: number, height: number, radii: number): void;
   clip?(): void;
   fill?(): void;
   stroke?(): void;
@@ -534,15 +535,7 @@ function drawSnapshotCommand(context: SurfaceDrawContext, command: DrawCommand):
 
   switch (command.type) {
     case "rect":
-      if (command.fill && context.fillRect) {
-        context.fillStyle = command.fill;
-        context.fillRect(command.rect.x, command.rect.y, command.rect.width, command.rect.height);
-      }
-      if (command.stroke && context.strokeRect) {
-        context.strokeStyle = command.stroke;
-        context.lineWidth = command.strokeWidth ?? 1;
-        context.strokeRect(command.rect.x, command.rect.y, command.rect.width, command.rect.height);
-      }
+      drawRectSnapshotCommand(context, command);
       break;
     case "text":
       if (context.fillText) {
@@ -599,6 +592,42 @@ function drawSnapshotCommand(context: SurfaceDrawContext, command: DrawCommand):
       break;
   }
   context.restore?.();
+}
+
+function drawRectSnapshotCommand(
+  context: SurfaceDrawContext,
+  command: Extract<DrawCommand, { type: "rect" }>
+): void {
+  if (command.radius && context.beginPath && context.roundRect) {
+    context.beginPath();
+    context.roundRect(
+      command.rect.x,
+      command.rect.y,
+      command.rect.width,
+      command.rect.height,
+      command.radius
+    );
+    if (command.fill && context.fill) {
+      context.fillStyle = command.fill;
+      context.fill();
+    }
+    if (command.stroke && context.stroke) {
+      context.strokeStyle = command.stroke;
+      context.lineWidth = command.strokeWidth ?? 1;
+      context.stroke();
+    }
+    return;
+  }
+
+  if (command.fill && context.fillRect) {
+    context.fillStyle = command.fill;
+    context.fillRect(command.rect.x, command.rect.y, command.rect.width, command.rect.height);
+  }
+  if (command.stroke && context.strokeRect) {
+    context.strokeStyle = command.stroke;
+    context.lineWidth = command.strokeWidth ?? 1;
+    context.strokeRect(command.rect.x, command.rect.y, command.rect.width, command.rect.height);
+  }
 }
 
 function drawNestedSurfaceCommand(

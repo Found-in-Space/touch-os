@@ -69,10 +69,24 @@ const ScrollContainerComponent: DisplayComponent<ScrollContainerProps, ScrollCon
       (childId) => ctx.getMeasuredSize(childId).height,
       ctx.props.gap ?? theme.spacing
     );
+    const scrollbarVisible = shouldShowScrollbar(ctx.props, contentHeight, viewport.height);
+    const scrollbarGutter = scrollbarVisible ? getScrollbarGutter(viewport) : 0;
+    const contentPadding = scrollbarVisible
+      ? {
+          ...padding,
+          right: padding.right + scrollbarGutter
+        }
+      : padding;
+    const contentViewport = createRect(
+      viewport.x,
+      viewport.y,
+      Math.max(0, viewport.width - scrollbarGutter),
+      viewport.height
+    );
     ctx.services.scroll.setMetrics(
       ctx.id,
-      { width: viewport.width, height: viewport.height },
-      { width: viewport.width, height: contentHeight }
+      { width: contentViewport.width, height: contentViewport.height },
+      { width: contentViewport.width, height: contentHeight }
     );
     const scrollState = ctx.services.scroll.getState(ctx.id);
     const contentBounds = layoutVerticalChildren(
@@ -82,7 +96,7 @@ const ScrollContainerComponent: DisplayComponent<ScrollContainerProps, ScrollCon
         setChildBounds: (childId, rect) => ctx.setChildBounds(childId, rect)
       },
       ctx.bounds,
-      padding,
+      contentPadding,
       ctx.props.gap ?? theme.spacing,
       scrollState.offsetY
     );
@@ -119,7 +133,8 @@ const ScrollContainerComponent: DisplayComponent<ScrollContainerProps, ScrollCon
         Math.max(0, ctx.bounds.width - padding.left - padding.right),
         Math.max(0, ctx.bounds.height - padding.top - padding.bottom)
       );
-      const thickness = Math.min(4, Math.max(2, viewport.width * 0.03));
+      const thickness = getScrollbarThickness(viewport);
+      const trackX = viewport.x + viewport.width - thickness;
       const thumbHeight = Math.max(
         16,
         Math.min(viewport.height, (viewport.height / scrollState.content.height) * viewport.height)
@@ -132,7 +147,7 @@ const ScrollContainerComponent: DisplayComponent<ScrollContainerProps, ScrollCon
           type: "rect",
           componentId: ctx.id,
           role: "scroll-container-scrollbar-track",
-          rect: createRect(viewport.x + viewport.width - thickness, viewport.y, thickness, viewport.height),
+          rect: createRect(trackX, viewport.y, thickness, viewport.height),
           fill: theme.overlayColor,
           radius: thickness / 2
         },
@@ -140,8 +155,8 @@ const ScrollContainerComponent: DisplayComponent<ScrollContainerProps, ScrollCon
           type: "rect",
           componentId: ctx.id,
           role: "scroll-container-scrollbar-thumb",
-          rect: createRect(viewport.x + viewport.width - thickness, thumbY, thickness, thumbHeight),
-          fill: theme.accentColor,
+          rect: createRect(trackX, thumbY, thickness, thumbHeight),
+          fill: theme.borderColor,
           radius: thickness / 2
         }
       );
@@ -215,4 +230,20 @@ function createContentConstraints(maxWidth: number): LayoutConstraints {
     maxWidth,
     maxHeight: Number.POSITIVE_INFINITY
   };
+}
+
+function shouldShowScrollbar(
+  props: Pick<ScrollContainerProps, "scrollbar">,
+  contentHeight: number,
+  viewportHeight: number
+): boolean {
+  return props.scrollbar !== "hidden" && contentHeight > viewportHeight;
+}
+
+function getScrollbarThickness(viewport: { width: number }): number {
+  return Math.min(4, Math.max(2, viewport.width * 0.03));
+}
+
+function getScrollbarGutter(viewport: { width: number }): number {
+  return getScrollbarThickness(viewport) + 4;
 }

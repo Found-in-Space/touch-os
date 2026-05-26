@@ -154,6 +154,10 @@ const WindowComponent: DisplayComponent<WindowProps, WindowInteractionState> = {
     if (chromeRect) {
       for (const control of ctx.props.controls ?? []) {
         const rect = resolveControlRect(chromeRect, ctx.props.controls ?? [], control);
+        const iconColor =
+          ctx.state.pressedControl === control
+            ? theme.accentTextColor
+            : theme.textColor;
         commands.push({
           type: "rect" as const,
           componentId: ctx.id,
@@ -167,21 +171,7 @@ const WindowComponent: DisplayComponent<WindowProps, WindowInteractionState> = {
           strokeWidth: 1,
           radius: Math.max(2, theme.radius / 2)
         });
-        commands.push({
-          type: "text" as const,
-          componentId: ctx.id,
-          role: `window-control-${control}-label`,
-          rect,
-          text: getControlLabel(control),
-          color:
-            ctx.state.pressedControl === control
-              ? theme.accentTextColor
-              : theme.textColor,
-          align: "center" as const,
-          verticalAlign: "middle" as const,
-          fontSize: Math.max(10, theme.typography.fontSize - 2),
-          fontWeight: theme.typography.fontWeight
-        });
+        commands.push(...createControlIconCommands(ctx.id, control, ctx.props.mode ?? "normal", rect, iconColor));
       }
     }
 
@@ -471,20 +461,104 @@ function resolveControlRect(
 }
 
 function getControlButtonSize(chromeRect: Rect): number {
-  return Math.max(14, Math.min(22, chromeRect.height - 8));
+  return Math.max(12, Math.min(18, chromeRect.height - 10));
 }
 
-function getControlLabel(control: WindowControl): string {
+function createControlIconCommands(
+  componentId: string,
+  control: WindowControl,
+  mode: WindowMode,
+  rect: Rect,
+  color: string
+): DrawCommand[] {
+  const inset = Math.max(3, rect.width * 0.26);
+  const left = rect.x + inset;
+  const right = rect.x + rect.width - inset;
+  const top = rect.y + inset;
+  const bottom = rect.y + rect.height - inset;
+  const centerY = rect.y + rect.height / 2;
+  const role =
+    control === "fullscreen"
+      ? mode === "fullscreen"
+        ? "window-control-fullscreen-restore-icon"
+        : "window-control-fullscreen-expand-icon"
+      : `window-control-${control}-icon`;
+  const strokeWidth = 1.5;
+  const line = (x1: number, y1: number, x2: number, y2: number): DrawCommand => ({
+    type: "line" as const,
+    componentId,
+    role,
+    x1,
+    y1,
+    x2,
+    y2,
+    stroke: color,
+    strokeWidth
+  });
+
   switch (control) {
     case "close":
-      return "x";
+      return [
+        line(left, top, right, bottom),
+        line(right, top, left, bottom)
+      ];
     case "minimize":
-      return "-";
+      return [line(left, centerY, right, centerY)];
     case "maximize":
-      return "+";
+      return [
+        line(left, top, right, top),
+        line(right, top, right, bottom),
+        line(right, bottom, left, bottom),
+        line(left, bottom, left, top)
+      ];
     case "fullscreen":
-      return "[]";
+      return mode === "fullscreen"
+        ? createRestoreIconLines(line, left, top, right, bottom)
+        : createExpandIconLines(line, left, top, right, bottom);
   }
+}
+
+function createExpandIconLines(
+  line: (x1: number, y1: number, x2: number, y2: number) => DrawCommand,
+  left: number,
+  top: number,
+  right: number,
+  bottom: number
+): DrawCommand[] {
+  const arm = (right - left) * 0.42;
+  return [
+    line(left, top + arm, left, top),
+    line(left, top, left + arm, top),
+    line(right - arm, top, right, top),
+    line(right, top, right, top + arm),
+    line(right, bottom - arm, right, bottom),
+    line(right, bottom, right - arm, bottom),
+    line(left + arm, bottom, left, bottom),
+    line(left, bottom, left, bottom - arm)
+  ];
+}
+
+function createRestoreIconLines(
+  line: (x1: number, y1: number, x2: number, y2: number) => DrawCommand,
+  left: number,
+  top: number,
+  right: number,
+  bottom: number
+): DrawCommand[] {
+  const offset = Math.max(2, (right - left) * 0.28);
+  const backLeft = left + offset;
+  const backBottom = bottom - offset;
+  const frontRight = right - offset;
+  const frontTop = top + offset;
+  return [
+    line(backLeft, top, right, top),
+    line(right, top, right, backBottom),
+    line(right, backBottom, frontRight, backBottom),
+    line(left, frontTop, frontRight, frontTop),
+    line(frontRight, frontTop, frontRight, bottom),
+    line(frontRight, bottom, left, bottom),
+    line(left, bottom, left, frontTop)
+  ];
 }
 
 function isWindowControl(value: string): value is WindowControl {

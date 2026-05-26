@@ -375,7 +375,19 @@ describe("built-in controls", () => {
       surface: { width: 220, height: 80 }
     });
 
-    runtime.render();
+    const snapshot = runtime.render();
+    const rowCommand = findCommandByRole(snapshot.commands, "toggle-row");
+    const switchCommand = findCommandByRole(snapshot.commands, "toggle-switch");
+    const knobCommand = findCommandByRole(snapshot.commands, "toggle-knob");
+    if (rowCommand.type !== "rect" || switchCommand.type !== "rect" || knobCommand.type !== "circle") {
+      throw new Error("Expected toggle switch and knob commands.");
+    }
+    expect(rowCommand.fill).toBeUndefined();
+    expect(rowCommand.stroke).toBeUndefined();
+    expect(switchCommand.rect.width).toBeLessThanOrEqual(48);
+    expect(knobCommand.cx).toBeGreaterThan(switchCommand.rect.x);
+    expect(knobCommand.cx).toBeLessThan(switchCommand.rect.x + switchCommand.rect.width);
+
     const bounds = runtime.getBounds("test-toggle");
     expect(bounds).toBeDefined();
 

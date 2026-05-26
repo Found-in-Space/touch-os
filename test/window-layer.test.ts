@@ -92,6 +92,49 @@ describe("window layer", () => {
     });
   });
 
+  it("renders compact line icons for window controls", () => {
+    const runtime = createRuntime({
+      root: createWindowLayer("windows", {
+        windows: [
+          createWindow("tool-window", {
+            title: "Tool",
+            rect: { x: 10, y: 8, width: 130, height: 70 },
+            controls: ["close", "minimize", "maximize", "fullscreen"],
+            child: createProbeNode("tool-content")
+          })
+        ]
+      }),
+      surface: { width: 200, height: 120 }
+    });
+
+    let snapshot = runtime.render();
+    const fullscreenControl = getSingleRectByRole(snapshot.commands, "window-control-fullscreen");
+    expect(fullscreenControl.rect.width).toBeLessThanOrEqual(18);
+    expect(snapshot.commands.some((command) => command.role?.endsWith("-label"))).toBe(false);
+    expect(getLinesByRole(snapshot.commands, "window-control-close-icon")).toHaveLength(2);
+    expect(getLinesByRole(snapshot.commands, "window-control-minimize-icon")).toHaveLength(1);
+    expect(getLinesByRole(snapshot.commands, "window-control-maximize-icon")).toHaveLength(4);
+    expect(getLinesByRole(snapshot.commands, "window-control-fullscreen-expand-icon")).toHaveLength(8);
+
+    runtime.setRoot(
+      createWindowLayer("windows", {
+        windows: [
+          createWindow("tool-window", {
+            title: "Tool",
+            rect: { x: 10, y: 8, width: 130, height: 70 },
+            mode: "fullscreen",
+            controls: ["fullscreen"],
+            child: createProbeNode("tool-content")
+          })
+        ]
+      })
+    );
+
+    snapshot = runtime.render();
+    expect(getLinesByRole(snapshot.commands, "window-control-fullscreen-restore-icon")).toHaveLength(7);
+    expect(getLinesByRole(snapshot.commands, "window-control-fullscreen-expand-icon")).toHaveLength(0);
+  });
+
   it("drags the handle and clamps the window inside the layer bounds", () => {
     const runtime = createRuntime({
       root: createWindowLayer("windows", {
@@ -300,6 +343,24 @@ function getFrameOrder(commands: readonly DrawCommand[]): string[] {
   return commands
     .filter((command) => command.type === "rect" && command.role === "window-frame")
     .map((command) => command.componentId);
+}
+
+function getSingleRectByRole(commands: readonly DrawCommand[], role: string): Extract<DrawCommand, { type: "rect" }> {
+  const command = commands.find(
+    (entry): entry is Extract<DrawCommand, { type: "rect" }> =>
+      entry.type === "rect" && entry.role === role
+  );
+  if (!command) {
+    throw new Error(`Expected rect command with role "${role}".`);
+  }
+  return command;
+}
+
+function getLinesByRole(commands: readonly DrawCommand[], role: string): Array<Extract<DrawCommand, { type: "line" }>> {
+  return commands.filter(
+    (command): command is Extract<DrawCommand, { type: "line" }> =>
+      command.type === "line" && command.role === role
+  );
 }
 
 function isWindowStateChange(output: RuntimeOutput): output is WindowStateChangeEvent {

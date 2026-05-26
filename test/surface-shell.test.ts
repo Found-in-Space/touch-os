@@ -61,6 +61,9 @@ describe("surface shell", () => {
       throw new Error("Expected the overflow scrollbar thumb to render as a rect.");
     }
     expect(thumb.componentId).toBe("overflow-shell:scroll");
+    const firstRowBounds = runtime.getBounds("overflow-row-0");
+    expect(firstRowBounds).toBeDefined();
+    expect((firstRowBounds?.x ?? 0) + (firstRowBounds?.width ?? 0)).toBeLessThan(thumb.rect.x);
 
     const fittedRuntime = createRuntime({
       root: createSurfaceShell("fitted-shell", {

@@ -329,7 +329,7 @@ function createArmWindowManagerRoot(
     launcher: true,
     taskSwitcher: true,
     utilityWindows: "back",
-    windowControls: ["minimize", "maximize", "fullscreen"],
+    windowControls: ["minimize", "fullscreen"],
     appStates: {
       [ARM_APP_IDS.settings]: appState,
       [ARM_APP_IDS.rearView]: appState,
@@ -531,7 +531,7 @@ export function getRoomPanelTheme(
         backgroundColor: "#0a1220",
         surfaceColor: "#162133",
         borderColor: "#35506e",
-        accentColor: "#fb7185",
+        accentColor: "#60a5fa",
         focusColor: "#22c55e",
         controlHeight: 38,
         spacing: 6,

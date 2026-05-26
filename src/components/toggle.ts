@@ -25,13 +25,21 @@ const ToggleComponent: DisplayComponent<ToggleProps> = {
   },
   render(ctx) {
     const theme = ctx.services.theme.getTokens();
+    const switchHeight = Math.max(20, Math.min(28, Math.round(ctx.bounds.height * 0.62)));
+    const switchWidth = Math.max(36, Math.min(48, Math.round(switchHeight * 1.75)));
     const switchRect = createRect(
-      ctx.bounds.x + ctx.bounds.width - 44,
-      ctx.bounds.y + (ctx.bounds.height - 24) / 2,
-      36,
-      24
+      ctx.bounds.x + ctx.bounds.width - switchWidth - theme.padding,
+      ctx.bounds.y + (ctx.bounds.height - switchHeight) / 2,
+      switchWidth,
+      switchHeight
     );
-    const knobX = ctx.props.value ? switchRect.x + switchRect.width - 10 : switchRect.x + 10;
+    const knobInset = Math.max(3, Math.round(switchHeight * 0.14));
+    const knobRadius = Math.max(6, (switchHeight - knobInset * 2) / 2);
+    const knobX = ctx.props.value
+      ? switchRect.x + switchRect.width - knobInset - knobRadius
+      : switchRect.x + knobInset + knobRadius;
+    const labelRight = ctx.bounds.x + ctx.bounds.width - switchWidth - theme.padding * 2;
+    const focused = ctx.interaction.focusedComponentId === ctx.id;
 
     return [
       {
@@ -39,17 +47,20 @@ const ToggleComponent: DisplayComponent<ToggleProps> = {
         componentId: ctx.id,
         role: "toggle-row",
         rect: ctx.bounds,
-        fill: theme.surfaceColor,
-        stroke: theme.borderColor,
-        strokeWidth: 1,
-        radius: theme.radius
+        ...(focused ? { stroke: theme.focusColor, strokeWidth: 2 } : {}),
+        radius: Math.max(4, Math.min(theme.radius, ctx.bounds.height / 4))
       },
       {
         type: "text",
         componentId: ctx.id,
         role: "toggle-label",
         text: ctx.props.label,
-        rect: createRect(ctx.bounds.x + theme.padding, ctx.bounds.y, ctx.bounds.width - 56, ctx.bounds.height),
+        rect: createRect(
+          ctx.bounds.x + theme.padding,
+          ctx.bounds.y,
+          Math.max(0, labelRight - ctx.bounds.x - theme.padding),
+          ctx.bounds.height
+        ),
         color: theme.textColor,
         align: "left",
         verticalAlign: "middle",
@@ -62,8 +73,7 @@ const ToggleComponent: DisplayComponent<ToggleProps> = {
         role: "toggle-switch",
         rect: switchRect,
         fill: ctx.props.value ? theme.accentColor : theme.backgroundColor,
-        stroke:
-          ctx.interaction.focusedComponentId === ctx.id ? theme.focusColor : theme.borderColor,
+        stroke: ctx.props.value ? theme.accentColor : theme.borderColor,
         strokeWidth: 1,
         radius: switchRect.height / 2
       },
@@ -73,8 +83,8 @@ const ToggleComponent: DisplayComponent<ToggleProps> = {
         role: "toggle-knob",
         cx: knobX,
         cy: switchRect.y + switchRect.height / 2,
-        radius: 8,
-        fill: theme.accentTextColor
+        radius: knobRadius,
+        fill: ctx.props.value ? theme.accentTextColor : theme.mutedTextColor
       }
     ];
   },

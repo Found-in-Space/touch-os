@@ -298,6 +298,20 @@ describe("window manager", () => {
       kind: "touch-os-render-snapshot",
       width: 180
     });
+    if (
+      typeof viewport.handle !== "object" ||
+      viewport.handle === null ||
+      (viewport.handle as { kind?: unknown }).kind !== "touch-os-render-snapshot"
+    ) {
+      throw new Error("Expected a drawable touch runtime snapshot handle.");
+    }
+    const drawOperations: string[] = [];
+    (viewport.handle as TouchRuntimeSurfaceHandle).draw(
+      createRecordingSurfaceContext(drawOperations),
+      viewport.rect
+    );
+    expect(drawOperations).toContain("roundRect");
+    expect(drawOperations).not.toContain("fillRect");
     expect(surfaces.getSource("space.test.child:child-1:child-window:surface-source")).toMatchObject({
       available: true,
       sourceType: "touch-os-runtime"
@@ -977,4 +991,48 @@ function getHostedButtonFill(
     throw new Error("Expected hosted button face to render as a rect.");
   }
   return buttonFace.fill;
+}
+
+function createRecordingSurfaceContext(operations: string[]) {
+  return {
+    save() {
+      operations.push("save");
+    },
+    restore() {
+      operations.push("restore");
+    },
+    translate() {
+      operations.push("translate");
+    },
+    scale() {
+      operations.push("scale");
+    },
+    beginPath() {
+      operations.push("beginPath");
+    },
+    roundRect() {
+      operations.push("roundRect");
+    },
+    fillRect() {
+      operations.push("fillRect");
+    },
+    strokeRect() {
+      operations.push("strokeRect");
+    },
+    fill() {
+      operations.push("fill");
+    },
+    stroke() {
+      operations.push("stroke");
+    },
+    fillText() {
+      operations.push("fillText");
+    },
+    set fillStyle(_value: unknown) {},
+    set strokeStyle(_value: unknown) {},
+    set lineWidth(_value: number) {},
+    set font(_value: string) {},
+    set textAlign(_value: string) {},
+    set textBaseline(_value: string) {}
+  };
 }
