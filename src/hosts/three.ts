@@ -566,7 +566,14 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
     }
 
     if (event.type === "pointer-move") {
-      runtime.dispatchInput(createRuntimeInputEvent(event, pointerId, -1, -1));
+      runtime.dispatchInput(
+        createRuntimeInputEvent(
+          event,
+          pointerId,
+          hasCapturedPress && latestHit?.pointerId === pointerId ? latestHit.surfaceX : -1,
+          hasCapturedPress && latestHit?.pointerId === pointerId ? latestHit.surfaceY : -1
+        )
+      );
       if (hasCapturedPress && latestHit?.pointerId === pointerId) {
         latestHit = {
           ...latestHit,
@@ -942,9 +949,11 @@ export function createPanelInteractor(options: {
       } else if (state.dispatched) {
         hostEvent =
           sample.phase === "move" ? createMissMoveHostEvent(sample) : createCancelHostEvent(sample);
+        const surfaceX = state.captured && state.hit ? state.hit.surfaceX : -1;
+        const surfaceY = state.captured && state.hit ? state.hit.surfaceY : -1;
         options.runtime.dispatchInput(
           sample.phase === "move"
-            ? createRuntimeInputEvent(hostEvent, sample.pointerId, -1, -1)
+            ? createRuntimeInputEvent(hostEvent, sample.pointerId, surfaceX, surfaceY)
             : createCancelInputEvent(hostEvent, sample.pointerId)
         );
         dispatched = true;

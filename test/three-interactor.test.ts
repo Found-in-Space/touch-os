@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   createDockLayout,
   createHoldButton,
-  createRuntime
+  createRuntime,
+  createWindow,
+  createWindowLayer
 } from "../src/index.js";
 import { createButtonFixture } from "../src/examples/reference-fixtures.js";
 import {
@@ -437,6 +439,108 @@ describe("three interactor", () => {
       componentId: "hold-test",
       payload: { intent: "forward", active: false }
     });
+
+    host.detach();
+  });
+
+  it("keeps captured window drags at the last hit point when a ray misses the panel", () => {
+    const runtime = createRuntime({
+      root: createWindowLayer("windows", {
+        windows: [
+          createWindow("tool-window", {
+            title: "Tool",
+            rect: { x: 40, y: 40, width: 120, height: 90 },
+            child: createButtonFixture()
+          })
+        ]
+      }),
+      surface: { width: 300, height: 200 },
+      dragThreshold: 1
+    });
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1.5, 0.1, 10);
+    camera.position.set(0, 0, 1);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    scene.add(camera);
+
+    const host = createScenePanelHost({
+      runtime,
+      surface: { width: 300, height: 200 },
+      panelWidth: 1.5,
+      panelHeight: 1,
+      createCanvas: createFakeCanvas
+    });
+    host.attach();
+    host.update({ scene, camera });
+
+    const interactor = createPanelInteractor({
+      runtime,
+      mesh: host.mesh,
+      getSurfaceMetrics: () => host.getSurfaceMetrics(),
+      pointerClaimPolicy: "block-on-hit"
+    });
+
+    interactor.process(
+      {
+        pointerId: "ray-drag",
+        pointerType: "ray",
+        transport: "screen",
+        phase: "down",
+        timestamp: 1,
+        ...toNdcSample(60, 50, 300, 200)
+      },
+      { scene, camera }
+    );
+    interactor.process(
+      {
+        pointerId: "ray-drag",
+        pointerType: "ray",
+        transport: "screen",
+        phase: "move",
+        timestamp: 2,
+        ...toNdcSample(90, 1, 300, 200)
+      },
+      { scene, camera }
+    );
+    runtime.render();
+    const lastHitBounds = runtime.getBounds("tool-window");
+    expect(lastHitBounds?.x).toBeGreaterThan(40);
+    expect(lastHitBounds).toMatchObject({
+      y: 0,
+      width: 120,
+      height: 90
+    });
+
+    interactor.process(
+      {
+        pointerId: "ray-drag",
+        pointerType: "ray",
+        transport: "screen",
+        phase: "move",
+        timestamp: 3,
+        ndcX: toNdcSample(90, 1, 300, 200).ndcX,
+        ndcY: 1.2
+      },
+      { scene, camera }
+    );
+    runtime.render();
+
+    expect(runtime.getBounds("tool-window")).toEqual(lastHitBounds);
+
+    interactor.process(
+      {
+        pointerId: "ray-drag",
+        pointerType: "ray",
+        transport: "screen",
+        phase: "up",
+        timestamp: 4,
+        ndcX: toNdcSample(90, 1, 300, 200).ndcX,
+        ndcY: 1.2
+      },
+      { scene, camera }
+    );
 
     host.detach();
   });
