@@ -162,16 +162,17 @@ Shipped now:
 - normalized input and emitted output model
 - generic controls: button, hold button, repeat button, d-pad, toggle, slider, choice group, text label, value readout, action card, list item
 - richer display components: bitmap plot, custom graph, embedded surface
-- containers: row, column, stack, overlay, section, scroll container, page container, dock layout, surface shell
+- containers: row, column, stack, overlay, section, scroll container, page container, dock layout, surface shell, window, window layer
 - services: layout, navigation, scroll, focus, theme, timing, surface metrics, bitmap assets, embedded surfaces
 - embedded-surface composition through copy or host-composited surface commands
+- movable surface-local windows with drag handles, focus/z-order, clamping, and window-state-change outputs
 - panel coordination for ordered multi-panel routing, fallthrough, lower-priority clearing, and pointer-scoped ownership
 - optional schema authoring for text, button, toggle, slider, choice group, value readout, and action card documents
 
 Planned but not shipped yet:
 
 - browser and DOM-adjacent hosts in [docs/plan-browser-hosts.md](./docs/plan-browser-hosts.md)
-- movable windows and bounded movable panels in [docs/plan-movable-components.md](./docs/plan-movable-components.md)
+- bounded movable scene panels in [docs/plan-movable-components.md](./docs/plan-movable-components.md)
 - presentation variants and runtime bindings in [docs/plan-presentation-variants.md](./docs/plan-presentation-variants.md)
 - source-bound embedded-surface input sinks in [docs/plan-embedded-surface-input.md](./docs/plan-embedded-surface-input.md)
 
@@ -181,7 +182,7 @@ Planned but not shipped yet:
 - [docs/features.md](./docs/features.md): shipped feature inventory and roadmap links
 - [docs/usage.md](./docs/usage.md): integration patterns and code examples
 - [docs/plan-browser-hosts.md](./docs/plan-browser-hosts.md): browser host roadmap
-- [docs/plan-movable-components.md](./docs/plan-movable-components.md): movable window roadmap
+- [docs/plan-movable-components.md](./docs/plan-movable-components.md): shipped surface-local windows and host-side movable panel roadmap
 - [docs/plan-panel-coordination.md](./docs/plan-panel-coordination.md): shipped panel coordination notes and future policy roadmap
 - [docs/plan-presentation-variants.md](./docs/plan-presentation-variants.md): presentation-variant roadmap
 - [docs/plan-embedded-surface-input.md](./docs/plan-embedded-surface-input.md): advanced embedded-surface input roadmap

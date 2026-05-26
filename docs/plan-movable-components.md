@@ -4,6 +4,16 @@
 
 Add a generic concept of movable XR/UI windows without turning `touch-os` into a Quest-specific shell clone.
 
+## Status
+
+Phase 1 surface-local windows are shipped through:
+
+- `createWindowLayer`
+- `createWindow`
+- `WindowStateChangeEvent`
+
+The shipped implementation supports fixed rect windows, z-order, focus-on-press, drag handles, pointer capture during drag, clamping to the layer bounds, optional close/minimize/maximize controls, and `window-state-change` outputs. Host-side movable scene panels remain planned work.
+
 The immediate target is a Quest-like drag affordance for things such as:
 
 - the rear-view mirror on a HUD surface
@@ -158,7 +168,7 @@ Quest-like behavior is closest to `hover | dragging`, with the important caveat 
 
 ### Phase 1 Core Runtime Feature
 
-Add a new container primitive, tentatively:
+Shipped as container primitives:
 
 - `createWindowLayer(...)`
 - `createWindow(...)`

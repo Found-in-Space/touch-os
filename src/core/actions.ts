@@ -1,3 +1,5 @@
+import type { Rect } from "./geometry.js";
+
 export interface ActionEvent {
   type: "action";
   actionId: string;
@@ -20,7 +22,33 @@ export interface NavigationRequestEvent {
   pageId?: string;
 }
 
+export type WindowMode = "normal" | "minimized" | "maximized" | "closed";
+
+export type WindowStateChangeReason =
+  | "focus"
+  | "move"
+  | "close"
+  | "minimize"
+  | "maximize"
+  | "restore";
+
+export interface WindowStateChangeEvent {
+  type: "window-state-change";
+  componentId: string;
+  windowId: string;
+  change: WindowStateChangeReason;
+  rect: Rect;
+  zIndex: number;
+  focused: boolean;
+  mode: WindowMode;
+  previousRect?: Rect;
+  previousZIndex?: number;
+  previousMode?: WindowMode;
+  persistenceKey?: string;
+}
+
 export type RuntimeOutput =
   | ActionEvent
   | ChangeRequestEvent<unknown>
-  | NavigationRequestEvent;
+  | NavigationRequestEvent
+  | WindowStateChangeEvent;

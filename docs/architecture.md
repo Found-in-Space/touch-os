@@ -235,7 +235,7 @@ Public API changes should preserve these rules:
 These are intentionally not shipped in the current release line:
 
 - a browser or DOM-backed host
-- movable windows or bounded movable scene panels
+- bounded movable scene panels
 - presentation variants and runtime-binding helpers
 - source-bound embedded-surface input sinks
 

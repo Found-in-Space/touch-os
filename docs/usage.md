@@ -343,6 +343,41 @@ function createHost(runtime: DisplayRuntime): HostAdapter {
 
 That is enough for a canvas host, a texture-backed scene host, or a test harness.
 
+## Use Movable Windows
+
+Use `createWindowLayer` when a panel needs surface-local windows with explicit rects, z-order, drag handles, and optional chrome controls.
+
+```ts
+import {
+  createButton,
+  createRuntime,
+  createWindow,
+  createWindowLayer
+} from "@found-in-space/touch-os";
+
+const root = createWindowLayer("tablet-windows", {
+  constraintPadding: 8,
+  windows: [
+    createWindow("settings-window", {
+      title: "Settings",
+      rect: { x: 24, y: 24, width: 320, height: 220 },
+      controls: ["minimize", "maximize", "close"],
+      child: createButton("sync", {
+        label: "Sync",
+        actionId: "settings.sync"
+      })
+    })
+  ]
+});
+
+const runtime = createRuntime({
+  root,
+  surface: { width: 640, height: 420 }
+});
+```
+
+The layer keeps live window rect, mode, focus, and z-order as runtime session state. Apps can persist changes by consuming `window-state-change` outputs and storing the emitted `rect`, `zIndex`, and `mode`.
+
 ## Coordinate Multiple Panels
 
 Use the coordination helper when more than one panel can receive samples from the same pointer source.
@@ -422,6 +457,5 @@ See [`examples/three-living-room`](../examples/three-living-room) for a fuller e
 If you need a feature that is not shipped yet, check the relevant plan doc first:
 
 - [plan-browser-hosts.md](./plan-browser-hosts.md)
-- [plan-movable-components.md](./plan-movable-components.md)
 - [plan-presentation-variants.md](./plan-presentation-variants.md)
 - [plan-embedded-surface-input.md](./plan-embedded-surface-input.md)

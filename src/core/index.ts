@@ -2,7 +2,10 @@ export type {
   ActionEvent,
   ChangeRequestEvent,
   NavigationRequestEvent,
-  RuntimeOutput
+  RuntimeOutput,
+  WindowMode,
+  WindowStateChangeEvent,
+  WindowStateChangeReason
 } from "./actions.js";
 export type {
   ComponentEvent,

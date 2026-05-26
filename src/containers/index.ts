@@ -16,3 +16,13 @@ export type { StackProps } from "./stack.js";
 export { createStack } from "./stack.js";
 export type { SurfaceShellProps } from "./surface-shell.js";
 export { createSurfaceShell } from "./surface-shell.js";
+export type {
+  WindowControl,
+  WindowDragHandle,
+  WindowHandleVisibility,
+  WindowProps,
+  WindowRect
+} from "./window.js";
+export { createWindow } from "./window.js";
+export type { WindowLayerProps } from "./window-layer.js";
+export { createWindowLayer } from "./window-layer.js";

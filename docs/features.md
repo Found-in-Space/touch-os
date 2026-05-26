@@ -75,8 +75,12 @@ Shipped in `@found-in-space/touch-os/containers`:
 - `createPageContainer`
 - `createDockLayout`
 - `createSurfaceShell`
+- `createWindow`
+- `createWindowLayer`
 
-These cover the core runtime composition patterns needed for panels, forms, HUD groupings, overlays, responsive page shells, and paged settings-style UIs.
+These cover the core runtime composition patterns needed for panels, forms, HUD groupings, overlays, responsive page shells, paged settings-style UIs, and movable surface-local window layouts.
+
+`createWindowLayer` manages fixed rect windows, z-order, focus-on-press, drag-handle movement, clamping to the layer bounds, optional close/minimize/maximize controls, and `window-state-change` outputs for app persistence.
 
 ## Runtime Services
 
@@ -209,6 +213,6 @@ The runtime and services are designed to stay testable without requiring a live 
 The following intentionally remain planned work rather than implicit promises:
 
 - browser and DOM-adjacent hosts in [plan-browser-hosts.md](./plan-browser-hosts.md)
-- movable windows and bounded scene panels in [plan-movable-components.md](./plan-movable-components.md)
+- bounded scene panels in [plan-movable-components.md](./plan-movable-components.md)
 - presentation variants and runtime bindings in [plan-presentation-variants.md](./plan-presentation-variants.md)
 - source-bound embedded-surface input sinks in [plan-embedded-surface-input.md](./plan-embedded-surface-input.md)
