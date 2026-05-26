@@ -89,6 +89,7 @@ Tablet behavior:
 - The soft home bar or button routes to the same shell home behavior as a host home key.
 - `app-switcher` toggles the tablet task switcher.
 - `taskCloseControl: "button"` adds close controls to tablet task cards.
+- `launcherLayout` can tighten home icon tile, gap, padding, and symbol sizing for compact physical surfaces.
 - By default, Home deactivates and suspends the foreground app. Pass `keepAlive: true` to deactivate without suspending.
 
 The compatibility API can also use tablet mode:

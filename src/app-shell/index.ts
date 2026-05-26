@@ -26,5 +26,8 @@ export type {
 } from "./app-hosting.js";
 export type { DesktopWindowPresentationOptions } from "./presentations/desktop-window-presentation.js";
 export { createDesktopWindowPresentation } from "./presentations/desktop-window-presentation.js";
-export type { TabletHomePresentationOptions } from "./presentations/tablet-home-presentation.js";
+export type {
+  TabletHomeLauncherLayoutOptions,
+  TabletHomePresentationOptions
+} from "./presentations/tablet-home-presentation.js";
 export { createTabletHomePresentation } from "./presentations/tablet-home-presentation.js";

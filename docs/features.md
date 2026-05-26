@@ -205,7 +205,7 @@ Current Three.js host coverage includes:
 - screen, ray, surface, and direct-contact pointer transport
 - pointer claim and blocking policies
 - pluggable pointer presentation integration
-- host-side composite embedded-surface placement resolution
+- host-side composite embedded-surface placement resolution, including nested child-runtime snapshots
 
 ## Panel Coordination
 

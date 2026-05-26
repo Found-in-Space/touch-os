@@ -5,6 +5,7 @@ import {
   createEmbeddedSurface,
   createEmbeddedSurfaceService,
   createRuntime,
+  type RenderSnapshot,
   type RuntimeOutput
 } from "../src/index.js";
 import { createButtonFixture } from "../src/examples/reference-fixtures.js";
@@ -452,6 +453,89 @@ describe("three host adapters", () => {
       compositionMode: "composite",
       surfaceRevision: 1
     });
+
+    host.detach();
+  });
+
+  it("bubbles nested child-runtime composite surfaces to the outer panel host", () => {
+    const surfaces = createEmbeddedSurfaceService();
+    const runtime = createRuntime({
+      root: createEmbeddedSurface("hosted-app", {
+        sourceId: "child.runtime",
+        compositionMode: "copy",
+        preserveAspectRatio: false,
+        viewportPadding: 0
+      }),
+      surface: { width: 160, height: 100 },
+      theme: { padding: 0 },
+      services: { surfaces }
+    });
+    const texture = new THREE.Texture();
+    const nestedSnapshot: RenderSnapshot = {
+      revision: 1,
+      sharedSurfaceRevision: 1,
+      commands: [
+        {
+          type: "surface",
+          componentId: "hr-diagram",
+          role: "embedded-surface-viewport",
+          rect: { x: 50, y: 25, width: 100, height: 50 },
+          handle: { kind: "three-texture", texture },
+          sourceId: "chart.hr",
+          surfaceRevision: 3,
+          compositionMode: "composite"
+        }
+      ]
+    };
+    surfaces.publish("child.runtime", {
+      available: true,
+      handle: {
+        kind: "touch-os-render-snapshot",
+        width: 200,
+        height: 100,
+        revision: 1,
+        snapshot: nestedSnapshot,
+        draw() {}
+      },
+      sourceWidth: 200,
+      sourceHeight: 100
+    });
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1.6, 0.1, 10);
+    scene.add(camera);
+
+    const host = createScenePanelHost({
+      runtime,
+      surface: { width: 160, height: 100 },
+      panelWidth: 1,
+      panelHeight: 0.625,
+      createCanvas: createFakeCanvas
+    });
+
+    host.attach();
+    host.update({ scene, camera });
+
+    expect(host.getCompositeSurfaces()).toHaveLength(1);
+    expect(host.getCompositeSurfaces()[0]).toMatchObject({
+      componentId: "hosted-app:hr-diagram",
+      sourceId: "chart.hr",
+      handle: { kind: "three-texture", texture },
+      compositionMode: "composite",
+      surfaceRevision: 3,
+      rect: {
+        x: 40,
+        y: 25,
+        width: 80,
+        height: 50
+      }
+    });
+
+    const placements = resolveCompositeSurfacePlacements(host);
+    expect(placements[0]?.localCenter.x).toBeCloseTo(0);
+    expect(placements[0]?.localCenter.y).toBeCloseTo(0);
+    expect(placements[0]?.size.width).toBeCloseTo(0.5);
+    expect(placements[0]?.size.height).toBeCloseTo(0.3125);
 
     host.detach();
   });

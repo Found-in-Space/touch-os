@@ -51,6 +51,7 @@ interface ArmPanelAppState {
 const ARM_APP_IDS = {
   settings: "space.found.living-room.settings",
   rearView: "space.found.living-room.rear-view",
+  fractalArt: "space.found.living-room.fractal-art",
   diagnostics: "space.found.living-room.diagnostics"
 } as const;
 
@@ -58,6 +59,10 @@ const ARM_APP_REGISTRY = createTouchAppRegistry([
   defineControlsApp<RoomDemoState>({
     id: ARM_APP_IDS.settings,
     name: "Settings",
+    icon: {
+      kind: "symbol",
+      value: "ST"
+    },
     preferredSurface: {
       width: 260,
       height: 168,
@@ -86,6 +91,10 @@ const ARM_APP_REGISTRY = createTouchAppRegistry([
       id: ARM_APP_IDS.rearView,
       name: "Rear View",
       version: "1.0.0",
+      icon: {
+        kind: "symbol",
+        value: "RV"
+      },
       capabilities: ["surfaces"],
       preferredWindow: {
         width: 188,
@@ -108,9 +117,42 @@ const ARM_APP_REGISTRY = createTouchAppRegistry([
   }),
   defineTouchApp<ArmPanelAppState>({
     manifest: {
+      id: ARM_APP_IDS.fractalArt,
+      name: "Fractal Art",
+      version: "1.0.0",
+      icon: {
+        kind: "symbol",
+        value: "FA"
+      },
+      capabilities: ["surfaces"],
+      preferredWindow: {
+        width: 188,
+        height: 124,
+        minWidth: 160,
+        minHeight: 104,
+        resizable: false
+      }
+    },
+    createApp(ctx) {
+      return {
+        render() {
+          return createFractalArtAppRoot();
+        },
+        handleOutput(output) {
+          emitRoomAppOutput(ctx, output);
+        }
+      };
+    }
+  }),
+  defineTouchApp<ArmPanelAppState>({
+    manifest: {
       id: ARM_APP_IDS.diagnostics,
       name: "Diagnostics",
       version: "1.0.0",
+      icon: {
+        kind: "symbol",
+        value: "DX"
+      },
       preferredWindow: {
         width: 172,
         height: 132,
@@ -315,7 +357,16 @@ function createArmTabletRoot(
     presentation: createTabletHomePresentation({
       homeControl: "bar",
       taskSwitcher: "cards",
-      taskCloseControl: "button"
+      taskCloseControl: "button",
+      launcherLayout: {
+        tileHeight: 64,
+        gap: 4,
+        bodyPadding: 4,
+        iconMinSize: 34,
+        iconMaxSize: 38,
+        iconTop: 2,
+        labelGap: 3
+      }
     }),
     appHostMode: "child-runtime",
     taskSwitcher: true,
@@ -323,6 +374,7 @@ function createArmTabletRoot(
     appStates: {
       [ARM_APP_IDS.settings]: state,
       [ARM_APP_IDS.rearView]: appState,
+      [ARM_APP_IDS.fractalArt]: appState,
       [ARM_APP_IDS.diagnostics]: appState
     }
   });
@@ -343,6 +395,27 @@ function createRearViewAppRoot(): DisplayNode<unknown> {
         fallbackLabel: "Mirror offline",
         preserveAspectRatio: true,
         mirrorX: true
+      })
+    ]
+  });
+}
+
+function createFractalArtAppRoot(): DisplayNode<unknown> {
+  return createSurfaceShell("fractal-art-root", {
+    padding: 4,
+    gap: 4,
+    bodyPadding: 0,
+    pointerOpaque: true,
+    backgroundColor: "#101826",
+    children: [
+      createEmbeddedSurface("fractal-art-surface", {
+        sourceId: WALL_PICTURE_SOURCE_ID,
+        interactive: false,
+        acceptsForwardedInput: false,
+        fallbackLabel: "Fractal art offline",
+        preserveAspectRatio: true,
+        compositionMode: "composite",
+        desiredSourceType: "three-texture"
       })
     ]
   });

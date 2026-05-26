@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { RuntimeOutput } from "../core/actions.js";
 import type { DisplayRuntime } from "../core/runtime.js";
-import type { RenderSnapshot, SurfaceDrawCommand } from "../core/draw.js";
+import type { DrawCommand, RenderSnapshot, SurfaceDrawCommand } from "../core/draw.js";
 import {
   DEFAULT_MODIFIERS,
   type InputEvent,
@@ -254,6 +254,13 @@ export interface ThreeTextureSurfaceHandle {
   texture: THREE.Texture;
 }
 
+interface TouchRuntimeSurfaceSnapshotHandle {
+  kind: "touch-os-render-snapshot";
+  width: number;
+  height: number;
+  snapshot: RenderSnapshot;
+}
+
 export interface ThreeTextureCompositePresenterOptions {
   componentId?: string;
   sourceId?: string;
@@ -455,10 +462,7 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
     const snapshot = runtime.render();
     lastRenderSnapshot = snapshot;
     if (snapshot.revision !== lastCompositeSurfaceRevision) {
-      compositeSurfaces = snapshot.commands.filter(
-        (command): command is SurfaceDrawCommand =>
-          command.type === "surface" && (command.compositionMode ?? "copy") === "composite"
-      );
+      compositeSurfaces = collectCompositeSurfaceCommands(snapshot.commands);
       lastCompositeSurfaceRevision = snapshot.revision;
     }
     if (snapshot.sharedSurfaceRevision !== lastRenderedSharedSurfaceRevision) {
@@ -758,6 +762,118 @@ function isThreeTextureLike(texture: unknown): texture is THREE.Texture {
       texture instanceof THREE.Texture ||
       (texture as { isTexture?: unknown }).isTexture === true
     );
+}
+
+function collectCompositeSurfaceCommands(
+  commands: readonly DrawCommand[],
+  viewport?: {
+    rect: Rect;
+    sourceWidth: number;
+    sourceHeight: number;
+    mirrorX: boolean;
+    componentPrefix: string;
+  }
+): SurfaceDrawCommand[] {
+  const collected: SurfaceDrawCommand[] = [];
+
+  for (const command of commands) {
+    if (command.type !== "surface") {
+      continue;
+    }
+
+    const transformed = viewport
+      ? transformNestedSurfaceCommand(command, viewport)
+      : { ...command };
+    if ((transformed.compositionMode ?? "copy") === "composite") {
+      collected.push(transformed);
+    }
+
+    const handle = getTouchRuntimeSurfaceSnapshotHandle(command.handle);
+    if (!handle) {
+      continue;
+    }
+
+    collected.push(...collectCompositeSurfaceCommands(handle.snapshot.commands, {
+      rect: transformed.rect,
+      sourceWidth: handle.width,
+      sourceHeight: handle.height,
+      mirrorX: transformed.mirrorX ?? false,
+      componentPrefix: transformed.componentId
+    }));
+  }
+
+  return collected;
+}
+
+function transformNestedSurfaceCommand(
+  command: SurfaceDrawCommand,
+  viewport: {
+    rect: Rect;
+    sourceWidth: number;
+    sourceHeight: number;
+    mirrorX: boolean;
+    componentPrefix: string;
+  }
+): SurfaceDrawCommand {
+  const scaleX = viewport.sourceWidth > 0 ? viewport.rect.width / viewport.sourceWidth : 1;
+  const scaleY = viewport.sourceHeight > 0 ? viewport.rect.height / viewport.sourceHeight : 1;
+  const width = command.rect.width * scaleX;
+  const height = command.rect.height * scaleY;
+  const x = viewport.mirrorX
+    ? viewport.rect.x + viewport.rect.width - (command.rect.x + command.rect.width) * scaleX
+    : viewport.rect.x + command.rect.x * scaleX;
+  const y = viewport.rect.y + command.rect.y * scaleY;
+  const mirrorX = viewport.mirrorX ? !(command.mirrorX ?? false) : command.mirrorX;
+
+  return {
+    ...command,
+    componentId: `${viewport.componentPrefix}:${command.componentId}`,
+    rect: {
+      x,
+      y,
+      width,
+      height
+    },
+    ...(mirrorX === undefined ? {} : { mirrorX })
+  };
+}
+
+function getTouchRuntimeSurfaceSnapshotHandle(
+  handle: unknown
+): TouchRuntimeSurfaceSnapshotHandle | undefined {
+  if (typeof handle !== "object" || handle === null) {
+    return undefined;
+  }
+
+  const candidate = handle as {
+    kind?: unknown;
+    width?: unknown;
+    height?: unknown;
+    snapshot?: unknown;
+  };
+  if (
+    candidate.kind !== "touch-os-render-snapshot" ||
+    typeof candidate.width !== "number" ||
+    typeof candidate.height !== "number" ||
+    !isRenderSnapshot(candidate.snapshot)
+  ) {
+    return undefined;
+  }
+
+  return {
+    kind: "touch-os-render-snapshot",
+    width: candidate.width,
+    height: candidate.height,
+    snapshot: candidate.snapshot
+  };
+}
+
+function isRenderSnapshot(value: unknown): value is RenderSnapshot {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Array.isArray((value as { commands?: unknown }).commands)
+  );
 }
 
 /** Create a panel host that follows an explicit pose supplied on each frame. */

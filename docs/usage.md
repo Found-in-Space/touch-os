@@ -298,6 +298,8 @@ const runtime = createRuntime({
 
 The tablet shell starts on the home screen, launches apps from registry icons, renders the foreground app without desktop chrome, and routes `home`/`app-switcher` system commands at the shell level. Tablet task switchers can optionally show session close controls with `taskCloseControl: "button"`.
 
+Use `launcherLayout` on `createTabletHomePresentation` when a small wrist slate or embedded tablet needs denser home icons without changing app behavior.
+
 Foreground apps receive the available app area after tablet safe area and shell chrome are applied. The tablet presentation consumes the outer safe area, so app-local `ctx.surface.safeArea` is zero unless a custom presentation explicitly returns remaining local insets.
 
 The existing manager API can use the same presentation:
@@ -495,6 +497,8 @@ surfaces.publish("camera.rear", {
 ```
 
 One published `sourceId` may be referenced by more than one presentation. The current forwarding model is presentation-scoped; richer source-bound input is tracked in [plan-embedded-surface-input.md](./plan-embedded-surface-input.md).
+
+The Three host resolves composite surfaces through nested `touch-os-render-snapshot` handles, so child-runtime apps can present GPU-backed surfaces while the containing app shell stays isolated.
 
 ## Use The Schema Adapter
 

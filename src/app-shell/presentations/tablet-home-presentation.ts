@@ -28,6 +28,21 @@ export interface TabletHomePresentationOptions {
   homeControl?: "button" | "bar" | "none";
   taskSwitcher?: "cards" | "list" | "none";
   taskCloseControl?: "button" | "none";
+  /** Optional home launcher icon geometry overrides for compact surfaces. */
+  launcherLayout?: TabletHomeLauncherLayoutOptions;
+}
+
+/** Layout controls for the tablet home app launcher. */
+export interface TabletHomeLauncherLayoutOptions {
+  tileWidth?: number;
+  tileHeight?: number;
+  gap?: number;
+  bodyPadding?: number;
+  iconMinSize?: number;
+  iconMaxSize?: number;
+  iconScale?: number;
+  iconTop?: number;
+  labelGap?: number;
 }
 
 interface TabletScreenProps {
@@ -41,11 +56,13 @@ interface TabletHomeControlProps {
 
 interface TabletAppIconGridProps {
   children: readonly DisplayNode<unknown, unknown>[];
+  layout: TabletHomeLauncherLayout;
 }
 
 interface TabletAppIconProps {
   manifest: TouchAppManifest;
   actionId: string;
+  layout: TabletHomeLauncherLayout;
 }
 
 interface TabletTaskListProps {
@@ -61,9 +78,29 @@ interface TabletTaskItemProps {
 }
 
 const HOME_CONTROL_HEIGHT = 34;
-const ICON_TILE_WIDTH = 92;
-const ICON_TILE_HEIGHT = 104;
-const ICON_GRID_GAP = 14;
+interface TabletHomeLauncherLayout {
+  tileWidth: number;
+  tileHeight: number;
+  gap: number;
+  bodyPadding: number;
+  iconMinSize: number;
+  iconMaxSize: number;
+  iconScale: number;
+  iconTop: number;
+  labelGap: number;
+}
+
+const DEFAULT_LAUNCHER_LAYOUT: TabletHomeLauncherLayout = {
+  tileWidth: 92,
+  tileHeight: 104,
+  gap: 14,
+  bodyPadding: 12,
+  iconMinSize: 44,
+  iconMaxSize: 54,
+  iconScale: 0.58,
+  iconTop: 4,
+  labelGap: 7
+};
 const TASK_CARD_HEIGHT = 78;
 const TASK_ROW_HEIGHT = 42;
 const TASK_GAP = 10;
@@ -74,6 +111,7 @@ export function createTabletHomePresentation(
   const homeControl = options.homeControl ?? "bar";
   const taskSwitcher = options.taskSwitcher ?? "cards";
   const taskCloseControl = options.taskCloseControl ?? "none";
+  const launcherLayout = resolveLauncherLayout(options.launcherLayout);
 
   return {
     kind: "tablet-home",
@@ -81,7 +119,7 @@ export function createTabletHomePresentation(
       return ctx.activeSessionId ? "app" : "home";
     },
     render(ctx) {
-      const child = renderTabletMode(ctx, taskSwitcher, taskCloseControl);
+      const child = renderTabletMode(ctx, taskSwitcher, taskCloseControl, launcherLayout);
       return createTabletScreen(`${ctx.shellId}:tablet-screen`, {
         child,
         homeControl
@@ -118,7 +156,8 @@ export function createTabletHomePresentation(
 function renderTabletMode(
   ctx: AppShellPresentationContext,
   taskSwitcher: "cards" | "list" | "none",
-  taskCloseControl: "button" | "none"
+  taskCloseControl: "button" | "none",
+  launcherLayout: TabletHomeLauncherLayout
 ): DisplayNode<unknown, unknown> {
   if (ctx.mode === "task-switcher" && taskSwitcher !== "none") {
     return createTaskSwitcher(ctx, taskSwitcher, taskCloseControl);
@@ -131,10 +170,13 @@ function renderTabletMode(
     }
   }
 
-  return createHomeScreen(ctx);
+  return createHomeScreen(ctx, launcherLayout);
 }
 
-function createHomeScreen(ctx: AppShellPresentationContext): DisplayNode<unknown, unknown> {
+function createHomeScreen(
+  ctx: AppShellPresentationContext,
+  launcherLayout: TabletHomeLauncherLayout
+): DisplayNode<unknown, unknown> {
   const manifests = ctx.registry.list();
   return createSurfaceShell(`${ctx.shellId}:home:shell`, {
     header: createTextLabel(`${ctx.shellId}:home:title`, {
@@ -143,10 +185,12 @@ function createHomeScreen(ctx: AppShellPresentationContext): DisplayNode<unknown
     children: manifests.length > 0
       ? [
           createTabletAppIconGrid(`${ctx.shellId}:home:icons`, {
+            layout: launcherLayout,
             children: manifests.map((manifest) =>
               createTabletAppIcon(`${ctx.shellId}:home:open:${sanitizeId(manifest.id)}`, {
                 manifest,
-                actionId: createLauncherActionId(ctx.shellId, manifest.id)
+                actionId: createLauncherActionId(ctx.shellId, manifest.id),
+                layout: launcherLayout
               })
             )
           })
@@ -158,8 +202,8 @@ function createHomeScreen(ctx: AppShellPresentationContext): DisplayNode<unknown
           })
         ],
     backgroundColor: ctx.services.theme.getTokens().backgroundColor,
-    bodyPadding: 12,
-    bodyGap: 8,
+    bodyPadding: launcherLayout.bodyPadding,
+    bodyGap: launcherLayout.gap,
     scrollbar: "auto",
     pointerOpaque: true
   });
@@ -304,33 +348,35 @@ const TabletAppIconGridComponent: DisplayComponent<TabletAppIconGridProps> = {
     return ctx.props.children;
   },
   measure(ctx) {
-    const columns = getGridColumns(ctx.constraints.maxWidth, ICON_TILE_WIDTH, ICON_GRID_GAP);
+    const layout = ctx.props.layout;
+    const columns = getGridColumns(ctx.constraints.maxWidth, layout.tileWidth, layout.gap);
     for (const child of ctx.getChildren()) {
       ctx.measureChild(child.id, {
         minWidth: 0,
         minHeight: 0,
-        maxWidth: ICON_TILE_WIDTH,
-        maxHeight: ICON_TILE_HEIGHT
+        maxWidth: layout.tileWidth,
+        maxHeight: layout.tileHeight
       });
     }
     const rows = Math.ceil(ctx.props.children.length / columns);
     return {
       width: ctx.constraints.maxWidth,
-      height: rows <= 0 ? 0 : rows * ICON_TILE_HEIGHT + (rows - 1) * ICON_GRID_GAP
+      height: rows <= 0 ? 0 : rows * layout.tileHeight + (rows - 1) * layout.gap
     };
   },
   layout(ctx) {
-    const columns = getGridColumns(ctx.bounds.width, ICON_TILE_WIDTH, ICON_GRID_GAP);
-    const totalWidth = columns * ICON_TILE_WIDTH + (columns - 1) * ICON_GRID_GAP;
+    const layout = ctx.props.layout;
+    const columns = getGridColumns(ctx.bounds.width, layout.tileWidth, layout.gap);
+    const totalWidth = columns * layout.tileWidth + (columns - 1) * layout.gap;
     const startX = ctx.bounds.x + Math.max(0, (ctx.bounds.width - totalWidth) / 2);
     ctx.getChildren().forEach((child, index) => {
       const column = index % columns;
       const row = Math.floor(index / columns);
       ctx.setChildBounds(child.id, createRect(
-        startX + column * (ICON_TILE_WIDTH + ICON_GRID_GAP),
-        ctx.bounds.y + row * (ICON_TILE_HEIGHT + ICON_GRID_GAP),
-        ICON_TILE_WIDTH,
-        ICON_TILE_HEIGHT
+        startX + column * (layout.tileWidth + layout.gap),
+        ctx.bounds.y + row * (layout.tileHeight + layout.gap),
+        layout.tileWidth,
+        layout.tileHeight
       ));
     });
     ctx.setContentBounds(ctx.bounds);
@@ -349,27 +395,32 @@ function createTabletAppIcon(
 
 const TabletAppIconComponent: DisplayComponent<TabletAppIconProps> = {
   kind: "tablet-app-icon",
-  measure() {
+  measure(ctx) {
+    const layout = ctx.props.layout;
     return {
-      width: ICON_TILE_WIDTH,
-      height: ICON_TILE_HEIGHT
+      width: layout.tileWidth,
+      height: layout.tileHeight
     };
   },
   render(ctx) {
     const theme = ctx.services.theme.getTokens();
+    const layout = ctx.props.layout;
     const pressed = ctx.interaction.pressedTargetId === `${ctx.id}:icon`;
-    const iconSize = Math.min(54, Math.max(44, ctx.bounds.width * 0.58));
+    const iconSize = Math.min(
+      layout.iconMaxSize,
+      Math.max(layout.iconMinSize, ctx.bounds.width * layout.iconScale)
+    );
     const iconRect = createRect(
       ctx.bounds.x + (ctx.bounds.width - iconSize) / 2,
-      ctx.bounds.y + 4,
+      ctx.bounds.y + layout.iconTop,
       iconSize,
       iconSize
     );
     const labelRect = createRect(
       ctx.bounds.x,
-      iconRect.y + iconRect.height + 7,
+      iconRect.y + iconRect.height + layout.labelGap,
       ctx.bounds.width,
-      Math.max(0, ctx.bounds.height - iconRect.height - 8)
+      Math.max(0, ctx.bounds.y + ctx.bounds.height - iconRect.y - iconRect.height - layout.labelGap)
     );
     return [
       {
@@ -671,6 +722,30 @@ function sanitizeId(value: string): string {
 
 function getGridColumns(width: number, tileWidth: number, gap: number): number {
   return Math.max(1, Math.floor((Math.max(0, width) + gap) / (tileWidth + gap)));
+}
+
+function resolveLauncherLayout(
+  options: TabletHomeLauncherLayoutOptions | undefined
+): TabletHomeLauncherLayout {
+  return {
+    tileWidth: resolvePositive(options?.tileWidth, DEFAULT_LAUNCHER_LAYOUT.tileWidth),
+    tileHeight: resolvePositive(options?.tileHeight, DEFAULT_LAUNCHER_LAYOUT.tileHeight),
+    gap: resolveNonNegative(options?.gap, DEFAULT_LAUNCHER_LAYOUT.gap),
+    bodyPadding: resolveNonNegative(options?.bodyPadding, DEFAULT_LAUNCHER_LAYOUT.bodyPadding),
+    iconMinSize: resolvePositive(options?.iconMinSize, DEFAULT_LAUNCHER_LAYOUT.iconMinSize),
+    iconMaxSize: resolvePositive(options?.iconMaxSize, DEFAULT_LAUNCHER_LAYOUT.iconMaxSize),
+    iconScale: resolvePositive(options?.iconScale, DEFAULT_LAUNCHER_LAYOUT.iconScale),
+    iconTop: resolveNonNegative(options?.iconTop, DEFAULT_LAUNCHER_LAYOUT.iconTop),
+    labelGap: resolveNonNegative(options?.labelGap, DEFAULT_LAUNCHER_LAYOUT.labelGap)
+  };
+}
+
+function resolvePositive(value: number | undefined, fallback: number): number {
+  return value !== undefined && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function resolveNonNegative(value: number | undefined, fallback: number): number {
+  return value !== undefined && Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
 function getTaskItemHeight(variant: "cards" | "list"): number {

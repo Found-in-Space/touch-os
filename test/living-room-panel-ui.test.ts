@@ -14,6 +14,7 @@ import {
 } from "../examples/three-living-room/src/panel-ui.js";
 import { createRoomDemoStore } from "../examples/three-living-room/src/store.js";
 import { REAR_VIEW_SOURCE_ID } from "../examples/three-living-room/src/mirror.js";
+import { WALL_PICTURE_SOURCE_ID } from "../examples/three-living-room/src/shader-picture.js";
 import { clickComponentCenter, pressAt } from "./helpers/runtime-helpers.js";
 
 describe("living room panel ui", () => {
@@ -100,8 +101,12 @@ describe("living room panel ui", () => {
     expect(texts).toContain("Apps");
     expect(texts).toContain("Settings");
     expect(texts).toContain("Rear View");
+    expect(texts).toContain("Fractal Art");
     expect(texts).toContain("Diagnostics");
     expect(texts).not.toContain("Movement");
+    expect(
+      snapshot.commands.some((command) => command.role === "scroll-container-scrollbar-thumb")
+    ).toBe(false);
 
     const tabletBounds = runtime.getBounds("arm-os:tablet-screen");
     expect(tabletBounds).toEqual({
@@ -207,6 +212,53 @@ describe("living room panel ui", () => {
           command.sourceId === REAR_VIEW_SOURCE_ID
       )
     ).toBe(true);
+  });
+
+  it("hosts the fractal art source as an arm tablet GPU composite test app", () => {
+    const surfaces = createEmbeddedSurfaceService();
+    surfaces.publish(WALL_PICTURE_SOURCE_ID, {
+      available: true,
+      handle: {
+        kind: "three-texture",
+        texture: { isTexture: true }
+      },
+      sourceWidth: 512,
+      sourceHeight: 320,
+      sourceType: "three-texture"
+    });
+    const runtime = createRuntime({
+      root: createRoomPanelRoot("arm", createRoomDemoStore().getState()),
+      surface: getRoomPanelSurface("arm"),
+      theme: getRoomPanelTheme("arm"),
+      services: {
+        surfaces
+      }
+    });
+
+    runtime.render();
+    clickComponentCenter(runtime, "arm-os:home:open:space-found-living-room-fractal-art");
+    runtime.takeOutputs();
+    const snapshot = runtime.render();
+    const hostedSurface = findHostedSurface(
+      snapshot.commands,
+      "space.found.living-room.fractal-art:"
+    );
+    expect(hostedSurface).toBeDefined();
+
+    const handle = hostedSurface ? getHostedSnapshotHandle(hostedSurface) : undefined;
+    const fractalSurface = handle?.snapshot.commands.find(
+      (command): command is SurfaceDrawCommand =>
+        command.type === "surface" && command.componentId === "fractal-art-surface"
+    );
+
+    expect(fractalSurface).toMatchObject({
+      sourceId: WALL_PICTURE_SOURCE_ID,
+      compositionMode: "composite"
+    });
+    expect(fractalSurface?.handle).toMatchObject({
+      kind: "three-texture"
+    });
+    expect(fractalSurface?.surfaceRevision).toBe(1);
   });
 });
 
