@@ -1,5 +1,6 @@
 import {
   createAppShell,
+  createButton,
   createDPad,
   createEmbeddedSurface,
   createHoldButton,
@@ -9,8 +10,15 @@ import {
   createToggle,
   createTouchAppRegistry,
   createValueReadout,
+  createNode,
+  createRect,
   defineControlsApp,
   defineTouchApp,
+  type AppShellChange,
+  type AppShellPresentation,
+  type AppShellPresentationAppSurface,
+  type AppShellPresentationContext,
+  type DisplayComponent,
   type DisplayNode,
   type RuntimeOutput,
   type SurfaceMetrics,
@@ -33,6 +41,7 @@ import {
   WALL_PICTURE_COMPONENT_ID,
   WALL_PICTURE_SOURCE_ID
 } from "./shader-picture.js";
+import { TV_VIDEO_SOURCE_ID } from "./video-source.js";
 import type { MovementIntent, RoomDemoState } from "./store.js";
 
 export type RoomPanelVariant = "tv" | "hud" | "arm";
@@ -54,6 +63,89 @@ const ARM_APP_IDS = {
   fractalArt: "space.found.living-room.fractal-art",
   diagnostics: "space.found.living-room.diagnostics"
 } as const;
+
+const TV_APP_IDS = {
+  status: "space.found.living-room.tv-status",
+  video: "space.found.living-room.tv-video"
+} as const;
+
+export const TV_VIDEO_APP_ID = TV_APP_IDS.video;
+
+export const TV_PANEL_ACTION_IDS = {
+  powerToggle: "tv.power.toggle",
+  volumeDown: "media.tv-video.volume-down",
+  volumeUp: "media.tv-video.volume-up",
+  home: "tv.home"
+} as const;
+
+export const TV_PANEL_BUTTON_IDS = {
+  home: "tv-device:home",
+  volumeUp: "tv-device:volume-up",
+  volumeDown: "tv-device:volume-down",
+  power: "tv-device:power"
+} as const;
+
+export interface RoomPanelOptions {
+  tv?: TvPanelOptions;
+}
+
+export interface TvPanelOptions {
+  screenOn?: boolean;
+  volume?: number;
+  onShellChange?(change: AppShellChange): void;
+}
+
+interface ResolvedTvPanelOptions {
+  screenOn: boolean;
+  volume: number;
+  onShellChange?: (change: AppShellChange) => void;
+}
+
+const TV_APP_REGISTRY = createTouchAppRegistry([
+  defineTouchApp<RoomDemoState>({
+    manifest: {
+      id: TV_APP_IDS.status,
+      name: "Status",
+      version: "1.0.0",
+      icon: {
+        kind: "symbol",
+        value: "TV"
+      }
+    },
+    createApp(ctx) {
+      return {
+        render(state) {
+          return createTvStatusAppRoot(state);
+        },
+        handleOutput(output) {
+          emitRoomAppOutput(ctx, output);
+        }
+      };
+    }
+  }),
+  defineTouchApp<RoomDemoState>({
+    manifest: {
+      id: TV_APP_IDS.video,
+      name: "Video",
+      version: "1.0.0",
+      icon: {
+        kind: "symbol",
+        value: "VD"
+      },
+      capabilities: ["surfaces"]
+    },
+    createApp(ctx) {
+      return {
+        render() {
+          return createTvVideoAppRoot();
+        },
+        handleOutput(output) {
+          emitRoomAppOutput(ctx, output);
+        }
+      };
+    }
+  })
+]);
 
 const ARM_APP_REGISTRY = createTouchAppRegistry([
   defineControlsApp<RoomDemoState>({
@@ -177,34 +269,12 @@ const ARM_APP_REGISTRY = createTouchAppRegistry([
 export function createRoomPanelRoot(
   variant: RoomPanelVariant,
   state: RoomDemoState,
-  diagnostics: RoomPanelDiagnostics = createDefaultRoomPanelDiagnostics()
+  diagnostics: RoomPanelDiagnostics = createDefaultRoomPanelDiagnostics(),
+  options: RoomPanelOptions = {}
 ): DisplayNode<unknown> {
   switch (variant) {
     case "tv":
-      return createColumn("tv-root", {
-        padding: 12,
-        gap: 8,
-        backgroundColor: "#08111d",
-        children: [
-          createToggle("tv-light-toggle", {
-            label: "Lamp",
-            value: state.lightOn,
-            field: "lightOn"
-          }),
-          createValueReadout("tv-mode-readout", {
-            label: "Mode",
-            value: state.xrActive ? "XR" : "Desktop"
-          }),
-          createValueReadout("tv-speed-readout", {
-            label: "Speed",
-            value: formatSpeed(state.moveSpeed)
-          }),
-          createValueReadout("tv-motion-readout", {
-            label: "Move",
-            value: getMovementSummary(state)
-          })
-        ]
-      });
+      return createTvPanelRoot(state, options.tv);
     case "arm":
       return createArmTabletRoot(state, diagnostics);
     case "hud":
@@ -322,6 +392,491 @@ export function createRoomPanelRoot(
         }
       });
   }
+}
+
+function createTvPanelRoot(
+  state: RoomDemoState,
+  options: TvPanelOptions | undefined
+): DisplayNode<unknown> {
+  const tvOptions = resolveTvPanelOptions(options);
+  return createAppShell("tv-os", {
+    registry: TV_APP_REGISTRY,
+    presentation: createTvDevicePresentation(tvOptions),
+    appHostMode: "same-runtime",
+    homeKey: true,
+    ...(tvOptions.onShellChange ? { onShellChange: tvOptions.onShellChange } : {}),
+    appStates: {
+      [TV_APP_IDS.status]: state,
+      [TV_APP_IDS.video]: state
+    }
+  });
+}
+
+function createTvStatusAppRoot(state: RoomDemoState): DisplayNode<unknown> {
+  return createColumn("tv-root", {
+    padding: 12,
+    gap: 8,
+    backgroundColor: "#08111d",
+    children: [
+      createToggle("tv-light-toggle", {
+        label: "Lamp",
+        value: state.lightOn,
+        field: "lightOn"
+      }),
+      createValueReadout("tv-mode-readout", {
+        label: "Mode",
+        value: state.xrActive ? "XR" : "Desktop"
+      }),
+      createValueReadout("tv-speed-readout", {
+        label: "Speed",
+        value: formatSpeed(state.moveSpeed)
+      }),
+      createValueReadout("tv-motion-readout", {
+        label: "Move",
+        value: getMovementSummary(state)
+      })
+    ]
+  });
+}
+
+function createTvVideoAppRoot(): DisplayNode<unknown> {
+  return createTvVideoSurface("tv-video-surface");
+}
+
+interface TvVideoSurfaceProps {}
+
+const TvVideoSurfaceComponent: DisplayComponent<TvVideoSurfaceProps> = {
+  kind: "tv-video-surface",
+  mount(ctx) {
+    ctx.services.surfaces.attach(ctx.id, createTvVideoSurfaceConfig());
+  },
+  update(ctx) {
+    ctx.services.surfaces.configure(ctx.id, createTvVideoSurfaceConfig());
+  },
+  measure(ctx) {
+    return {
+      width: ctx.constraints.maxWidth,
+      height: ctx.constraints.maxHeight
+    };
+  },
+  render(ctx) {
+    const attachment = ctx.services.surfaces.getAttachment(ctx.id);
+    if (attachment?.available) {
+      return [
+        {
+          type: "surface" as const,
+          componentId: ctx.id,
+          role: "embedded-surface-viewport",
+          rect: ctx.bounds,
+          handle: attachment.handle,
+          sourceId: attachment.sourceId,
+          surfaceRevision: attachment.surfaceRevision,
+          compositionMode: "composite" as const,
+          mirrorX: attachment.mirrorX
+        }
+      ];
+    }
+
+    return [
+      {
+        type: "rect" as const,
+        componentId: ctx.id,
+        role: "tv-video-unavailable",
+        rect: ctx.bounds,
+        fill: "#000000",
+        strokeWidth: 0,
+        radius: 0
+      }
+    ];
+  },
+  dispose(ctx) {
+    ctx.services.surfaces.release(ctx.id);
+  }
+};
+
+function createTvVideoSurface(id: string): DisplayNode<TvVideoSurfaceProps> {
+  return createNode(id, TvVideoSurfaceComponent, {});
+}
+
+function createTvVideoSurfaceConfig() {
+  return {
+    sourceId: TV_VIDEO_SOURCE_ID,
+    interactive: false,
+    acceptsForwardedInput: false,
+    preserveAspectRatio: false,
+    compositionMode: "composite" as const,
+    desiredSourceType: "three-texture",
+    fallbackLabel: "Video unavailable"
+  };
+}
+
+function resolveTvPanelOptions(options: TvPanelOptions | undefined): ResolvedTvPanelOptions {
+  return {
+    screenOn: options?.screenOn ?? true,
+    volume: options?.volume ?? 0.75,
+    ...(options?.onShellChange ? { onShellChange: options.onShellChange } : {})
+  };
+}
+
+function createTvDevicePresentation(options: ResolvedTvPanelOptions): AppShellPresentation {
+  return {
+    kind: "tablet-home",
+    getInitialMode(ctx) {
+      return ctx.activeSessionId ? "app" : "home";
+    },
+    render(ctx) {
+      const screen = options.screenOn
+        ? renderTvScreen(ctx)
+        : createTvBlankScreen("tv-screen-off");
+      return createTvDeviceFrame(`${ctx.shellId}:tablet-screen`, {
+        screen,
+        buttons: createTvHardwareButtons(options),
+        onHome() {
+          ctx.emitShellAction({ type: "home" });
+        }
+      });
+    },
+    handleSystemCommand(command, ctx) {
+      if (command.command === "home") {
+        return { type: "home" };
+      }
+      if (command.command === "back" && ctx.mode === "app") {
+        return { type: "home" };
+      }
+      return undefined;
+    },
+    resolveAppSurface(_request, ctx) {
+      return resolveTvScreenAppSurface(ctx);
+    }
+  };
+}
+
+function renderTvScreen(ctx: AppShellPresentationContext): DisplayNode<unknown, unknown> {
+  if (ctx.mode === "app" && ctx.activeSessionId) {
+    const active = ctx.sessions.find((session) => session.id === ctx.activeSessionId);
+    if (active) {
+      return ctx.renderSessionContent(active);
+    }
+  }
+
+  return createTvHomeScreen(`${ctx.shellId}:home`, {
+    entries: ctx.registry.list().map((manifest) => ({
+      appId: manifest.id,
+      label: manifest.name
+    })),
+    onOpenApp(appId) {
+      ctx.emitShellAction({ type: "open-app", appId });
+    }
+  });
+}
+
+function resolveTvScreenAppSurface(
+  ctx: AppShellPresentationContext
+): AppShellPresentationAppSurface {
+  const metrics = ctx.services.surface.getMetrics();
+  const layout = resolveTvDeviceLayout(metrics.width, metrics.height);
+  return {
+    rect: createRect(
+      0,
+      (metrics.height - layout.screenHeight) / 2,
+      layout.screenWidth,
+      layout.screenHeight
+    ),
+    safeArea: { top: 0, right: 0, bottom: 0, left: 0 }
+  };
+}
+
+function createTvHardwareButtons(
+  options: ResolvedTvPanelOptions
+): readonly DisplayNode<unknown>[] {
+  const screenControlsDisabled = !options.screenOn;
+  return [
+    createButton(TV_PANEL_BUTTON_IDS.home, {
+      label: "HOME",
+      actionId: TV_PANEL_ACTION_IDS.home,
+      disabled: screenControlsDisabled
+    }),
+    createButton(TV_PANEL_BUTTON_IDS.volumeUp, {
+      label: "VOL+",
+      actionId: TV_PANEL_ACTION_IDS.volumeUp,
+      disabled: screenControlsDisabled || options.volume >= 1
+    }),
+    createButton(TV_PANEL_BUTTON_IDS.volumeDown, {
+      label: "VOL-",
+      actionId: TV_PANEL_ACTION_IDS.volumeDown,
+      disabled: screenControlsDisabled || options.volume <= 0
+    }),
+    createButton(TV_PANEL_BUTTON_IDS.power, {
+      label: "PWR",
+      actionId: TV_PANEL_ACTION_IDS.powerToggle
+    })
+  ];
+}
+
+interface TvDeviceFrameProps {
+  screen: DisplayNode<unknown, unknown>;
+  buttons: readonly DisplayNode<unknown, unknown>[];
+  onHome(): void;
+}
+
+interface TvHomeScreenEntry {
+  appId: string;
+  label: string;
+}
+
+interface TvHomeScreenProps {
+  entries: readonly TvHomeScreenEntry[];
+  onOpenApp(appId: string): void;
+}
+
+interface TvBlankScreenProps {}
+
+const TV_SCREEN_ASPECT_RATIO = 16 / 9;
+const TV_DEVICE_SCREEN_GAP = 12;
+const TV_DEVICE_BUTTON_WIDTH = 52;
+const TV_DEVICE_BUTTON_HEIGHT = 48;
+const TV_DEVICE_BUTTON_GAP = 8;
+const TV_HOME_PADDING = 36;
+const TV_HOME_GAP = 16;
+const TV_HOME_TILE_HEIGHT = 64;
+
+const TvHomeScreenComponent: DisplayComponent<TvHomeScreenProps> = {
+  kind: "tv-home-screen",
+  getChildren(ctx) {
+    return ctx.props.entries.map((entry) =>
+      createButton(`${ctx.id}:open:${sanitizeId(entry.appId)}`, {
+        label: entry.label,
+        actionId: createTvHomeOpenActionId(ctx.id, entry.appId)
+      })
+    );
+  },
+  measure(ctx) {
+    for (const child of ctx.getChildren()) {
+      ctx.measureChild(child.id, {
+        minWidth: 0,
+        minHeight: 0,
+        maxWidth: Math.max(0, ctx.constraints.maxWidth - TV_HOME_PADDING * 2),
+        maxHeight: TV_HOME_TILE_HEIGHT
+      });
+    }
+    return {
+      width: ctx.constraints.maxWidth,
+      height: ctx.constraints.maxHeight
+    };
+  },
+  layout(ctx) {
+    const children = ctx.getChildren();
+    const columns = Math.max(1, Math.min(2, children.length));
+    const innerWidth = Math.max(0, ctx.bounds.width - TV_HOME_PADDING * 2);
+    const tileWidth = columns > 1
+      ? (innerWidth - TV_HOME_GAP * (columns - 1)) / columns
+      : innerWidth;
+    const totalRows = Math.ceil(children.length / columns);
+    const gridHeight =
+      totalRows * TV_HOME_TILE_HEIGHT + Math.max(0, totalRows - 1) * TV_HOME_GAP;
+    const startY = ctx.bounds.y + (ctx.bounds.height - gridHeight) / 2;
+
+    children.forEach((child, index) => {
+      const row = Math.floor(index / columns);
+      const column = index % columns;
+      ctx.setChildBounds(
+        child.id,
+        createRect(
+          ctx.bounds.x + TV_HOME_PADDING + column * (tileWidth + TV_HOME_GAP),
+          startY + row * (TV_HOME_TILE_HEIGHT + TV_HOME_GAP),
+          tileWidth,
+          TV_HOME_TILE_HEIGHT
+        )
+      );
+    });
+    ctx.setContentBounds(ctx.bounds);
+  },
+  render(ctx) {
+    return [
+      {
+        type: "rect" as const,
+        componentId: ctx.id,
+        role: "tv-home-screen",
+        rect: ctx.bounds,
+        fill: "#020617",
+        strokeWidth: 0,
+        radius: 0
+      }
+    ];
+  },
+  handleEvent(ctx) {
+    if (ctx.event.type !== "action") {
+      return;
+    }
+
+    const appId = parseTvHomeOpenActionId(ctx.id, ctx.event.actionId);
+    if (appId) {
+      ctx.props.onOpenApp(appId);
+    }
+  }
+};
+
+const TvDeviceFrameComponent: DisplayComponent<TvDeviceFrameProps> = {
+  kind: "tv-device-frame",
+  getChildren(ctx) {
+    return [ctx.props.screen, ...ctx.props.buttons];
+  },
+  measure(ctx) {
+    const layout = resolveTvDeviceLayout(ctx.constraints.maxWidth, ctx.constraints.maxHeight);
+    ctx.measureChild(ctx.props.screen.id, {
+      minWidth: 0,
+      minHeight: 0,
+      maxWidth: layout.screenWidth,
+      maxHeight: layout.screenHeight
+    });
+    for (const button of ctx.props.buttons) {
+      ctx.measureChild(button.id, {
+        minWidth: 0,
+        minHeight: 0,
+        maxWidth: layout.buttonWidth,
+        maxHeight: layout.buttonHeight
+      });
+    }
+    return {
+      width: ctx.constraints.maxWidth,
+      height: ctx.constraints.maxHeight
+    };
+  },
+  layout(ctx) {
+    const layout = resolveTvDeviceLayout(ctx.bounds.width, ctx.bounds.height);
+    const screenRect = createRect(
+      ctx.bounds.x,
+      ctx.bounds.y + (ctx.bounds.height - layout.screenHeight) / 2,
+      layout.screenWidth,
+      layout.screenHeight
+    );
+    ctx.setChildBounds(ctx.props.screen.id, screenRect);
+
+    const buttonCount = ctx.props.buttons.length;
+    const buttonGroupHeight =
+      buttonCount * layout.buttonHeight + Math.max(0, buttonCount - 1) * TV_DEVICE_BUTTON_GAP;
+    const buttonX = ctx.bounds.x + ctx.bounds.width - layout.buttonWidth;
+    let nextButtonY = screenRect.y + screenRect.height - buttonGroupHeight;
+    for (const button of ctx.props.buttons) {
+      ctx.setChildBounds(
+        button.id,
+        createRect(buttonX, nextButtonY, layout.buttonWidth, layout.buttonHeight)
+      );
+      nextButtonY += layout.buttonHeight + TV_DEVICE_BUTTON_GAP;
+    }
+
+    ctx.setContentBounds(ctx.bounds);
+  },
+  render(ctx) {
+    return [
+      {
+        type: "rect" as const,
+        componentId: ctx.id,
+        role: "tv-device-body",
+        rect: ctx.bounds,
+        fill: "#05070b",
+        stroke: "#151a22",
+        strokeWidth: 1,
+        radius: 8
+      }
+    ];
+  },
+  handleEvent(ctx) {
+    if (
+      ctx.event.type === "action" &&
+      ctx.event.componentId === TV_PANEL_BUTTON_IDS.home
+    ) {
+      ctx.props.onHome();
+    }
+  }
+};
+
+const TvBlankScreenComponent: DisplayComponent<TvBlankScreenProps> = {
+  kind: "tv-blank-screen",
+  measure(ctx) {
+    return {
+      width: ctx.constraints.maxWidth,
+      height: ctx.constraints.maxHeight
+    };
+  },
+  render(ctx) {
+    return [
+      {
+        type: "rect" as const,
+        componentId: ctx.id,
+        role: "tv-screen-blank",
+        rect: ctx.bounds,
+        fill: "#000000",
+        strokeWidth: 0,
+        radius: 0
+      }
+    ];
+  }
+};
+
+function createTvDeviceFrame(
+  id: string,
+  props: TvDeviceFrameProps
+): DisplayNode<TvDeviceFrameProps> {
+  return createNode(id, TvDeviceFrameComponent, props);
+}
+
+function createTvHomeScreen(
+  id: string,
+  props: TvHomeScreenProps
+): DisplayNode<TvHomeScreenProps> {
+  return createNode(id, TvHomeScreenComponent, props);
+}
+
+function createTvBlankScreen(id: string): DisplayNode<TvBlankScreenProps> {
+  return createNode(id, TvBlankScreenComponent, {});
+}
+
+function createTvHomeOpenActionId(homeId: string, appId: string): string {
+  return `${homeId}.open:${appId}`;
+}
+
+function parseTvHomeOpenActionId(homeId: string, actionId: string): string | undefined {
+  const prefix = `${homeId}.open:`;
+  return actionId.startsWith(prefix) ? actionId.slice(prefix.length) : undefined;
+}
+
+function sanitizeId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function resolveTvDeviceLayout(
+  width: number,
+  height: number
+): {
+  screenWidth: number;
+  screenHeight: number;
+  buttonWidth: number;
+  buttonHeight: number;
+} {
+  const buttonWidth = Math.min(TV_DEVICE_BUTTON_WIDTH, Math.max(0, width));
+  const availableScreenWidth = Math.max(0, width - TV_DEVICE_SCREEN_GAP - buttonWidth);
+  let screenWidth = availableScreenWidth;
+  let screenHeight = screenWidth / TV_SCREEN_ASPECT_RATIO;
+  if (screenHeight > height) {
+    screenHeight = Math.max(0, height);
+    screenWidth = screenHeight * TV_SCREEN_ASPECT_RATIO;
+  }
+
+  const buttonHeight = Math.max(
+    0,
+    Math.min(
+      TV_DEVICE_BUTTON_HEIGHT,
+      (screenHeight - TV_DEVICE_BUTTON_GAP * 3) / 4
+    )
+  );
+
+  return {
+    screenWidth,
+    screenHeight,
+    buttonWidth,
+    buttonHeight
+  };
 }
 
 export function createXrHudRoot(): DisplayNode<unknown> {
@@ -455,7 +1010,7 @@ export function getRoomPanelSurface(
 ): Partial<SurfaceMetrics> {
   switch (variant) {
     case "tv":
-      return { width: 440, height: 280 };
+      return { width: 624, height: 315 };
     case "arm":
       return {
         width: 300,

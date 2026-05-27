@@ -4,6 +4,7 @@ import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
 import {
   createEmbeddedSurfaceService,
   createRuntime,
+  type AppShellChange,
   type ChangeRequestEvent,
   type DisplayRuntime,
   type RuntimeOutput,
@@ -36,7 +37,10 @@ import {
   getWallPictureTheme,
   getRoomPanelSurface,
   getRoomPanelTheme,
-  type RoomPanelDiagnostics
+  TV_PANEL_ACTION_IDS,
+  TV_VIDEO_APP_ID,
+  type RoomPanelDiagnostics,
+  type RoomPanelOptions
 } from "./panel-ui.js";
 import {
   REAR_VIEW_SOURCE_ID,
@@ -47,6 +51,12 @@ import {
   createShaderPictureSource,
   WALL_PICTURE_SOURCE_ID
 } from "./shader-picture.js";
+import {
+  DEFAULT_TV_VIDEO_URL,
+  createVideoTextureSource,
+  TV_VIDEO_SOURCE_ID,
+  type VideoTextureSource
+} from "./video-source.js";
 import { createLivingRoomScene } from "./room.js";
 import {
   createRoomDemoStore,
@@ -95,7 +105,8 @@ declare global {
   }
 }
 
-const livingRoomTestMode = new URLSearchParams(window.location.search).has("touchOsTest");
+const urlParams = new URLSearchParams(window.location.search);
+const livingRoomTestMode = urlParams.has("touchOsTest");
 const ARM_TEST_COMPONENT_IDS = {
   fractalIcon: "arm-os:home:open:space-found-living-room-fractal-art",
   homeControl: "arm-os:tablet-screen:home-control"
@@ -145,6 +156,7 @@ interface RoomRuntimeController {
   runtime: DisplayRuntime;
   sync(state: RoomDemoState): void;
   syncDiagnostics(diagnostics: RoomPanelDiagnostics): void;
+  syncPanelState(): void;
 }
 
 interface StaticRuntimeController {
@@ -160,6 +172,10 @@ interface RoomPanelAction {
   actionId: string;
   payload?: Record<string, unknown>;
 }
+
+const TV_VOLUME_STEP = 0.1;
+let tvScreenOn = true;
+let tvVideoVolume = 0.75;
 
 const desktopHudRuntime = createRoomRuntimeController("hud");
 const tvRuntime = createRoomRuntimeController("tv");
@@ -183,6 +199,12 @@ wallMirrorPanel.attach();
 wallPicturePanel.attach();
 
 const shaderPictureSource = createShaderPictureSource();
+const tvVideoSource = createVideoTextureSource({
+  sourceId: TV_VIDEO_SOURCE_ID,
+  url: DEFAULT_TV_VIDEO_URL,
+  loop: true,
+  volume: tvVideoVolume
+});
 
 const pressedKeys = new Set<string>();
 let lookActive = false;
@@ -420,6 +442,7 @@ renderer.setAnimationLoop(() => {
   publishMirrorSurface(sharedSurfaces, REAR_VIEW_SOURCE_ID, mirrorCanvas, now);
   shaderPictureSource.render(renderer, now);
   shaderPictureSource.publish(sharedSurfaces, now);
+  tvVideoSource.publish(sharedSurfaces, now);
 
   const baseFrame: THREEFrame = {
     scene: room.scene,
@@ -543,14 +566,19 @@ function createRoomRuntimeController(
 ): RoomRuntimeController {
   let lastState = store.getState();
   let lastDiagnostics = createDefaultRoomPanelDiagnostics();
+  let lastPanelOptions = createRoomPanelOptions(variant);
   const runtime = createRuntime({
-    root: createRoomPanelRoot(variant, lastState, lastDiagnostics),
+    root: createRoomPanelRoot(variant, lastState, lastDiagnostics, lastPanelOptions),
     surface: getRoomPanelSurface(variant),
     theme: getRoomPanelTheme(variant),
     services: {
       surfaces: sharedSurfaces
     }
   });
+
+  const syncRoot = () => {
+    runtime.setRoot(createRoomPanelRoot(variant, lastState, lastDiagnostics, lastPanelOptions));
+  };
 
   return {
     runtime,
@@ -560,7 +588,7 @@ function createRoomRuntimeController(
       }
 
       lastState = state;
-      runtime.setRoot(createRoomPanelRoot(variant, state, lastDiagnostics));
+      syncRoot();
     },
     syncDiagnostics(diagnostics) {
       if (variant !== "arm" || diagnosticsEqual(diagnostics, lastDiagnostics)) {
@@ -568,9 +596,47 @@ function createRoomRuntimeController(
       }
 
       lastDiagnostics = diagnostics;
-      runtime.setRoot(createRoomPanelRoot(variant, lastState, lastDiagnostics));
+      syncRoot();
+    },
+    syncPanelState() {
+      const nextPanelOptions = createRoomPanelOptions(variant);
+      if (roomPanelOptionsEqual(variant, nextPanelOptions, lastPanelOptions)) {
+        return;
+      }
+
+      lastPanelOptions = nextPanelOptions;
+      syncRoot();
     }
   };
+}
+
+function createRoomPanelOptions(
+  variant: "hud" | "tv" | "arm"
+): RoomPanelOptions {
+  if (variant !== "tv") {
+    return {};
+  }
+
+  return {
+    tv: {
+      screenOn: tvScreenOn,
+      volume: tvVideoVolume,
+      onShellChange: handleTvShellChange
+    }
+  };
+}
+
+function roomPanelOptionsEqual(
+  variant: "hud" | "tv" | "arm",
+  left: RoomPanelOptions,
+  right: RoomPanelOptions
+): boolean {
+  if (variant !== "tv") {
+    return true;
+  }
+
+  return left.tv?.screenOn === right.tv?.screenOn &&
+    left.tv?.volume === right.tv?.volume;
 }
 
 function createXrHudRuntimeController(): StaticRuntimeController {
@@ -617,7 +683,8 @@ function createTvPanelSession(runtime: DisplayRuntime): ThreePanelSession {
     runtime,
     surface: getRoomPanelSurface("tv"),
     panelWidth: 1.44,
-    panelHeight: 0.92,
+    panelHeight: 0.73,
+    depthTest: false,
     position: room.tvAnchor.position,
     quaternion: room.tvAnchor.quaternion
   });
@@ -752,6 +819,21 @@ function applyPanelChange(payload: Record<string, unknown>): void {
 }
 
 function applyPanelAction(action: RoomPanelAction, state: RoomDemoState): void {
+  if (action.actionId === TV_PANEL_ACTION_IDS.powerToggle) {
+    setTvScreenOn(!tvScreenOn);
+    return;
+  }
+
+  if (action.actionId === TV_PANEL_ACTION_IDS.volumeDown) {
+    adjustTvVideoVolume(-TV_VOLUME_STEP);
+    return;
+  }
+
+  if (action.actionId === TV_PANEL_ACTION_IDS.volumeUp) {
+    adjustTvVideoVolume(TV_VOLUME_STEP);
+    return;
+  }
+
   if (action.actionId === "light.set") {
     const value = action.payload?.value;
     if (typeof value === "boolean") {
@@ -793,6 +875,67 @@ function applyPanelAction(action: RoomPanelAction, state: RoomDemoState): void {
       });
     }
   }
+}
+
+function handleTvShellChange(change: AppShellChange): void {
+  if (change.type === "open-app" && change.targetAppId === TV_VIDEO_APP_ID) {
+    playTvVideo();
+    return;
+  }
+
+  if (
+    change.type === "window-state" &&
+    change.session?.appId === TV_VIDEO_APP_ID &&
+    change.session.focused
+  ) {
+    playTvVideo();
+    return;
+  }
+
+  if (change.type === "shell-mode" && change.mode === "home") {
+    stopTvVideo();
+  }
+}
+
+function setTvScreenOn(screenOn: boolean): void {
+  if (tvScreenOn === screenOn) {
+    return;
+  }
+
+  tvScreenOn = screenOn;
+  if (!tvScreenOn) {
+    stopTvVideo();
+  }
+  tvRuntime.syncPanelState();
+}
+
+function adjustTvVideoVolume(delta: number): void {
+  const nextVolume = Math.max(0, Math.min(1, tvVideoVolume + delta));
+  if (nextVolume === tvVideoVolume) {
+    return;
+  }
+
+  tvVideoVolume = nextVolume;
+  tvVideoSource.setVolume(tvVideoVolume);
+  tvRuntime.syncPanelState();
+}
+
+function playTvVideo(): void {
+  if (!tvScreenOn) {
+    return;
+  }
+
+  playVideoSource(tvVideoSource);
+}
+
+function stopTvVideo(): void {
+  tvVideoSource.stop();
+}
+
+function playVideoSource(source: VideoTextureSource): void {
+  void source.play().catch((error: unknown) => {
+    console.warn("Unable to start TV video playback.", error);
+  });
 }
 
 function dispatchSystemCommandFromKeyboard(event: KeyboardEvent): boolean {
@@ -1402,7 +1545,9 @@ window.addEventListener("beforeunload", () => {
   wallMirrorPanel.dispose();
   wallPicturePanel.dispose();
   shaderPictureSource.dispose();
+  tvVideoSource.dispose();
   mirrorRenderer.dispose();
   clearMirrorSurface(sharedSurfaces, REAR_VIEW_SOURCE_ID);
   shaderPictureSource.unpublish(sharedSurfaces);
+  tvVideoSource.unpublish(sharedSurfaces);
 });

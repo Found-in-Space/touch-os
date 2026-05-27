@@ -5,16 +5,21 @@ import {
   createXrHudRoot,
   createWallPictureRoot,
   createRoomPanelRoot,
+  createDefaultRoomPanelDiagnostics,
   getXrHudSurface,
   getXrHudTheme,
   getWallPictureSurface,
   getWallPictureTheme,
   getRoomPanelSurface,
-  getRoomPanelTheme
+  getRoomPanelTheme,
+  TV_PANEL_ACTION_IDS,
+  TV_PANEL_BUTTON_IDS,
+  TV_VIDEO_APP_ID
 } from "../examples/three-living-room/src/panel-ui.js";
 import { createRoomDemoStore } from "../examples/three-living-room/src/store.js";
 import { REAR_VIEW_SOURCE_ID } from "../examples/three-living-room/src/mirror.js";
 import { WALL_PICTURE_SOURCE_ID } from "../examples/three-living-room/src/shader-picture.js";
+import { TV_VIDEO_SOURCE_ID } from "../examples/three-living-room/src/video-source.js";
 import { clickComponentCenter } from "./helpers/runtime-helpers.js";
 
 describe("living room panel ui", () => {
@@ -34,6 +39,12 @@ describe("living room panel ui", () => {
       theme: getXrHudTheme()
     });
 
+    const tvHomeTexts = collectTexts(tvRuntime.render().commands);
+    expect(tvHomeTexts).toContain("Status");
+    expect(tvHomeTexts).toContain("Video");
+
+    clickComponentCenter(tvRuntime, "tv-os:home:open:space-found-living-room-tv-status");
+    tvRuntime.takeOutputs();
     const tvTexts = collectTexts(tvRuntime.render().commands);
     const xrHudTexts = collectTexts(xrHudRuntime.render().commands);
 
@@ -86,6 +97,161 @@ describe("living room panel ui", () => {
     const texts = collectTexts(snapshot.commands);
     expect(texts).toContain("Picture offline");
     expect(texts).not.toContain("Mirror offline");
+  });
+
+  it("hosts the TV video app surface", () => {
+    const shellChanges: Array<{ type: string; targetAppId?: string; mode?: string }> = [];
+    const surfaces = createEmbeddedSurfaceService();
+    surfaces.publish(TV_VIDEO_SOURCE_ID, {
+      available: true,
+      handle: {
+        kind: "three-texture",
+        texture: { isTexture: true }
+      },
+      sourceWidth: 1280,
+      sourceHeight: 720,
+      sourceType: "three-texture"
+    });
+    const runtime = createRuntime({
+      root: createRoomPanelRoot(
+        "tv",
+        createRoomDemoStore().getState(),
+        createDefaultRoomPanelDiagnostics(),
+        {
+          tv: {
+            screenOn: true,
+            volume: 0.75,
+            onShellChange(change) {
+              shellChanges.push(change);
+            }
+          }
+        }
+      ),
+      surface: getRoomPanelSurface("tv"),
+      theme: getRoomPanelTheme("tv"),
+      services: {
+        surfaces
+      }
+    });
+
+    const homeSnapshot = runtime.render();
+    expect(collectTexts(homeSnapshot.commands)).toContain("Video");
+    expect(homeSnapshot.commands.some((command) => command.componentId === "tv-os:tablet-screen:home-control"))
+      .toBe(false);
+
+    clickComponentCenter(runtime, "tv-os:home:open:space-found-living-room-tv-video", 10);
+    const launchOutputs = runtime.takeOutputs();
+    expect(launchOutputs).toContainEqual(
+      expect.objectContaining({
+        type: "window-manager-change",
+        change: "open-app",
+        targetAppId: TV_VIDEO_APP_ID
+      })
+    );
+    expect(shellChanges).toContainEqual(
+      expect.objectContaining({
+        type: "open-app",
+        targetAppId: TV_VIDEO_APP_ID
+      })
+    );
+
+    const snapshot = runtime.render();
+    const videoSurface = snapshot.commands.find(
+      (command): command is SurfaceDrawCommand =>
+        command.type === "surface" && command.sourceId === TV_VIDEO_SOURCE_ID
+    );
+    const deviceBounds = runtime.getBounds("tv-os:tablet-screen");
+
+    expect(videoSurface).toMatchObject({
+      compositionMode: "composite",
+      sourceId: TV_VIDEO_SOURCE_ID
+    });
+    expect(deviceBounds).toEqual({
+      x: 0,
+      y: 0,
+      width: 624,
+      height: 315
+    });
+    expect(videoSurface?.rect).toEqual({
+      x: 0,
+      y: 0,
+      width: 560,
+      height: 315
+    });
+    expect(collectTexts(snapshot.commands)).not.toContain("Play");
+    expect(collectTexts(snapshot.commands)).not.toContain("Pause");
+
+    clickComponentCenter(runtime, TV_PANEL_BUTTON_IDS.volumeDown, 18);
+    expect(runtime.takeOutputs()).toContainEqual({
+      type: "action",
+      componentId: TV_PANEL_BUTTON_IDS.volumeDown,
+      actionId: TV_PANEL_ACTION_IDS.volumeDown
+    });
+    clickComponentCenter(runtime, TV_PANEL_BUTTON_IDS.volumeUp, 19);
+    expect(runtime.takeOutputs()).toContainEqual({
+      type: "action",
+      componentId: TV_PANEL_BUTTON_IDS.volumeUp,
+      actionId: TV_PANEL_ACTION_IDS.volumeUp
+    });
+    clickComponentCenter(runtime, TV_PANEL_BUTTON_IDS.home, 20);
+    expect(runtime.takeOutputs()).toContainEqual({
+      type: "action",
+      componentId: TV_PANEL_BUTTON_IDS.home,
+      actionId: TV_PANEL_ACTION_IDS.home
+    });
+    const returnedHomeSnapshot = runtime.render();
+    expect(collectTexts(returnedHomeSnapshot.commands)).toContain("Video");
+    expect(
+      returnedHomeSnapshot.commands.some(
+        (command) => command.type === "surface" && command.sourceId === TV_VIDEO_SOURCE_ID
+      )
+    ).toBe(false);
+    expect(shellChanges).toContainEqual(
+      expect.objectContaining({
+        type: "shell-mode",
+        mode: "home"
+      })
+    );
+  });
+
+  it("keeps TV hardware controls outside the app screen", () => {
+    const runtime = createRuntime({
+      root: createRoomPanelRoot(
+        "tv",
+        createRoomDemoStore().getState(),
+        createDefaultRoomPanelDiagnostics(),
+        {
+          tv: {
+            screenOn: false,
+            volume: 0.5
+          }
+        }
+      ),
+      surface: getRoomPanelSurface("tv"),
+      theme: getRoomPanelTheme("tv")
+    });
+
+    const snapshot = runtime.render();
+    expect(snapshot.commands.some((command) => command.role === "tv-screen-blank")).toBe(true);
+    expect(collectTexts(snapshot.commands)).not.toContain("Video");
+
+    clickComponentCenter(runtime, TV_PANEL_BUTTON_IDS.power);
+    expect(runtime.takeOutputs()).toContainEqual({
+      type: "action",
+      componentId: TV_PANEL_BUTTON_IDS.power,
+      actionId: TV_PANEL_ACTION_IDS.powerToggle
+    });
+
+    const powerBounds = runtime.getBounds(TV_PANEL_BUTTON_IDS.power);
+    const volumeDownBounds = runtime.getBounds(TV_PANEL_BUTTON_IDS.volumeDown);
+    const volumeUpBounds = runtime.getBounds(TV_PANEL_BUTTON_IDS.volumeUp);
+    const homeBounds = runtime.getBounds(TV_PANEL_BUTTON_IDS.home);
+    if (!powerBounds || !volumeDownBounds || !volumeUpBounds || !homeBounds) {
+      throw new Error("Expected TV hardware button bounds to be available.");
+    }
+    expect(powerBounds.y).toBeGreaterThan(volumeDownBounds.y);
+    expect(volumeDownBounds.y).toBeGreaterThan(volumeUpBounds.y);
+    expect(volumeUpBounds.y).toBeGreaterThan(homeBounds.y);
   });
 
   it("hosts the wrist panel as a compact tablet app surface", () => {
