@@ -35,7 +35,8 @@ describe("app shell presentations", () => {
     });
 
     const homeSnapshot = runtime.render();
-    expect(hasText(homeSnapshot.commands, "Apps")).toBe(true);
+    expect(hasText(homeSnapshot.commands, "Apps")).toBe(false);
+    expect(hasHomeShellBackground(homeSnapshot.commands, "tablet-os")).toBe(false);
     const iconSymbol = findCommandByRole<DrawCommand>(homeSnapshot.commands, "tablet-app-icon-symbol");
     if (iconSymbol.type !== "text") {
       throw new Error("Expected app icon symbol to be a text command.");
@@ -121,7 +122,7 @@ describe("app shell presentations", () => {
       source: "keyboard"
     });
     runtime.takeOutputs();
-    expect(hasText(runtime.render().commands, "Apps")).toBe(true);
+    expect(hasHomeIcon(runtime.render().commands)).toBe(true);
     expect(lifecycle).toEqual(["launch", "activate", "deactivate", "suspend"]);
 
     runtime.dispatchInput({
@@ -161,7 +162,7 @@ describe("app shell presentations", () => {
     });
     runtime.takeOutputs();
 
-    expect(hasText(runtime.render().commands, "Apps")).toBe(true);
+    expect(hasHomeIcon(runtime.render().commands)).toBe(true);
     expect(lifecycle).toEqual(["launch", "activate", "deactivate"]);
   });
 
@@ -229,7 +230,7 @@ describe("app shell presentations", () => {
       timestamp: 21,
       source: "touch"
     });
-    expect(hasText(runtime.render().commands, "Apps")).toBe(true);
+    expect(hasHomeIcon(runtime.render().commands)).toBe(true);
   });
 
   it("lets createWindowManager use the tablet presentation compatibility path", () => {
@@ -363,4 +364,16 @@ function createSurfaceProbeApp(
 
 function hasText(commands: readonly DrawCommand[], text: string): boolean {
   return commands.some((command) => command.type === "text" && command.text === text);
+}
+
+function hasHomeIcon(commands: readonly DrawCommand[]): boolean {
+  return commands.some((command) => command.role === "tablet-app-icon");
+}
+
+function hasHomeShellBackground(commands: readonly DrawCommand[], shellId: string): boolean {
+  return commands.some(
+    (command) =>
+      command.role === "surface-shell-background" &&
+      command.componentId === `${shellId}:home:shell`
+  );
 }

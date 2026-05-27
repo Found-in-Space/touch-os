@@ -98,12 +98,13 @@ describe("living room panel ui", () => {
 
     const snapshot = runtime.render();
     const texts = collectTexts(snapshot.commands);
-    expect(texts).toContain("Apps");
+    expect(texts).not.toContain("Apps");
     expect(texts).toContain("Settings");
     expect(texts).toContain("Rear View");
     expect(texts).toContain("Fractal Art");
     expect(texts).toContain("Diagnostics");
     expect(texts).not.toContain("Movement");
+    expect(hasHomeShellBackground(snapshot.commands, "arm-os")).toBe(false);
     expect(
       snapshot.commands.some((command) => command.role === "scroll-container-scrollbar-thumb")
     ).toBe(false);
@@ -195,7 +196,9 @@ describe("living room panel ui", () => {
 
     clickComponentCenter(runtime, "arm-os:tablet-screen:home-control", 20);
     runtime.takeOutputs();
-    expect(collectTexts(runtime.render().commands)).toContain("Apps");
+    const homeTexts = collectTexts(runtime.render().commands);
+    expect(homeTexts).not.toContain("Apps");
+    expect(homeTexts).toContain("Rear View");
 
     clickComponentCenter(runtime, "arm-os:home:open:space-found-living-room-rear-view", 30);
     runtime.takeOutputs();
@@ -314,6 +317,14 @@ function collectTexts(commands: readonly { type: string }[]): string[] {
   return commands
     .filter((command): command is TextDrawCommand => command.type === "text")
     .map((command) => command.text);
+}
+
+function hasHomeShellBackground(commands: readonly DrawCommand[], shellId: string): boolean {
+  return commands.some(
+    (command) =>
+      command.role === "surface-shell-background" &&
+      command.componentId === `${shellId}:home:shell`
+  );
 }
 
 function rayClickComponentCenter(

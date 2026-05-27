@@ -180,9 +180,6 @@ function createHomeScreen(
 ): DisplayNode<unknown, unknown> {
   const manifests = ctx.registry.list();
   return createSurfaceShell(`${ctx.shellId}:home:shell`, {
-    header: createTextLabel(`${ctx.shellId}:home:title`, {
-      text: "Apps"
-    }),
     children: manifests.length > 0
       ? [
           createTabletAppIconGrid(`${ctx.shellId}:home:icons`, {
@@ -202,7 +199,6 @@ function createHomeScreen(
             tone: "muted"
           })
         ],
-    backgroundColor: ctx.services.theme.getTokens().backgroundColor,
     bodyPadding: launcherLayout.bodyPadding,
     bodyGap: launcherLayout.gap,
     scrollbar: "auto",
