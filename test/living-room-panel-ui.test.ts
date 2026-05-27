@@ -107,6 +107,9 @@ describe("living room panel ui", () => {
     expect(
       snapshot.commands.some((command) => command.role === "scroll-container-scrollbar-thumb")
     ).toBe(false);
+    expect(snapshot.commands.some((command) => command.role === "tablet-home-button")).toBe(true);
+    expect(snapshot.commands.some((command) => command.role === "tablet-home-button-symbol")).toBe(true);
+    expect(snapshot.commands.some((command) => command.role === "tablet-home-bar")).toBe(false);
 
     const tabletBounds = runtime.getBounds("arm-os:tablet-screen");
     expect(tabletBounds).toEqual({

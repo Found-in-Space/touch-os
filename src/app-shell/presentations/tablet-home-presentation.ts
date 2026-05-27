@@ -9,7 +9,8 @@ import type { DrawCommand } from "../../core/draw.js";
 import {
   ZERO_INSETS,
   createRect,
-  rectContainsPoint
+  rectContainsPoint,
+  type Rect
 } from "../../core/geometry.js";
 import type { TouchAppManifest } from "../../apps/manifest.js";
 import type { AppShellAction } from "../app-shell-events.js";
@@ -660,7 +661,8 @@ const TabletHomeControlComponent: DisplayComponent<TabletHomeControlProps> = {
       }
     ];
     if (ctx.props.variant === "button") {
-      const size = Math.min(24, Math.max(18, ctx.bounds.height - 10));
+      const pressed = ctx.interaction.pressedTargetId === `${ctx.id}:home`;
+      const size = Math.min(28, Math.max(22, ctx.bounds.height - 8));
       const rect = createRect(
         ctx.bounds.x + (ctx.bounds.width - size) / 2,
         ctx.bounds.y + (ctx.bounds.height - size) / 2,
@@ -672,11 +674,16 @@ const TabletHomeControlComponent: DisplayComponent<TabletHomeControlProps> = {
         componentId: ctx.id,
         role: "tablet-home-button",
         rect,
-        fill: theme.surfaceColor,
-        stroke: theme.borderColor,
+        fill: pressed ? theme.accentColor : theme.surfaceColor,
+        stroke: pressed ? theme.accentTextColor : theme.borderColor,
         strokeWidth: 1,
         radius: size / 2
       });
+      commands.push(...createTabletHomeButtonIconCommands(
+        ctx.id,
+        rect,
+        pressed ? theme.accentTextColor : theme.textColor
+      ));
     } else {
       const barWidth = Math.min(96, Math.max(42, ctx.bounds.width * 0.22));
       const rect = createRect(
@@ -714,6 +721,52 @@ const TabletHomeControlComponent: DisplayComponent<TabletHomeControlProps> = {
     });
   }
 };
+
+function createTabletHomeButtonIconCommands(
+  componentId: string,
+  rect: Rect,
+  color: string
+): DrawCommand[] {
+  const centerX = rect.x + rect.width / 2;
+  const roofY = rect.y + rect.height * 0.32;
+  const shoulderY = rect.y + rect.height * 0.49;
+  const left = rect.x + rect.width * 0.28;
+  const right = rect.x + rect.width * 0.72;
+  const bodyWidth = rect.width * 0.34;
+  const bodyHeight = rect.height * 0.22;
+  const bodyRect = createRect(
+    centerX - bodyWidth / 2,
+    shoulderY,
+    bodyWidth,
+    bodyHeight
+  );
+  const strokeWidth = Math.max(1.5, rect.width * 0.07);
+  const line = (x1: number, y1: number, x2: number, y2: number): DrawCommand => ({
+    type: "line" as const,
+    componentId,
+    role: "tablet-home-button-symbol",
+    x1,
+    y1,
+    x2,
+    y2,
+    stroke: color,
+    strokeWidth
+  });
+
+  return [
+    line(left, shoulderY, centerX, roofY),
+    line(centerX, roofY, right, shoulderY),
+    {
+      type: "rect",
+      componentId,
+      role: "tablet-home-button-symbol",
+      rect: bodyRect,
+      stroke: color,
+      strokeWidth,
+      radius: Math.max(1, rect.width * 0.05)
+    }
+  ];
+}
 
 function sanitizeId(value: string): string {
   const sanitized = value.trim().replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");

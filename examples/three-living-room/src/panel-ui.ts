@@ -355,7 +355,7 @@ function createArmTabletRoot(
   return createAppShell("arm-os", {
     registry: ARM_APP_REGISTRY,
     presentation: createTabletHomePresentation({
-      homeControl: "bar",
+      homeControl: "button",
       taskSwitcher: "cards",
       taskCloseControl: "button",
       launcherLayout: {
