@@ -176,4 +176,91 @@ describe("runtime core", () => {
     expect(events).toContain("spy:cancel");
     expect(runtime.getInteraction().pressedTargetId).toBeUndefined();
   });
+
+  it("keeps ray clicks tolerant of select jitter while preserving mouse drag suppression", () => {
+    const rayEvents: string[] = [];
+    const mouseEvents: string[] = [];
+
+    const createComponent = (events: string[]): DisplayComponent<Record<string, never>> => ({
+      kind: "jitter-spy",
+      measure() {
+        return { width: 90, height: 48 };
+      },
+      render() {
+        return [];
+      },
+      hitTest(ctx) {
+        return { targetId: `${ctx.id}:face` };
+      },
+      handleEvent(ctx) {
+        events.push(ctx.event.type);
+      }
+    });
+
+    const rayRuntime = createRuntime({
+      root: createNode("ray-spy", createComponent(rayEvents), {}),
+      surface: { width: 120, height: 80 }
+    });
+    rayRuntime.render();
+    rayRuntime.dispatchInput({
+      type: "pointer-down",
+      pointerId: "ray",
+      pointerType: "ray",
+      surfaceX: 20,
+      surfaceY: 20,
+      timestamp: 1
+    });
+    rayRuntime.dispatchInput({
+      type: "pointer-move",
+      pointerId: "ray",
+      pointerType: "ray",
+      surfaceX: 46,
+      surfaceY: 20,
+      timestamp: 2
+    });
+    rayRuntime.dispatchInput({
+      type: "pointer-up",
+      pointerId: "ray",
+      pointerType: "ray",
+      surfaceX: 46,
+      surfaceY: 20,
+      timestamp: 3
+    });
+
+    expect(rayEvents).toContain("drag-start");
+    expect(rayEvents).toContain("press");
+
+    const mouseRuntime = createRuntime({
+      root: createNode("mouse-spy", createComponent(mouseEvents), {}),
+      surface: { width: 120, height: 80 }
+    });
+    mouseRuntime.render();
+    mouseRuntime.dispatchInput({
+      type: "pointer-down",
+      pointerId: "mouse",
+      pointerType: "mouse",
+      surfaceX: 20,
+      surfaceY: 20,
+      timestamp: 1
+    });
+    mouseRuntime.dispatchInput({
+      type: "pointer-move",
+      pointerId: "mouse",
+      pointerType: "mouse",
+      surfaceX: 46,
+      surfaceY: 20,
+      timestamp: 2
+    });
+    mouseRuntime.dispatchInput({
+      type: "pointer-up",
+      pointerId: "mouse",
+      pointerType: "mouse",
+      surfaceX: 46,
+      surfaceY: 20,
+      timestamp: 3
+    });
+
+    expect(mouseEvents).toContain("drag-start");
+    expect(mouseEvents).not.toContain("press");
+  });
 });

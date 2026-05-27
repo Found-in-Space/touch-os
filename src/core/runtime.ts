@@ -149,7 +149,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
   let outputs: RuntimeOutput[] = [];
   const pendingEmissions: PendingEmission[] = [];
   let commands: DrawCommand[] = [];
-  const dragThreshold = options.dragThreshold ?? 6;
+  const configuredDragThreshold = options.dragThreshold;
   let eventDispatchDepth = 0;
   let isFlushingEmissions = false;
   let layoutPassDepth = 0;
@@ -1017,7 +1017,10 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
         if (pointer) {
           const deltaX = point.x - pointer.startPoint.x;
           const deltaY = point.y - pointer.startPoint.y;
-          if (!pointer.dragging && Math.hypot(deltaX, deltaY) >= dragThreshold) {
+          if (
+            !pointer.dragging &&
+            Math.hypot(deltaX, deltaY) >= resolveDragThreshold(pointer.pointerType)
+          ) {
             pointer.dragging = true;
             dispatchToPath(pointer.pathIds, pointer.targetId, (node) =>
               createPointerDisplayEvent(
@@ -1138,17 +1141,13 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
                 { deltaX, deltaY }
               )
             );
-          } else {
-            const match = hitTest(point);
-            if (
-              match &&
-              match.componentId === releaseMatch.componentId &&
-              match.targetId === releaseMatch.targetId
-            ) {
-              dispatchToPath(releaseMatch.pathIds, releaseMatch.targetId, (node) =>
-                createPointerDisplayEvent("press", node, point, event.timestamp, releaseMatch.targetId, releaseMatch)
-              );
-            }
+          }
+
+          const match = hitTest(point);
+          if (shouldDispatchPress(releaseMatch, match, point)) {
+            dispatchToPath(releaseMatch.pathIds, releaseMatch.targetId, (node) =>
+              createPointerDisplayEvent("press", node, point, event.timestamp, releaseMatch.targetId, releaseMatch)
+            );
           }
           componentId = releaseMatch.componentId;
           targetId = releaseMatch.targetId;
@@ -1296,6 +1295,68 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
     });
     invalidateRender();
     return true;
+  }
+
+  function shouldDispatchPress(
+    releaseMatch: ActivePointerState,
+    match: HitTestMatch | undefined,
+    point: Point
+  ): boolean {
+    if (
+      !match ||
+      match.componentId !== releaseMatch.componentId ||
+      match.targetId !== releaseMatch.targetId
+    ) {
+      return false;
+    }
+
+    if (!releaseMatch.dragging) {
+      return true;
+    }
+
+    const deltaX = point.x - releaseMatch.startPoint.x;
+    const deltaY = point.y - releaseMatch.startPoint.y;
+    return Math.hypot(deltaX, deltaY) <= resolvePressTolerance(releaseMatch.pointerType);
+  }
+
+  function resolveDragThreshold(pointerType: PointerType): number {
+    if (configuredDragThreshold !== undefined) {
+      return configuredDragThreshold;
+    }
+
+    switch (pointerType) {
+      case "ray":
+      case "controller":
+      case "gaze":
+        return 24;
+      case "touch":
+        return 12;
+      case "mouse":
+      case "stylus":
+      case "unknown":
+      default:
+        return 6;
+    }
+  }
+
+  function resolvePressTolerance(pointerType: PointerType): number {
+    if (configuredDragThreshold !== undefined) {
+      return configuredDragThreshold;
+    }
+
+    switch (pointerType) {
+      case "ray":
+      case "controller":
+      case "gaze":
+        return 40;
+      case "touch":
+        return 24;
+      case "mouse":
+      case "stylus":
+      case "unknown":
+      default:
+        return 6;
+    }
   }
 
   function setRoot(root: DisplayNode<unknown>): void {

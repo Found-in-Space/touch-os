@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createEmbeddedSurfaceService, createRuntime } from "../src/index.js";
+import { createEmbeddedSurfaceService, createRuntime, type DisplayRuntime } from "../src/index.js";
 import type { DrawCommand, SurfaceDrawCommand, TextDrawCommand } from "../src/core/draw.js";
 import {
   createXrHudRoot,
@@ -15,7 +15,7 @@ import {
 import { createRoomDemoStore } from "../examples/three-living-room/src/store.js";
 import { REAR_VIEW_SOURCE_ID } from "../examples/three-living-room/src/mirror.js";
 import { WALL_PICTURE_SOURCE_ID } from "../examples/three-living-room/src/shader-picture.js";
-import { clickComponentCenter, pressAt } from "./helpers/runtime-helpers.js";
+import { clickComponentCenter } from "./helpers/runtime-helpers.js";
 
 describe("living room panel ui", () => {
   it("renders TV from shared XR state while XR HUD uses a separate root", () => {
@@ -119,7 +119,7 @@ describe("living room panel ui", () => {
       height: (surface.height ?? 0) - (surface.safeArea?.top ?? 0) - (surface.safeArea?.bottom ?? 0)
     });
 
-    clickComponentCenter(runtime, "arm-os:home:open:space-found-living-room-settings");
+    rayClickComponentCenter(runtime, "arm-os:home:open:space-found-living-room-settings");
     runtime.takeOutputs();
     const appSnapshot = runtime.render();
 
@@ -143,7 +143,7 @@ describe("living room panel ui", () => {
 
     const lightToggleCenterX = lightToggle.rect.x + lightToggle.rect.width / 2;
     const lightToggleCenterY = lightToggle.rect.y + lightToggle.rect.height / 2;
-    pressAt(
+    rayPressAt(
       runtime,
       settingsSurface.rect.x + (lightToggleCenterX / settingsHandle.width) * settingsSurface.rect.width,
       settingsSurface.rect.y + (lightToggleCenterY / settingsHandle.height) * settingsSurface.rect.height
@@ -314,4 +314,56 @@ function collectTexts(commands: readonly { type: string }[]): string[] {
   return commands
     .filter((command): command is TextDrawCommand => command.type === "text")
     .map((command) => command.text);
+}
+
+function rayClickComponentCenter(
+  runtime: DisplayRuntime,
+  componentId: string,
+  timestamp = 1
+): void {
+  const bounds = runtime.getBounds(componentId);
+  if (!bounds) {
+    throw new Error(`Unable to find bounds for component "${componentId}".`);
+  }
+
+  rayPressAt(
+    runtime,
+    bounds.x + bounds.width / 2,
+    bounds.y + bounds.height / 2,
+    timestamp
+  );
+}
+
+function rayPressAt(
+  runtime: DisplayRuntime,
+  surfaceX: number,
+  surfaceY: number,
+  timestamp = 1
+): void {
+  const pointerId = `ray-${timestamp}`;
+  const jitterX = 26;
+  runtime.dispatchInput({
+    type: "pointer-down",
+    pointerId,
+    pointerType: "ray",
+    surfaceX,
+    surfaceY,
+    timestamp
+  });
+  runtime.dispatchInput({
+    type: "pointer-move",
+    pointerId,
+    pointerType: "ray",
+    surfaceX: surfaceX + jitterX,
+    surfaceY,
+    timestamp: timestamp + 1
+  });
+  runtime.dispatchInput({
+    type: "pointer-up",
+    pointerId,
+    pointerType: "ray",
+    surfaceX: surfaceX + jitterX,
+    surfaceY,
+    timestamp: timestamp + 2
+  });
 }
