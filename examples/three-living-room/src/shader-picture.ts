@@ -1,9 +1,5 @@
 import * as THREE from "three";
 import type { EmbeddedSurfaceService } from "../../../src/index.js";
-import {
-  resolveCompositeSurfacePlacements,
-  type ThreePanelHost
-} from "../../../src/hosts/three.js";
 
 export const WALL_PICTURE_COMPONENT_ID = "wall-picture-surface";
 export const WALL_PICTURE_SOURCE_ID = "picture.shader";
@@ -26,11 +22,6 @@ export interface ShaderPictureSource {
   render(renderer: THREE.WebGLRenderer, timestamp: number): void;
   publish(surfaces: EmbeddedSurfaceService, timestamp: number): void;
   unpublish(surfaces: EmbeddedSurfaceService): void;
-  dispose(): void;
-}
-
-export interface ShaderPicturePresenter {
-  update(host: ThreePanelHost): void;
   dispose(): void;
 }
 
@@ -166,73 +157,4 @@ export function createShaderPictureSource(options?: {
       target.dispose();
     }
   };
-}
-
-export function createShaderPicturePresenter(host: ThreePanelHost): ShaderPicturePresenter {
-  const geometry = new THREE.PlaneGeometry(1, 1);
-  const material = new THREE.MeshBasicMaterial({
-    color: "#ffffff",
-    side: THREE.DoubleSide,
-    toneMapped: false,
-    transparent: true,
-    depthTest: true,
-    depthWrite: false,
-    polygonOffset: true,
-    polygonOffsetFactor: -1,
-    polygonOffsetUnits: -1
-  });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.z = 0.01;
-  mesh.visible = false;
-  host.mesh.add(mesh);
-  let currentTexture: THREE.Texture | undefined;
-
-  if (host.material.depthWrite) {
-    // The carrier panel provides frame pixels, but the composite child
-    // should own visible depth within the picture area.
-    host.material.depthWrite = false;
-    host.material.needsUpdate = true;
-  }
-
-  return {
-    update(currentHost) {
-      const placement = resolveCompositeSurfacePlacements(currentHost).find(
-        (entry) => entry.componentId === WALL_PICTURE_COMPONENT_ID
-      );
-      if (!placement || !isShaderPictureSurfaceHandle(placement.command.handle)) {
-        mesh.visible = false;
-        return;
-      }
-
-      const nextTexture = placement.command.handle.texture;
-      if (material.map !== nextTexture || currentTexture !== nextTexture) {
-        currentTexture = nextTexture;
-        material.map = nextTexture;
-        material.needsUpdate = true;
-      }
-      mesh.renderOrder = currentHost.mesh.renderOrder + 1;
-      mesh.position.set(placement.localCenter.x, placement.localCenter.y, 0.01);
-      mesh.scale.set(
-        placement.mirrorX ? -placement.size.width : placement.size.width,
-        placement.size.height,
-        1
-      );
-      mesh.visible = true;
-    },
-    dispose() {
-      host.mesh.remove(mesh);
-      geometry.dispose();
-      material.dispose();
-    }
-  };
-}
-
-export function isShaderPictureSurfaceHandle(handle: unknown): handle is ShaderPictureSurfaceHandle {
-  return (
-    typeof handle === "object" &&
-    handle !== null &&
-    "kind" in handle &&
-    (handle as { kind?: unknown }).kind === "three-texture" &&
-    "texture" in handle
-  );
 }

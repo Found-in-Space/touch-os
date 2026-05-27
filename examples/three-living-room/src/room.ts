@@ -180,16 +180,56 @@ export function createLivingRoomScene(): LivingRoomScene {
   tvFrame.position.set(0, 1.52, -2.92);
   room.add(tvFrame);
 
-  const pictureFrame = new THREE.Mesh(
-    new THREE.BoxGeometry(1.24, 0.82, 0.05),
-    new THREE.MeshStandardMaterial({
-      color: "#6f5238",
-      metalness: 0.04,
-      roughness: 0.64
-    })
+  const pictureFrameMaterial = new THREE.MeshStandardMaterial({
+    color: "#6f5238",
+    metalness: 0.04,
+    roughness: 0.64
+  });
+  const pictureOuterWidth = 1.24;
+  const pictureOuterHeight = 0.82;
+  const pictureInnerWidth = 1.12;
+  const pictureInnerHeight = 0.7;
+  const pictureFrameDepth = 0.05;
+  const pictureFrameThicknessX = (pictureOuterWidth - pictureInnerWidth) / 2;
+  const pictureFrameThicknessY = (pictureOuterHeight - pictureInnerHeight) / 2;
+  const pictureFrameY = 1.58;
+  const pictureFrameZ = 3.02;
+  room.add(
+    createFrameBar(
+      new THREE.BoxGeometry(pictureOuterWidth, pictureFrameThicknessY, pictureFrameDepth),
+      0,
+      pictureFrameY + pictureInnerHeight / 2 + pictureFrameThicknessY / 2,
+      pictureFrameZ,
+      pictureFrameMaterial
+    )
   );
-  pictureFrame.position.set(0, 1.58, 3.02);
-  room.add(pictureFrame);
+  room.add(
+    createFrameBar(
+      new THREE.BoxGeometry(pictureOuterWidth, pictureFrameThicknessY, pictureFrameDepth),
+      0,
+      pictureFrameY - pictureInnerHeight / 2 - pictureFrameThicknessY / 2,
+      pictureFrameZ,
+      pictureFrameMaterial
+    )
+  );
+  room.add(
+    createFrameBar(
+      new THREE.BoxGeometry(pictureFrameThicknessX, pictureInnerHeight, pictureFrameDepth),
+      -pictureInnerWidth / 2 - pictureFrameThicknessX / 2,
+      pictureFrameY,
+      pictureFrameZ,
+      pictureFrameMaterial
+    )
+  );
+  room.add(
+    createFrameBar(
+      new THREE.BoxGeometry(pictureFrameThicknessX, pictureInnerHeight, pictureFrameDepth),
+      pictureInnerWidth / 2 + pictureFrameThicknessX / 2,
+      pictureFrameY,
+      pictureFrameZ,
+      pictureFrameMaterial
+    )
+  );
 
   const pictureBacking = new THREE.Mesh(
     new THREE.BoxGeometry(1.18, 0.76, 0.012),

@@ -740,6 +740,7 @@ describe("three host adapters", () => {
     expect(presenter.mesh.scale.x).toBeCloseTo(1);
     expect(presenter.mesh.scale.y).toBeCloseTo(0.625);
     expect(presenter.mesh.renderOrder).toBe(host.mesh.renderOrder + 1);
+    expect(presenter.mesh.material.depthTest).toBe(true);
 
     surfaces.publish("plot.main", {
       handle: { kind: "mock-surface" }
@@ -787,15 +788,65 @@ describe("three host adapters", () => {
     driver.attach();
     driver.update({ scene, camera });
 
-    const textureMeshes = driver.host.mesh.children.filter((child): child is THREE.Mesh => {
-      return child instanceof THREE.Mesh &&
-        child.material instanceof THREE.MeshBasicMaterial &&
-        child.material.map === texture;
-    });
+    const textureMeshes = driver.host.mesh.children.filter(
+      (child): child is THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> => {
+        return child instanceof THREE.Mesh &&
+          child.material instanceof THREE.MeshBasicMaterial &&
+          child.material.map === texture;
+      }
+    );
     expect(textureMeshes).toHaveLength(1);
     expect(textureMeshes[0]?.visible).toBe(true);
+    expect(textureMeshes[0]?.material.depthTest).toBe(true);
 
     driver.detach();
+  });
+
+  it("keeps composite texture depth testing aligned with the parent panel", () => {
+    const surfaces = createEmbeddedSurfaceService();
+    const runtime = createRuntime({
+      root: createEmbeddedSurface("monitor", {
+        sourceId: "plot.main",
+        compositionMode: "composite",
+        preserveAspectRatio: false
+      }),
+      surface: { width: 160, height: 100 },
+      theme: { padding: 0 },
+      services: { surfaces }
+    });
+    const texture = new THREE.Texture();
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1.6, 0.1, 10);
+    scene.add(camera);
+
+    surfaces.publish("plot.main", {
+      available: true,
+      handle: { kind: "three-texture", texture },
+      sourceWidth: 160,
+      sourceHeight: 100
+    });
+
+    const host = createScenePanelHost({
+      runtime,
+      surface: { width: 160, height: 100 },
+      panelWidth: 1,
+      panelHeight: 0.625,
+      depthTest: false,
+      createCanvas: createFakeCanvas
+    });
+    const presenter = createThreeTextureCompositePresenter(host, {
+      componentId: "monitor"
+    });
+
+    host.attach();
+    host.update({ scene, camera });
+    presenter.update();
+
+    expect(host.mesh.material.depthTest).toBe(false);
+    expect(presenter.mesh.material.depthTest).toBe(false);
+
+    presenter.dispose();
+    host.detach();
   });
 
   it("accepts structural three-texture handles from sibling package instances", () => {

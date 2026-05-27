@@ -44,7 +44,6 @@ import {
   publishMirrorSurface
 } from "./mirror.js";
 import {
-  createShaderPicturePresenter,
   createShaderPictureSource,
   WALL_PICTURE_SOURCE_ID
 } from "./shader-picture.js";
@@ -184,7 +183,6 @@ wallMirrorPanel.attach();
 wallPicturePanel.attach();
 
 const shaderPictureSource = createShaderPictureSource();
-const shaderPicturePresenter = createShaderPicturePresenter(wallPicturePanel.driver.host);
 
 const pressedKeys = new Set<string>();
 let lookActive = false;
@@ -531,7 +529,6 @@ renderer.setAnimationLoop(() => {
   tvPanel.render();
   wallMirrorPanel.render();
   wallPicturePanel.render();
-  shaderPicturePresenter.update(wallPicturePanel.driver.host);
   desktopHudPanel.render();
   xrHudPanel.render();
   if (armPanel.enabled) {
@@ -1404,7 +1401,6 @@ window.addEventListener("beforeunload", () => {
   xrHudPanel.dispose();
   wallMirrorPanel.dispose();
   wallPicturePanel.dispose();
-  shaderPicturePresenter.dispose();
   shaderPictureSource.dispose();
   mirrorRenderer.dispose();
   clearMirrorSurface(sharedSurfaces, REAR_VIEW_SOURCE_ID);

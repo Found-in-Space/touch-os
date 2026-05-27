@@ -693,7 +693,7 @@ export function createThreeTextureCompositePresenter(
   const geometry = new THREE.PlaneGeometry(1, 1);
   const material = new THREE.MeshBasicMaterial({
     transparent: options.transparent ?? true,
-    depthTest: options.depthTest ?? false,
+    depthTest: options.depthTest ?? host.mesh.material.depthTest,
     depthWrite: false,
     side: THREE.DoubleSide,
     toneMapped: false
