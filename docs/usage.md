@@ -500,6 +500,19 @@ One published `sourceId` may be referenced by more than one presentation. The cu
 
 The Three host resolves composite surfaces through nested `touch-os-render-snapshot` handles, so child-runtime apps can present GPU-backed surfaces while the containing app shell stays isolated.
 
+### Choose A Surface Rendering Mode
+
+Embedded surfaces support two broad presentation modes:
+
+- `copy`: the host may draw the source into the shared panel canvas.
+- `composite`: the host should present the source separately from the shared panel canvas.
+
+Use `copy` when the source is low-rate, simple, or must blend exactly with surrounding panel UI. Use `composite` for video, live camera feeds, shader/render-target content, and other high-detail surfaces where extra copies or panel-texture resampling are likely to hurt quality.
+
+In the Three host, `composite` currently means a separate panel-local Three mesh for compatible texture handles. That is not the same as a native XR compositor layer; it still renders through the normal scene. However, it is the right integration point for hosts that want to promote selected media surfaces to native compositor layers later while keeping the same app/component contract.
+
+For XR hosts, expose rendering quality as host policy rather than application state. Lower foveation values improve edge-of-field stability for video, text, stars, point clouds, and other high-contrast details, but cost more GPU time. Media-heavy applications should also use mipmapped and anisotropic texture filtering where available, and should keep a normal scene-composite fallback for platforms without native layer support.
+
 ## Use The Schema Adapter
 
 The schema adapter compiles a document to a normal runtime root plus a controller API.

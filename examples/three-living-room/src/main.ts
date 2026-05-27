@@ -53,6 +53,7 @@ import {
 } from "./shader-picture.js";
 import {
   DEFAULT_TV_VIDEO_URL,
+  configureVideoTextureFiltering,
   createVideoTextureSource,
   TV_VIDEO_SOURCE_ID,
   type VideoTextureSource
@@ -107,6 +108,7 @@ declare global {
 
 const urlParams = new URLSearchParams(window.location.search);
 const livingRoomTestMode = urlParams.has("touchOsTest");
+const XR_FOVEATION = 0.25;
 const ARM_TEST_COMPONENT_IDS = {
   fractalIcon: "arm-os:home:open:space-found-living-room-fractal-art",
   homeControl: "arm-os:tablet-screen:home-control"
@@ -131,6 +133,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = false;
 renderer.xr.enabled = true;
+renderer.xr.setFoveation(XR_FOVEATION);
 wrapper.append(renderer.domElement);
 
 const xrEntry = document.createElement("div");
@@ -205,6 +208,7 @@ const tvVideoSource = createVideoTextureSource({
   loop: true,
   volume: tvVideoVolume
 });
+configureVideoTextureFiltering(tvVideoSource, renderer);
 
 const pressedKeys = new Set<string>();
 let lookActive = false;

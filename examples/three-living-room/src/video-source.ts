@@ -26,6 +26,18 @@ export interface VideoTextureSource {
   dispose(): void;
 }
 
+export interface VideoTextureFilteringOptions {
+  mipmaps?: boolean;
+  anisotropy?: number;
+}
+
+export interface VideoTextureFilteringRenderer {
+  readonly capabilities: {
+    readonly isWebGL2: boolean;
+    getMaxAnisotropy(): number;
+  };
+}
+
 export function createVideoTextureSource(options: {
   url: string;
   sourceId?: string;
@@ -112,9 +124,39 @@ export function createVideoTextureSource(options: {
   };
 }
 
+export function configureVideoTextureFiltering(
+  source: VideoTextureSource,
+  renderer: VideoTextureFilteringRenderer,
+  options: VideoTextureFilteringOptions = {}
+): void {
+  const texture = source.handle.texture;
+  const mipmaps = options.mipmaps ?? true;
+  texture.magFilter = THREE.LinearFilter;
+  if (mipmaps && renderer.capabilities.isWebGL2) {
+    texture.generateMipmaps = true;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.anisotropy = clampAnisotropy(
+      options.anisotropy ?? 4,
+      renderer.capabilities.getMaxAnisotropy()
+    );
+  } else {
+    texture.generateMipmaps = false;
+    texture.minFilter = THREE.LinearFilter;
+    texture.anisotropy = 1;
+  }
+  texture.needsUpdate = true;
+}
+
 function clampVolume(volume: number): number {
   if (!Number.isFinite(volume)) {
     return 0.75;
   }
   return Math.max(0, Math.min(1, volume));
+}
+
+function clampAnisotropy(value: number, maxValue: number): number {
+  if (!Number.isFinite(value) || !Number.isFinite(maxValue)) {
+    return 1;
+  }
+  return Math.max(1, Math.min(Math.floor(value), Math.floor(maxValue)));
 }
