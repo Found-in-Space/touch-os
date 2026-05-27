@@ -274,7 +274,7 @@ export function createLivingRoomScene(): LivingRoomScene {
   const mirrorSize = { width: 640, height: 360 };
 
   const tvAnchor: PanelAnchor = {
-    position: { x: 0, y: 1.52, z: -2.88 },
+    position: { x: 0, y: 1.52, z: -2.84 },
     quaternion: { x: 0, y: 0, z: 0, w: 1 }
   };
   const mirrorAnchor: PanelAnchor = {

@@ -684,7 +684,6 @@ function createTvPanelSession(runtime: DisplayRuntime): ThreePanelSession {
     surface: getRoomPanelSurface("tv"),
     panelWidth: 1.44,
     panelHeight: 0.73,
-    depthTest: false,
     position: room.tvAnchor.position,
     quaternion: room.tvAnchor.quaternion
   });
