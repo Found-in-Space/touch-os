@@ -63,6 +63,7 @@ Recommended host-side policies:
 - Use mipmapped and anisotropic filtering for minified Three.js texture composites when the renderer supports it.
 - Prefer `compositionMode: "composite"` for video, live GPU surfaces, camera feeds, and high-frequency shader content.
 - Keep a normal scene-mesh composite fallback even when a native compositor layer is available.
+- Route associated media audio in the host, where listener pose and physical source placement are known.
 - In XR, avoid maximum foveation for applications with high-contrast detail, text, stars, or video near the edge of the field of view. Lower foveation values improve visual stability at the cost of GPU work.
 - For tiny high-contrast content such as stars or point plots, avoid raw one-pixel hard cutoffs. Prefer a minimum screen-space or angular size, soft sprites, filtered atlases, or stable LOD thresholds with hysteresis.
 

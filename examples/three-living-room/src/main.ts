@@ -58,6 +58,10 @@ import {
   TV_VIDEO_SOURCE_ID,
   type VideoTextureSource
 } from "./video-source.js";
+import {
+  createSpatialMediaAudio,
+  type SpatialMediaAudio
+} from "./spatial-media-audio.js";
 import { createLivingRoomScene } from "./room.js";
 import {
   createRoomDemoStore,
@@ -209,6 +213,11 @@ const tvVideoSource = createVideoTextureSource({
   volume: tvVideoVolume
 });
 configureVideoTextureFiltering(tvVideoSource, renderer);
+const tvAudio = createSpatialMediaAudio({
+  camera: room.camera,
+  mediaElement: tvVideoSource.video
+});
+tvAudio.attach(tvPanel.driver.host.mesh);
 
 const pressedKeys = new Set<string>();
 let lookActive = false;
@@ -928,17 +937,22 @@ function playTvVideo(): void {
     return;
   }
 
-  playVideoSource(tvVideoSource);
+  playVideoSource(tvVideoSource, tvAudio);
 }
 
 function stopTvVideo(): void {
   tvVideoSource.stop();
 }
 
-function playVideoSource(source: VideoTextureSource): void {
-  void source.play().catch((error: unknown) => {
-    console.warn("Unable to start TV video playback.", error);
-  });
+function playVideoSource(
+  source: VideoTextureSource,
+  spatialAudio?: Pick<SpatialMediaAudio, "resume">
+): void {
+  void (spatialAudio?.resume() ?? Promise.resolve())
+    .then(() => source.play())
+    .catch((error: unknown) => {
+      console.warn("Unable to start TV video playback.", error);
+    });
 }
 
 function dispatchSystemCommandFromKeyboard(event: KeyboardEvent): boolean {
@@ -1548,6 +1562,7 @@ window.addEventListener("beforeunload", () => {
   wallMirrorPanel.dispose();
   wallPicturePanel.dispose();
   shaderPictureSource.dispose();
+  tvAudio.dispose();
   tvVideoSource.dispose();
   mirrorRenderer.dispose();
   clearMirrorSurface(sharedSurfaces, REAR_VIEW_SOURCE_ID);

@@ -8,7 +8,7 @@ npm run example:living-room
 
 The scene demonstrates three rendering paths side by side:
 
-- the TV uses the shared Touch OS UI surface
+- the TV uses the shared Touch OS UI surface, with a video app backed by a composite texture
 - the rear-view mirrors use embedded surfaces in `copy` mode
 - the back-wall picture opposite the TV uses an externally rendered shader surface in `composite` mode
 
@@ -32,3 +32,4 @@ Scene notes:
 
 - The wall mirror on the left remains a copy-mode embedded surface
 - The animated picture on the back wall is a foreign GPU surface presented through the composite path
+- TV video audio is routed through a host-side positional Web Audio source attached to the TV panel
