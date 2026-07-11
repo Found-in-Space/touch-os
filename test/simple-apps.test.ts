@@ -19,6 +19,62 @@ interface RoomState {
 }
 
 describe("simple controls apps", () => {
+  it("supports explicit metadata, control options, callbacks, sections, and status tones", () => {
+    const callbackEvents: TouchAppEvent[] = [];
+    const app = defineControlsApp<RoomState>({
+      id: "space.found.explicit-controls",
+      name: "Explicit Controls",
+      version: "2.0.0",
+      icon: { kind: "emoji", value: "🎛️", label: "Controls" },
+      preferredSurface: {
+        width: 500,
+        height: 300,
+        minWidth: 300,
+        minHeight: 200,
+        resizable: false
+      },
+      controls: ({ toggle, status, slider, button, section }) => [
+        toggle("Lamp", "lightOn", { id: "explicit-toggle", disabled: false }),
+        status("Muted", () => "Muted", { id: "muted", tone: "muted" }),
+        status("Accent", () => "Accent", { id: "accent", tone: "accent" }),
+        status("Warning", () => "Warning", { id: "warning", tone: "warning" }),
+        status("Danger", () => "Danger", { id: "danger", tone: "danger" }),
+        slider("Speed", "moveSpeed", {
+          id: "explicit-slider",
+          min: 0,
+          max: 4,
+          valueText: (state) => `${state.moveSpeed}x`,
+          disabled: false
+        }),
+        button("Reset", "explicit.reset", {
+          id: "explicit-button",
+          payload: { source: "test" },
+          disabled: false
+        }),
+        section("Details", [status("Normal", () => "Normal")], { id: "details" })
+      ],
+      onChange(event) {
+        callbackEvents.push(event);
+      },
+      onAction(event) {
+        callbackEvents.push(event);
+      }
+    });
+    const runtime = createTouchAppRuntime({
+      app,
+      state: { lightOn: false, xrActive: false, moveSpeed: 2 },
+      surface: { width: 500, height: 600 }
+    });
+
+    const texts = runtime.render().commands
+      .filter((command): command is Extract<DrawCommand, { type: "text" }> => command.type === "text")
+      .map((command) => command.text);
+    expect(texts).toEqual(expect.arrayContaining(["Muted", "Accent", "Warning", "Danger", "2x"]));
+    clickComponentCenter(runtime, "explicit-toggle");
+    clickComponentCenter(runtime, "explicit-button", 10);
+    expect(callbackEvents.map((event) => event.type)).toEqual(["app-change", "app-action"]);
+  });
+
   it("defines a toggle/status/slider app without manual layout", () => {
     const app = createRoomControlsApp();
     const runtime = createTouchAppRuntime({
@@ -154,6 +210,36 @@ describe("simple controls apps", () => {
         moveSpeed: 1
       }
     });
+  });
+
+  it("returns routed app events from dispatch without leaking default raw outputs", () => {
+    const runtime = createTouchAppRuntime({
+      app: createRoomControlsApp(),
+      state: {
+        lightOn: false,
+        xrActive: true,
+        moveSpeed: 1
+      },
+      surface: { width: 360, height: 240 }
+    });
+
+    runtime.render();
+    const bounds = runtime.getBounds("lightOn-toggle");
+    if (!bounds) {
+      throw new Error("Expected the generated toggle to have bounds.");
+    }
+    const surfaceX = bounds.x + bounds.width / 2;
+    const surfaceY = bounds.y + bounds.height / 2;
+    runtime.dispatchInput({ type: "pointer-down", surfaceX, surfaceY, timestamp: 1 });
+    const result = runtime.dispatchInput({
+      type: "pointer-up",
+      surfaceX,
+      surfaceY,
+      timestamp: 2
+    });
+
+    expect(result.outputs.map((output) => output.type)).toEqual(["app-event"]);
+    expect(runtime.takeOutputs().map((output) => output.type)).toEqual(["app-event"]);
   });
 
   it("can opt the single-app runtime into raw runtime output forwarding", () => {

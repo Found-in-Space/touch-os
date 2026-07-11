@@ -182,7 +182,7 @@ describe("bitmap contracts", () => {
     });
 
     host.attach();
-    host.update({ scene, camera });
+    host.update({ timestamp: 0, scene, camera });
 
     expect(context.drawCalls).toHaveLength(2);
     expect(context.drawCalls[0]).toMatchObject({

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createRuntime,
+  createTextLabel,
   createToggle,
   createTouchAppRegistry,
   createWindowManager,
@@ -46,7 +47,7 @@ describe("canvas snapshot renderer parity", () => {
       sourceHeight: 100
     });
 
-    expect(context.operations.filter((operation) => operation === "clip")).toHaveLength(6);
+    expect(context.operations.filter((operation) => operation === "clip")).toHaveLength(7);
   });
 
   it("restores bitmap opacity and sampling after draw", () => {
@@ -63,6 +64,46 @@ describe("canvas snapshot renderer parity", () => {
     expect(context.globalAlpha).toBe(0.5);
     expect(context.imageSmoothingEnabled).toBe(true);
     expect(context.operations).toContain("drawImage:10,20,30,40");
+  });
+
+  it("renders contain, cover, and missing bitmap paths without leaking canvas state", () => {
+    const containContext = new RecordingCanvasContext();
+    drawCommandToCanvasContext(containContext, {
+      ...bitmapCommand(),
+      handle: {
+        kind: "bitmap",
+        image: {},
+        width: 100,
+        height: 50,
+        revision: 1
+      },
+      fit: "contain"
+    });
+    expect(containContext.operations).toContain("drawImage:10,32.5,30,15");
+
+    const coverContext = new RecordingCanvasContext();
+    delete coverContext.globalAlpha;
+    delete coverContext.imageSmoothingEnabled;
+    drawCommandToCanvasContext(coverContext, {
+      ...bitmapCommand(),
+      handle: {
+        kind: "bitmap",
+        image: {},
+        width: 100,
+        height: 50,
+        revision: 1
+      },
+      fit: "cover"
+    });
+    expect(coverContext.operations).toContain("drawImage:-15,20,80,40");
+    expect(coverContext.operations).toContain("clip");
+    expect(coverContext.globalAlpha).toBeUndefined();
+    expect(coverContext.imageSmoothingEnabled).toBeUndefined();
+
+    const missingContext = new RecordingCanvasContext();
+    Object.defineProperty(missingContext, "drawImage", { value: undefined });
+    drawCommandToCanvasContext(missingContext, bitmapCommand());
+    expect(missingContext.operations).toContain("fillRect:10,20,30,40");
   });
 
   it("honors surface mirrorX and recurses through touch-os render snapshots", () => {
@@ -92,17 +133,131 @@ describe("canvas snapshot renderer parity", () => {
     expect(context.operations).toContain("roundRect:10,20,30,40,7");
   });
 
+  it("supports drawable, image, missing, and composite surface handles", () => {
+    const drawableContext = new RecordingCanvasContext();
+    drawCommandToCanvasContext(drawableContext, surfaceCommand());
+    expect(drawableContext.operations).toContain("fillRect:0,0,1,1");
+
+    const imageContext = new RecordingCanvasContext();
+    drawCommandToCanvasContext(imageContext, {
+      ...surfaceCommand(),
+      handle: { image: {} }
+    });
+    expect(imageContext.operations).toContain("drawImage:10,20,30,40");
+
+    const missingContext = new RecordingCanvasContext();
+    drawCommandToCanvasContext(missingContext, {
+      ...surfaceCommand(),
+      handle: null
+    });
+    expect(missingContext.operations).toContain("fillRect:10,20,30,40");
+
+    const compositeContext = new RecordingCanvasContext();
+    drawCommandToCanvasContext(compositeContext, {
+      ...surfaceCommand(),
+      compositionMode: "composite"
+    });
+    expect(compositeContext.operations).not.toContain("fillRect:0,0,1,1");
+  });
+
   it("shares text alignment and vertical alignment semantics", () => {
     const context = new RecordingCanvasContext();
     drawCommandToCanvasContext(context, {
       ...textCommand(),
       align: "center",
-      verticalAlign: "bottom"
+      verticalAlign: "bottom",
+      fontFamily: "Inter, sans-serif"
     });
 
     expect(context.textAlign).toBe("center");
     expect(context.textBaseline).toBe("bottom");
-    expect(context.operations).toContain("fillText:hello:25,60,30");
+    expect(context.font).toBe("400 14px Inter, sans-serif");
+    expect(context.operations).toContain("rect:10,20,30,40");
+    expect(context.operations).toContain("fillText:hello:25,60,");
+  });
+
+  it("clips text without horizontally scaling glyphs and supports measured ellipsis", () => {
+    const clippedContext = new RecordingCanvasContext();
+    drawCommandToCanvasContext(clippedContext, {
+      ...textCommand(),
+      text: "a long label"
+    });
+
+    expect(clippedContext.operations).toContain("clip");
+    expect(clippedContext.operations).toContain("fillText:a long label:10,20,");
+
+    const ellipsisContext = new RecordingCanvasContext();
+    drawCommandToCanvasContext(ellipsisContext, {
+      ...textCommand(),
+      text: "abcdef",
+      rect: { x: 10, y: 20, width: 32, height: 40 },
+      overflow: "ellipsis"
+    });
+
+    expect(ellipsisContext.operations).toContain("fillText:abc\u2026:10,20,");
+
+    const fittingContext = new RecordingCanvasContext();
+    drawCommandToCanvasContext(fittingContext, {
+      ...textCommand(),
+      rect: { x: 10, y: 20, width: 40, height: 40 },
+      overflow: "ellipsis"
+    });
+    expect(fittingContext.operations).toContain("fillText:hello:10,20,");
+
+    const tooNarrowContext = new RecordingCanvasContext();
+    drawCommandToCanvasContext(tooNarrowContext, {
+      ...textCommand(),
+      rect: { x: 10, y: 20, width: 4, height: 40 },
+      overflow: "ellipsis"
+    });
+    expect(tooNarrowContext.operations).toContain("fillText::10,20,");
+
+    const unmeasuredContext = new RecordingCanvasContext();
+    Object.defineProperty(unmeasuredContext, "measureText", { value: undefined });
+    drawCommandToCanvasContext(unmeasuredContext, {
+      ...textCommand(),
+      text: "unmeasured label",
+      overflow: "ellipsis"
+    });
+    expect(unmeasuredContext.operations).toContain("fillText:unmeasured label:10,20,");
+  });
+
+  it("uses right and middle text positioning and skips empty text rectangles", () => {
+    const context = new RecordingCanvasContext();
+    drawCommandToCanvasContext(context, {
+      ...textCommand(),
+      align: "right",
+      verticalAlign: "middle"
+    });
+    expect(context.operations).toContain("fillText:hello:40,40,");
+
+    const emptyContext = new RecordingCanvasContext();
+    drawCommandToCanvasContext(emptyContext, {
+      ...textCommand(),
+      rect: { x: 0, y: 0, width: 0, height: 20 }
+    });
+    expect(emptyContext.operations.some((operation) => operation.startsWith("fillText:"))).toBe(false);
+  });
+
+  it("carries the public theme font family into runtime text commands", () => {
+    const runtime = createRuntime({
+      root: createTextLabel("label", { text: "Theme type" }),
+      surface: { width: 160, height: 48 },
+      theme: {
+        typography: {
+          fontFamily: "Inter, sans-serif",
+          fontSize: 15,
+          lineHeight: 20,
+          fontWeight: 600
+        }
+      }
+    });
+
+    const command = findCommandByRole<DrawCommand>(runtime.render().commands, "text-label");
+    expect(command.type).toBe("text");
+    if (command.type === "text") {
+      expect(command.fontFamily).toBe("Inter, sans-serif");
+    }
   });
 
   it("keeps toggle track rounded through direct and hosted render paths", () => {
@@ -356,6 +511,10 @@ class RecordingCanvasContext implements CanvasSurfaceContextLike {
 
   fillText(text: string, x: number, y: number, maxWidth?: number): void {
     this.operations.push(`fillText:${text}:${x},${y},${maxWidth ?? ""}`);
+  }
+
+  measureText(text: string): { width: number } {
+    return { width: text.length * 8 };
   }
 
   drawImage(_image: unknown, x: number, y: number, width: number, height: number): void {

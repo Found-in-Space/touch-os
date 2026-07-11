@@ -40,8 +40,11 @@ export interface TextDrawCommand extends DrawCommandBase {
   color: string;
   align?: "left" | "center" | "right";
   verticalAlign?: "top" | "middle" | "bottom";
+  fontFamily?: string;
   fontSize?: number;
   fontWeight?: number;
+  /** Defaults to clipping at the command rectangle. */
+  overflow?: "clip" | "ellipsis";
 }
 
 export interface LineDrawCommand extends DrawCommandBase {

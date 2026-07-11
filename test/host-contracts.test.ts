@@ -16,6 +16,7 @@ describe("host contracts", () => {
 
     const host = createFakeHost(runtime);
     const frame: HostFrame = {
+      timestamp: 2,
       viewport: {
         x: 0,
         y: 0,

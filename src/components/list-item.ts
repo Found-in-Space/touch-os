@@ -43,7 +43,6 @@ const ListItemComponent: DisplayComponent<ListItemProps, ListItemState> = {
   render(ctx) {
     const theme = ctx.services.theme.getTokens();
     const disabled = ctx.props.disabled ?? false;
-    const interactive = isInteractive(ctx.props);
     const trailingRect = getTrailingRect(ctx);
     const leadingRect = getLeadingRect(ctx);
 

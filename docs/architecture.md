@@ -71,6 +71,7 @@ The runtime owns:
 - render snapshots expressed as draw commands
 - emitted runtime outputs
 - stable service injection for components
+- layout and render invalidation requested by observable services or explicit runtime methods
 
 The runtime does not own:
 
@@ -138,6 +139,8 @@ Current service areas are:
 
 The default service implementations are in-memory, side-effect free, and test-friendly.
 
+Mutable built-in services expose `RuntimeInvalidationSource`. A runtime subscribes to supplied as well as internally created services and releases those subscriptions on disposal. Invalidations are classified as `layout` or `render`; identical effective updates emit neither.
+
 ### 5. App Shell And Window Orchestration
 
 The app shell sits above the core runtime. The window-manager API is a desktop-presentation compatibility wrapper over that shell.
@@ -163,6 +166,8 @@ Presentations decide how sessions appear. The desktop presentation shows movable
 
 The shell supports two host modes. Same-runtime sessions mount app trees inside the shell runtime and scope app component ids for built-in containers and the standard structural child props. Child-runtime sessions give each app instance its own `DisplayRuntime`, publish that runtime's render snapshot through an embedded surface, and forward viewport input into the child runtime in surface-local coordinates.
 
+Both modes expose the same output contract. App code emits through `ctx.actions.emit(...)`, and the containing runtime exposes one scoped `app-event` by default. Scoped raw component outputs are additional diagnostics available only through explicit forwarding.
+
 `WindowManagerProps.initialWindows` is a seed, not a controlled window list. To reseed the OS session, remount the manager with a new component id. External callers should observe `window-manager-change` outputs for persistence.
 
 ### 6. Hosts
@@ -173,6 +178,7 @@ Hosts adapt an environment to the runtime. They provide:
 - surface metrics
 - normalized input injection
 - attach, update, and detach lifecycle
+- a monotonic millisecond frame timestamp when the host owns runtime timing
 
 Hosts may additionally provide:
 
@@ -182,6 +188,8 @@ Hosts may additionally provide:
 - pointer claim and blocking policy
 
 The core runtime only understands display-space coordinates and normalized input events.
+
+Detachment is reversible; disposal is final. Hosts cancel active input before detaching or disposing, and lifecycle-generated outputs must remain observable. Continuous pointer sources report all active owned pointer ids each frame, so omission is tracking loss and causes immediate cancellation. Edge-oriented integrations use explicit frame events instead.
 
 ## State Ownership
 
@@ -232,6 +240,8 @@ That shared surface is expressed through draw commands rather than host-native v
 - embedded-surface commands for externally owned live surfaces
 
 Embedded surfaces stay part of the normal layout and interaction model, but their visual content comes from a host-facing service rather than from the shared raster path alone.
+
+Every draw-command type obeys its effective clip. An empty inherited intersection suppresses both rendering and hit testing. Three composite surfaces crop panel geometry and texture UVs to the same visible rectangle rather than escaping the shared command clipping model. Text commands carry the public theme font family and use clipping or measured ellipsis instead of glyph scaling.
 
 ## Host Boundaries
 

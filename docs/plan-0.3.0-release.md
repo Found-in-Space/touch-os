@@ -2,10 +2,12 @@
 
 ## Status
 
-Proposed release contract for the next stable minor release.
+Implemented in the repository for the `@found-in-space/touch-os@0.3.0` stable
+release. The automated release gate is `npm run verify:release`.
 
-The target version is `@found-in-space/touch-os@0.3.0`. The current
-`0.3.0-dev.0` package must not be treated as a release dependency by consumers.
+Registry publication, the `v0.3.0` tag, and post-publish installation
+confirmation remain release-operator steps and are not performed by source
+implementation work.
 
 Implementation of the corresponding SkyKit integration begins only after this
 package has passed the release gates below and `0.3.0` is available from the

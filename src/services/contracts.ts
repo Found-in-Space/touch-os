@@ -2,6 +2,19 @@ import type { DisplayEvent } from "../core/events.js";
 import type { BitmapHandle, BitmapMetadata, SurfaceCompositionMode } from "../core/draw.js";
 import type { Insets, Rect, Size } from "../core/geometry.js";
 
+export type RuntimeInvalidationKind = "layout" | "render";
+
+/** Observable invalidation implemented by mutable services that can notify a runtime. */
+export interface RuntimeInvalidationSource {
+  subscribeInvalidation(
+    listener: (kind: RuntimeInvalidationKind) => void
+  ): () => void;
+}
+
+interface OptionalRuntimeInvalidationSource {
+  subscribeInvalidation?: RuntimeInvalidationSource["subscribeInvalidation"];
+}
+
 export interface LayoutService {
   getBounds(componentId: string): Rect | undefined;
   getContentBounds(componentId: string): Rect | undefined;
@@ -19,7 +32,7 @@ export interface NavigationSnapshot {
   pageIds: readonly string[];
 }
 
-export interface NavigationService {
+export interface NavigationService extends OptionalRuntimeInvalidationSource {
   registerContainer(
     containerId: string,
     pageIds: readonly string[],
@@ -42,7 +55,7 @@ export interface ScrollState {
   content: Size;
 }
 
-export interface ScrollService {
+export interface ScrollService extends OptionalRuntimeInvalidationSource {
   register(containerId: string): void;
   unregister(containerId: string): void;
   getState(containerId: string): ScrollState;
@@ -55,7 +68,7 @@ export interface FocusRegistrationOptions {
   defaultTargetId?: string;
 }
 
-export interface FocusService {
+export interface FocusService extends OptionalRuntimeInvalidationSource {
   registerFocusable(componentId: string, options?: FocusRegistrationOptions): void;
   unregisterFocusable(componentId: string): void;
   requestFocus(componentId: string): void;
@@ -91,7 +104,7 @@ export interface ThemeTokens {
   typography: ThemeTypography;
 }
 
-export interface ThemeService {
+export interface ThemeService extends OptionalRuntimeInvalidationSource {
   getTokens(): ThemeTokens;
   update(tokens: Partial<ThemeTokens>): void;
 }
@@ -110,7 +123,7 @@ export interface SurfaceMetrics {
   safeArea: Insets;
 }
 
-export interface SurfaceService {
+export interface SurfaceService extends OptionalRuntimeInvalidationSource {
   getMetrics(): SurfaceMetrics;
   update(metrics: Partial<SurfaceMetrics>): void;
 }
@@ -129,7 +142,7 @@ export interface BitmapUpdate {
   revision?: number;
 }
 
-export interface BitmapService {
+export interface BitmapService extends OptionalRuntimeInvalidationSource {
   allocate(bitmapId: string, bitmap: BitmapAllocation): BitmapHandle;
   update(bitmapId: string, bitmap: BitmapUpdate): BitmapHandle | undefined;
   getHandle(bitmapId: string): BitmapHandle | undefined;

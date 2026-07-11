@@ -31,6 +31,10 @@ Shipped in `@found-in-space/touch-os` and `@found-in-space/touch-os/core`:
   - component bounds
   - dirty layout and render state
   - queued outputs
+- observable `layout`/`render` invalidation from mutable services plus explicit `invalidateLayout()` and `invalidateRender()` runtime methods
+- effective no-op suppression for repeated root, surface, service, render, and hosted child-surface synchronization
+- empty-intersection clipping that suppresses both command emission and hit testing
+- pointer identity, current metadata, capture, and cancellation across multiple simultaneous pointer types
 
 ## Built-In Components
 
@@ -112,8 +116,8 @@ Shipped in `@found-in-space/touch-os/window-manager`:
 - draining forwarded embedded-surface input translated into child-runtime display-space input
 - app state resolution by `getAppState`, instance id, window id, or app id
 - app output handling that strips the namespace before invoking the app instance's `handleOutput`
-- `app-event` outputs for events emitted through `ctx.actions.emit(...)`
-- opt-in raw child-runtime app output forwarding for transparent host integrations
+- one default `app-event` output path for events emitted through `ctx.actions.emit(...)` in both hosting modes
+- opt-in scoped raw app output forwarding for transparent host integrations
 - `window-manager-change` outputs for title, close, resize, open-app, and window-state changes
 
 Same-runtime mode is still the simplest path for first-party panels built from standard containers and custom components that use the conventional `child`/`children` structural props. Child-runtime mode isolates app focus, scroll, navigation, and local component ids while still running trusted app code in the same JavaScript environment.
@@ -206,6 +210,11 @@ Current Three.js host coverage includes:
 - pointer claim and blocking policies
 - pluggable pointer presentation integration
 - host-side composite embedded-surface placement resolution, including nested child-runtime snapshots
+- monotonic frame-driven runtime timing for long-press and repeat controls
+- continuous pointer-source tracking with cancellation on omission, pose loss, hiding, detachment, and disposal
+- reversible detach and final idempotent disposal with explicit owned-resource cleanup
+- clipped composite geometry/UVs and removal of stale presenters
+- sRGB, non-tone-mapped UI material defaults, transparent depth-write defaults, and persistent anisotropy policy
 
 ## Panel Coordination
 
@@ -217,6 +226,7 @@ Shipped in `@found-in-space/touch-os/coordination`:
 - lower-priority pointer clearing after a panel claims or blocks a sample
 - per-pointer ownership for simultaneous mouse, touch, controller, ray, and contact sources
 - release and cancel cleanup through `phase` or normalized `type` fields
+- separate current-step `panelKey` and retained pressed-pointer `ownerKey` results
 
 ## Declarative Schema Adapter
 
@@ -243,6 +253,7 @@ The repo currently includes:
 - unit coverage for core runtime behavior, controls, containers, schema, embedded surfaces, and hosts
 - reusable reference fixtures in `src/examples/reference-fixtures.ts`
 - a fuller integration example in `examples/three-living-room`
+- V8 coverage thresholds, packed ESM/declaration consumer checks, and real-Canvas Playwright rendering fixtures at DPR 1 and 2
 
 The runtime and services are designed to stay testable without requiring a live 3D, WebGL, or XR environment.
 

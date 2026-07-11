@@ -148,7 +148,11 @@ const host = createScenePanelHost({
 });
 
 host.attach();
-host.update({ scene, camera });
+host.update({
+  timestamp: performance.now(),
+  scene,
+  camera
+});
 ```
 
 The Three package also ships:
@@ -165,6 +169,7 @@ See [docs/usage.md](./docs/usage.md) and [`examples/three-living-room`](./exampl
 Shipped now:
 
 - explicit component lifecycle: `mount`, `update`, `measure`, `layout`, `render`, `hitTest`, `handleEvent`, `dispose`
+- observable service invalidation with explicit runtime layout/render invalidation and effective no-op suppression
 - normalized input and emitted output model
 - generic controls: button, hold button, repeat button, d-pad, toggle, slider, choice group, text label, value readout, action card, list item
 - richer display components: bitmap plot, custom graph, embedded surface
@@ -181,6 +186,7 @@ Shipped now:
 - shared canvas snapshot renderer used by the Three host and child-runtime snapshot surfaces
 - panel coordination for ordered multi-panel routing, fallthrough, lower-priority clearing, and pointer-scoped ownership
 - Three panel sessions for reusable runtime/driver update, render, pointer routing, and output flushing
+- monotonic Three host timing, continuous pointer-source cancellation, reversible detach, and final resource disposal
 - optional schema authoring for text, button, toggle, slider, choice group, value readout, and action card documents
 
 Planned but not shipped yet:
@@ -197,6 +203,7 @@ Planned but not shipped yet:
 - [docs/simple-apps.md](./docs/simple-apps.md): simple controls app authoring and single-app runtime helper
 - [docs/features.md](./docs/features.md): shipped feature inventory and roadmap links
 - [docs/usage.md](./docs/usage.md): integration patterns and code examples
+- [CHANGELOG.md](./CHANGELOG.md): release notes and migration links
 - [docs/plan-browser-hosts.md](./docs/plan-browser-hosts.md): browser host roadmap
 - [docs/plan-movable-components.md](./docs/plan-movable-components.md): shipped surface-local windows and host-side movable panel roadmap
 - [docs/plan-panel-coordination.md](./docs/plan-panel-coordination.md): shipped panel coordination notes and future policy roadmap
@@ -210,6 +217,7 @@ Planned but not shipped yet:
 - `npm run typecheck` runs TypeScript without emitting
 - `npm run example:build` builds the Three.js example app
 - `npm run example:living-room` runs the Three.js example app
+- `npm run verify:release` runs the complete stable-release gate, including coverage, packed-package, example, browser-rendering, and production-audit checks
 
 ## CI, Pages, And Release Automation
 
@@ -230,13 +238,13 @@ Release setup:
 
 1. Configure the package's trusted publisher on npm for this repository and the `release.yml` workflow.
 2. Optionally protect the `npm` GitHub environment with reviewer approval.
-3. Push a version tag such as `v0.1.0` or `v0.2.0-dev.0`.
+3. Push a version tag such as `v0.3.0` or `v0.4.0-dev.0`.
 
 Dist-tag behavior:
 
 - stable versions publish to npm `latest`
 - prerelease versions publish to a tag derived from the prerelease label
-- for example, `0.2.0-dev.0` publishes with npm tag `dev`
+- for example, `0.4.0-dev.0` publishes with npm tag `dev`
 
 ## Status
 

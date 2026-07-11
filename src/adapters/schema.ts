@@ -161,7 +161,6 @@ interface SchemaAdapterStore<TCustomItem extends SchemaCustomItem = never> {
   texts: Map<string, Map<string, string>>;
   registrations: Map<string, ErasedSchemaRegistration>;
   invalidateLayout?: () => void;
-  invalidateRender?: () => void;
 }
 
 interface CompiledSchemaItem {
@@ -556,10 +555,10 @@ function readOptionalSchemaText(
 const SchemaAdapterComponent: DisplayComponent<SchemaAdapterProps<SchemaCustomItem>> = {
   kind: "schema-adapter",
   mount(ctx) {
-    bindStore(ctx.props.store, ctx.invalidateLayout, ctx.invalidateRender);
+    bindStore(ctx.props.store, ctx.invalidateLayout);
   },
   update(ctx) {
-    bindStore(ctx.props.store, ctx.invalidateLayout, ctx.invalidateRender);
+    bindStore(ctx.props.store, ctx.invalidateLayout);
   },
   getChildren(ctx) {
     return [createSchemaPages(ctx.id, ctx.props.store)];
@@ -579,7 +578,6 @@ const SchemaAdapterComponent: DisplayComponent<SchemaAdapterProps<SchemaCustomIt
   },
   dispose(ctx) {
     delete ctx.props.store.invalidateLayout;
-    delete ctx.props.store.invalidateRender;
   }
 };
 
@@ -664,11 +662,9 @@ export function createSchemaAdapter<TCustomItem extends SchemaCustomItem = never
 
 function bindStore(
   store: SchemaAdapterStore<SchemaCustomItem>,
-  invalidateLayout: () => void,
-  invalidateRender: () => void
+  invalidateLayout: () => void
 ): void {
   store.invalidateLayout = invalidateLayout;
-  store.invalidateRender = invalidateRender;
 }
 
 function getPagesId(adapterId: string): string {

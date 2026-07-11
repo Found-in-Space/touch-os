@@ -7,7 +7,7 @@ import type {
   WindowStateChangeEvent
 } from "../core/actions.js";
 import type { DisplayNode } from "../core/component.js";
-import type { RenderSnapshot } from "../core/draw.js";
+import type { RenderSnapshot, SurfaceDrawCommand } from "../core/draw.js";
 import type { DisplayEvent, InputEvent } from "../core/events.js";
 import type { Rect } from "../core/geometry.js";
 import { createRuntime, type DisplayRuntime } from "../core/runtime.js";
@@ -49,6 +49,7 @@ export interface WindowManagerAppWindow {
   hostedSurfaceComponentId: string;
   forwardAppOutputs: boolean;
   lastPublishedRevision: number | undefined;
+  lastPublishedContentSignature: string | undefined;
   lastPublishedWidth: number | undefined;
   lastPublishedHeight: number | undefined;
   active: boolean;
@@ -74,6 +75,8 @@ export interface CreateWindowManagerAppWindowOptions {
   storage?: TouchAppStorage;
   surfaces?: TouchAppSurfaceApi;
   forwardAppOutputs?: boolean;
+  /** @internal Namespace inherited when an app shell is itself hosted in the same runtime. */
+  parentNamespacePrefix?: string;
 }
 
 export interface EnsureHostedAppWindowOptions {
@@ -96,18 +99,30 @@ export interface TouchRuntimeSurfaceHandle {
   draw(context: CanvasSurfaceContextLike, rect: Rect): void;
 }
 
+interface HostedAppSyncState {
+  root: DisplayNode<unknown, unknown>;
+  surface: TouchAppSurfaceContext;
+}
+
+const hostedAppSyncStates = new WeakMap<HostedAppWindow, HostedAppSyncState>();
+
+/** @internal Carries an enclosing same-runtime app namespace into a nested shell. */
+export const appShellOutputScopeKey: unique symbol = Symbol("touch-os.app-shell-output-scope");
+
 export function createWindowManagerAppWindow(
   options: CreateWindowManagerAppWindowOptions
 ): WindowManagerAppWindow {
+  const namespacePrefix = `${options.parentNamespacePrefix ?? ""}${createAppWindowNamespace(options.window)}`;
   const record: WindowManagerAppWindow = {
     window: copyTouchWindowState(options.window),
     hostMode: options.hostMode ?? "same-runtime",
-    namespacePrefix: createAppWindowNamespace(options.window),
+    namespacePrefix,
     runtime: undefined,
     hosted: undefined,
-    hostedSurfaceComponentId: createHostedAppSurfaceComponentId(options.window),
+    hostedSurfaceComponentId: `${namespacePrefix}surface`,
     forwardAppOutputs: options.forwardAppOutputs ?? false,
     lastPublishedRevision: undefined,
+    lastPublishedContentSignature: undefined,
     lastPublishedWidth: undefined,
     lastPublishedHeight: undefined,
     active: false,
@@ -172,14 +187,27 @@ export function ensureHostedAppWindow(
           surfaces: createNamespacedEmbeddedSurfaceService(options.surfaces, record.namespacePrefix)
         }
       }),
-      surfaceSourceId: createHostedAppSurfaceSourceId(record.window)
+      surfaceSourceId: `${record.namespacePrefix}surface-source`
     };
+    hostedAppSyncStates.set(record.hosted, {
+      root: options.root,
+      surface: copyTouchAppSurface(options.surface)
+    });
     return record.hosted;
   }
 
   record.hosted.window = copyTouchWindowState(record.window);
-  record.hosted.runtime.resize(options.surface);
-  record.hosted.runtime.setRoot(options.root);
+  const syncState = hostedAppSyncStates.get(record.hosted);
+  if (!syncState || !areTouchAppSurfacesEqual(syncState.surface, options.surface)) {
+    record.hosted.runtime.resize(options.surface);
+  }
+  if (!syncState || syncState.root !== options.root) {
+    record.hosted.runtime.setRoot(options.root);
+  }
+  hostedAppSyncStates.set(record.hosted, {
+    root: options.root,
+    surface: copyTouchAppSurface(options.surface)
+  });
   return record.hosted;
 }
 
@@ -191,8 +219,17 @@ export function unpublishHostedAppWindow(
     return;
   }
 
+  if (
+    record.lastPublishedRevision === undefined &&
+    record.lastPublishedWidth === undefined &&
+    record.lastPublishedHeight === undefined
+  ) {
+    return;
+  }
+
   surfaces.unpublish(record.hosted.surfaceSourceId);
   record.lastPublishedRevision = undefined;
+  record.lastPublishedContentSignature = undefined;
   record.lastPublishedWidth = undefined;
   record.lastPublishedHeight = undefined;
 }
@@ -207,8 +244,9 @@ export function publishHostedAppWindow(
 
   const snapshot = record.hosted.runtime.render();
   const metrics = record.hosted.runtime.getServices().surface.getMetrics();
+  const contentSignature = createSnapshotContentSignature(snapshot);
   if (
-    record.lastPublishedRevision === snapshot.revision &&
+    record.lastPublishedContentSignature === contentSignature &&
     record.lastPublishedWidth === metrics.width &&
     record.lastPublishedHeight === metrics.height
   ) {
@@ -216,6 +254,7 @@ export function publishHostedAppWindow(
   }
 
   record.lastPublishedRevision = snapshot.revision;
+  record.lastPublishedContentSignature = contentSignature;
   record.lastPublishedWidth = metrics.width;
   record.lastPublishedHeight = metrics.height;
   surfaces.publish(record.hosted.surfaceSourceId, {
@@ -226,6 +265,31 @@ export function publishHostedAppWindow(
     refreshState: "updating",
     sourceType: "touch-os-runtime"
   });
+}
+
+function createSnapshotContentSignature(snapshot: RenderSnapshot): string {
+  return JSON.stringify([
+    snapshot.sharedSurfaceRevision,
+    snapshot.commands
+      .filter((command): command is SurfaceDrawCommand =>
+        command.type === "surface" && command.compositionMode === "composite"
+      )
+      .map((command) => [
+        command.componentId,
+        command.role ?? "",
+        command.sourceId ?? "",
+        command.rect.x,
+        command.rect.y,
+        command.rect.width,
+        command.rect.height,
+        command.clipRect?.x ?? null,
+        command.clipRect?.y ?? null,
+        command.clipRect?.width ?? null,
+        command.clipRect?.height ?? null,
+        command.surfaceRevision ?? 0,
+        command.mirrorX ?? false
+      ])
+  ]);
 }
 
 export function createHostedAppInputEvent(
@@ -405,10 +469,19 @@ function scopeDisplayNode(
   node: DisplayNode<unknown, unknown>,
   prefix: string
 ): DisplayNode<unknown, unknown> {
+  const props = scopeComponentProps(node.props, prefix);
+  const existingAppShellScope = isPlainObject(node.props)
+    ? (node.props as { [appShellOutputScopeKey]?: string })[appShellOutputScopeKey]
+    : undefined;
+  const appShellScope = existingAppShellScope?.startsWith(prefix)
+    ? existingAppShellScope
+    : prefix;
   return {
     id: scopeComponentId(node.id, prefix),
     component: node.component,
-    props: scopeComponentProps(node.props, prefix)
+    props: node.component.kind === "app-shell" && isPlainObject(props)
+      ? { ...props, [appShellOutputScopeKey]: appShellScope }
+      : props
   };
 }
 
@@ -499,6 +572,30 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(value, max));
 }
 
+function copyTouchAppSurface(surface: TouchAppSurfaceContext): TouchAppSurfaceContext {
+  return {
+    width: surface.width,
+    height: surface.height,
+    pixelDensity: surface.pixelDensity,
+    safeArea: { ...surface.safeArea }
+  };
+}
+
+function areTouchAppSurfacesEqual(
+  left: TouchAppSurfaceContext,
+  right: TouchAppSurfaceContext
+): boolean {
+  return (
+    left.width === right.width &&
+    left.height === right.height &&
+    left.pixelDensity === right.pixelDensity &&
+    left.safeArea.top === right.safeArea.top &&
+    left.safeArea.right === right.safeArea.right &&
+    left.safeArea.bottom === right.safeArea.bottom &&
+    left.safeArea.left === right.safeArea.left
+  );
+}
+
 function createNamespacedEmbeddedSurfaceService(
   service: EmbeddedSurfaceService,
   prefix: string
@@ -579,6 +676,7 @@ function shouldScopeStructuralKey(key: string): boolean {
   return (
     key === "child" ||
     key === "children" ||
+    key === "windows" ||
     key === "header" ||
     key === "footer" ||
     key === "topLeft" ||

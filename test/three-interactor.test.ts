@@ -39,7 +39,7 @@ describe("three interactor", () => {
       createCanvas: createFakeCanvas
     });
     host.attach();
-    host.update({ scene, camera });
+    host.update({ timestamp: 0, scene, camera });
 
     const interactor = createPanelInteractor({
       runtime,
@@ -58,7 +58,7 @@ describe("three interactor", () => {
         ndcX: 0,
         ndcY: 0
       },
-      { scene, camera }
+      { timestamp: 1, scene, camera }
     );
 
     expect(moveResult.claimed).toBe(true);
@@ -77,7 +77,7 @@ describe("three interactor", () => {
         ndcX: 0,
         ndcY: 0
       },
-      { scene, camera }
+      { timestamp: 2, scene, camera }
     );
     interactor.process(
       {
@@ -89,7 +89,7 @@ describe("three interactor", () => {
         ndcX: 0,
         ndcY: 0
       },
-      { scene, camera }
+      { timestamp: 3, scene, camera }
     );
 
     expect(downResult.dispatched).toBe(true);
@@ -117,7 +117,7 @@ describe("three interactor", () => {
       createCanvas: createFakeCanvas
     });
     host.attach();
-    host.update({ scene });
+    host.update({ timestamp: 0, scene });
 
     const interactor = createPanelInteractor({
       runtime,
@@ -136,7 +136,7 @@ describe("three interactor", () => {
         timestamp: 1,
         contactPoint: { x: worldCenter.x, y: worldCenter.y, z: worldCenter.z }
       },
-      { scene }
+      { timestamp: 1, scene }
     );
     interactor.process(
       {
@@ -147,7 +147,7 @@ describe("three interactor", () => {
         timestamp: 2,
         contactPoint: { x: worldCenter.x, y: worldCenter.y, z: worldCenter.z }
       },
-      { scene }
+      { timestamp: 2, scene }
     );
 
     expect(downResult.blocked).toBe(false);
@@ -179,7 +179,7 @@ describe("three interactor", () => {
       createCanvas: createFakeCanvas
     });
     host.attach();
-    host.update({ scene });
+    host.update({ timestamp: 0, scene });
 
     const interactor = createPanelInteractor({
       runtime,
@@ -197,7 +197,7 @@ describe("three interactor", () => {
         timestamp: 1,
         contactPoint: { x: worldCenter.x, y: worldCenter.y, z: worldCenter.z + 0.05 }
       },
-      { scene }
+      { timestamp: 1, scene }
     );
     const tangentialNormalResult = interactor.process(
       {
@@ -209,7 +209,7 @@ describe("three interactor", () => {
         contactPoint: { x: worldCenter.x, y: worldCenter.y, z: worldCenter.z },
         contactNormal: { x: 1, y: 0, z: 0 }
       },
-      { scene }
+      { timestamp: 2, scene }
     );
 
     expect(offPlaneResult.hit).toBeNull();
@@ -247,6 +247,7 @@ describe("three interactor", () => {
     });
     host.attach();
     host.update({
+      timestamp: 0,
       scene,
       camera,
       surfaceMetrics: { width: 800, height: 600, pixelDensity: 1 }
@@ -269,7 +270,7 @@ describe("three interactor", () => {
         ndcX: 0,
         ndcY: 0
       },
-      { scene, camera, surfaceMetrics: { width: 800, height: 600, pixelDensity: 1 } }
+      { timestamp: 1, scene, camera, surfaceMetrics: { width: 800, height: 600, pixelDensity: 1 } }
     );
 
     expect(result.claimed).toBe(false);
@@ -307,6 +308,7 @@ describe("three interactor", () => {
     });
     host.attach();
     host.update({
+      timestamp: 0,
       scene,
       camera,
       surfaceMetrics: { width: 800, height: 600, pixelDensity: 1 }
@@ -329,7 +331,7 @@ describe("three interactor", () => {
         ndcX: 0,
         ndcY: 0
       },
-      { scene, camera, surfaceMetrics: { width: 800, height: 600, pixelDensity: 1 } }
+      { timestamp: 1, scene, camera, surfaceMetrics: { width: 800, height: 600, pixelDensity: 1 } }
     );
 
     expect(result.claimed).toBe(true);
@@ -375,6 +377,7 @@ describe("three interactor", () => {
     });
     host.attach();
     host.update({
+      timestamp: 0,
       scene,
       camera,
       surfaceMetrics: { width: 800, height: 600, pixelDensity: 1 }
@@ -402,7 +405,7 @@ describe("three interactor", () => {
         timestamp: 1,
         ...toNdcSample(holdBounds.x + holdBounds.width / 2, holdBounds.y + holdBounds.height / 2, 800, 600)
       },
-      { scene, camera, surfaceMetrics: { width: 800, height: 600, pixelDensity: 1 } }
+      { timestamp: 1, scene, camera, surfaceMetrics: { width: 800, height: 600, pixelDensity: 1 } }
     );
     expect(downResult.claimed).toBe(true);
     expect(downResult.blocked).toBe(true);
@@ -427,7 +430,7 @@ describe("three interactor", () => {
         ndcX: 0,
         ndcY: 0
       },
-      { scene, camera, surfaceMetrics: { width: 800, height: 600, pixelDensity: 1 } }
+      { timestamp: 2, scene, camera, surfaceMetrics: { width: 800, height: 600, pixelDensity: 1 } }
     );
     expect(moveResult.claimed).toBe(true);
     expect(moveResult.blocked).toBe(true);
@@ -473,7 +476,7 @@ describe("three interactor", () => {
       createCanvas: createFakeCanvas
     });
     host.attach();
-    host.update({ scene, camera });
+    host.update({ timestamp: 0, scene, camera });
 
     const interactor = createPanelInteractor({
       runtime,
@@ -491,7 +494,7 @@ describe("three interactor", () => {
         timestamp: 1,
         ...toNdcSample(60, 50, 300, 200)
       },
-      { scene, camera }
+      { timestamp: 1, scene, camera }
     );
     interactor.process(
       {
@@ -502,7 +505,7 @@ describe("three interactor", () => {
         timestamp: 2,
         ...toNdcSample(90, 1, 300, 200)
       },
-      { scene, camera }
+      { timestamp: 2, scene, camera }
     );
     runtime.render();
     const lastHitBounds = runtime.getBounds("tool-window");
@@ -523,7 +526,7 @@ describe("three interactor", () => {
         ndcX: toNdcSample(90, 1, 300, 200).ndcX,
         ndcY: 1.2
       },
-      { scene, camera }
+      { timestamp: 3, scene, camera }
     );
     runtime.render();
 
@@ -539,7 +542,7 @@ describe("three interactor", () => {
         ndcX: toNdcSample(90, 1, 300, 200).ndcX,
         ndcY: 1.2
       },
-      { scene, camera }
+      { timestamp: 4, scene, camera }
     );
 
     host.detach();
@@ -592,7 +595,7 @@ describe("three interactor", () => {
     });
 
     driver.attach();
-    driver.update({ scene, camera });
+    driver.update({ timestamp: 2, scene, camera });
     emitted = true;
 
     expect(runtime.takeOutputs()).toContainEqual({
@@ -658,7 +661,7 @@ describe("three interactor", () => {
     });
 
     driver.attach();
-    driver.update({ scene, camera });
+    driver.update({ timestamp: 1, scene, camera });
     stage = 1;
 
     expect(runtime.getInteraction().pressedTargetId).toBe("fixture-button:face");
@@ -666,7 +669,7 @@ describe("three interactor", () => {
     driver.clearPointer("screen-pointer");
     expect(runtime.getInteraction().pressedTargetId).toBeUndefined();
 
-    driver.update({ scene, camera });
+    driver.update({ timestamp: 2, scene, camera });
     expect(runtime.getInteraction().pressedTargetId).toBe("fixture-button:face");
 
     stage = 2;
@@ -700,6 +703,7 @@ describe("three interactor", () => {
 
     expect(() =>
       driver.update({
+        timestamp: 1,
         scene,
         camera,
         events: [

@@ -9,9 +9,7 @@ import {
 } from "../core/geometry.js";
 import type { BitmapHandle, BitmapMetadata } from "../core/draw.js";
 import type {
-  BitmapAllocation,
   BitmapService,
-  BitmapUpdate,
   EmbeddedSurfaceAttachment,
   EmbeddedSurfaceChange,
   EmbeddedSurfaceConfig,
@@ -23,6 +21,8 @@ import type {
   MutableLayoutService,
   NavigationService,
   NavigationSnapshot,
+  RuntimeInvalidationKind,
+  RuntimeInvalidationSource,
   ScrollService,
   ScrollState,
   SurfaceMetrics,
@@ -33,6 +33,7 @@ import type {
 } from "./contracts.js";
 
 type ChangeListener = () => void;
+type InvalidationListener = (kind: RuntimeInvalidationKind) => void;
 type FocusTraversalResolver = (
   direction: 1 | -1,
   focusedComponentId: string | undefined,
@@ -45,8 +46,33 @@ interface MemoryNavigationEntry {
   pageIds: string[];
 }
 
-function emit(listener?: ChangeListener): void {
-  listener?.();
+interface InvalidationEmitter extends RuntimeInvalidationSource {
+  emit(kind: RuntimeInvalidationKind): void;
+}
+
+function createInvalidationEmitter(onChange?: ChangeListener): InvalidationEmitter {
+  const listeners = new Set<InvalidationListener>();
+  if (onChange) {
+    listeners.add(() => onChange());
+  }
+
+  return {
+    emit(kind) {
+      for (const listener of [...listeners]) {
+        listener(kind);
+      }
+    },
+    subscribeInvalidation(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    }
+  };
+}
+
+function arraysEqual<TValue>(left: readonly TValue[], right: readonly TValue[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function cloneBitmapHandle(handle: BitmapHandle): BitmapHandle {
@@ -111,8 +137,11 @@ export function createMemoryLayoutService(): MutableLayoutService {
   };
 }
 
-export function createMemoryNavigationService(onChange?: ChangeListener): NavigationService {
+export function createMemoryNavigationService(
+  onChange?: ChangeListener
+): NavigationService & RuntimeInvalidationSource {
   const entries = new Map<string, MemoryNavigationEntry>();
+  const invalidation = createInvalidationEmitter(onChange);
 
   function getEntry(containerId: string): MemoryNavigationEntry {
     const entry = entries.get(containerId);
@@ -134,18 +163,26 @@ export function createMemoryNavigationService(onChange?: ChangeListener): Naviga
   }
 
   return {
+    subscribeInvalidation: invalidation.subscribeInvalidation,
     registerContainer(containerId, pageIds, initialPageId) {
       const entry = getEntry(containerId);
+      const previous = toSnapshot(entry);
       entry.pageIds = [...pageIds];
       if (!entry.activePageId || !entry.pageIds.includes(entry.activePageId)) {
         entry.activePageId = initialPageId ?? entry.pageIds[0];
         entry.history = entry.activePageId ? [entry.activePageId] : [];
       }
-      emit(onChange);
+      if (
+        entry.activePageId !== previous.activePageId ||
+        !arraysEqual(entry.history, previous.history) ||
+        !arraysEqual(entry.pageIds, previous.pageIds)
+      ) {
+        invalidation.emit("layout");
+      }
     },
     unregisterContainer(containerId) {
       if (entries.delete(containerId)) {
-        emit(onChange);
+        invalidation.emit("layout");
       }
     },
     getSnapshot(containerId) {
@@ -162,11 +199,14 @@ export function createMemoryNavigationService(onChange?: ChangeListener): Naviga
       }
       entry.activePageId = pageId;
       entry.history.push(pageId);
-      emit(onChange);
+      invalidation.emit("layout");
     },
     replace(containerId, pageId) {
       const entry = getEntry(containerId);
       if (!entry.pageIds.includes(pageId)) {
+        return;
+      }
+      if (entry.activePageId === pageId && entry.history.at(-1) === pageId) {
         return;
       }
       entry.activePageId = pageId;
@@ -175,7 +215,7 @@ export function createMemoryNavigationService(onChange?: ChangeListener): Naviga
       } else {
         entry.history[entry.history.length - 1] = pageId;
       }
-      emit(onChange);
+      invalidation.emit("layout");
     },
     back(containerId) {
       const entry = entries.get(containerId);
@@ -184,13 +224,16 @@ export function createMemoryNavigationService(onChange?: ChangeListener): Naviga
       }
       entry.history.pop();
       entry.activePageId = entry.history[entry.history.length - 1];
-      emit(onChange);
+      invalidation.emit("layout");
     }
   };
 }
 
-export function createMemoryScrollService(onChange?: ChangeListener): ScrollService {
+export function createMemoryScrollService(
+  onChange?: ChangeListener
+): ScrollService & RuntimeInvalidationSource {
   const entries = new Map<string, ScrollState>();
+  const invalidation = createInvalidationEmitter(onChange);
 
   function createState(): ScrollState {
     return {
@@ -246,12 +289,13 @@ export function createMemoryScrollService(onChange?: ChangeListener): ScrollServ
   }
 
   return {
+    subscribeInvalidation: invalidation.subscribeInvalidation,
     register(containerId) {
       getEntry(containerId);
     },
     unregister(containerId) {
       if (entries.delete(containerId)) {
-        emit(onChange);
+        invalidation.emit("layout");
       }
     },
     getState(containerId) {
@@ -272,7 +316,7 @@ export function createMemoryScrollService(onChange?: ChangeListener): ScrollServ
       entry.content = copySize(content);
       clampState(entry);
       if (hasChanged(entry, previous)) {
-        emit(onChange);
+        invalidation.emit("layout");
       }
     },
     setOffset(containerId, offsetX, offsetY) {
@@ -282,7 +326,7 @@ export function createMemoryScrollService(onChange?: ChangeListener): ScrollServ
       entry.offsetY = offsetY;
       clampState(entry);
       if (hasChanged(entry, previous)) {
-        emit(onChange);
+        invalidation.emit("layout");
       }
     },
     scrollBy(containerId, deltaX, deltaY) {
@@ -292,7 +336,7 @@ export function createMemoryScrollService(onChange?: ChangeListener): ScrollServ
       entry.offsetY += deltaY;
       clampState(entry);
       if (hasChanged(entry, previous)) {
-        emit(onChange);
+        invalidation.emit("layout");
       }
     }
   };
@@ -301,9 +345,10 @@ export function createMemoryScrollService(onChange?: ChangeListener): ScrollServ
 export function createMemoryFocusService(
   onChange?: ChangeListener,
   resolveTraversal?: FocusTraversalResolver
-): FocusService {
+): FocusService & RuntimeInvalidationSource {
   let focusedComponentId: string | undefined;
   let registrationOrder = 0;
+  const invalidation = createInvalidationEmitter(onChange);
   const focusableEntries = new Map<
     string,
     {
@@ -341,7 +386,7 @@ export function createMemoryFocusService(
     }
 
     focusedComponentId = nextComponentId;
-    emit(onChange);
+    invalidation.emit("render");
     return focusedComponentId;
   }
 
@@ -357,7 +402,7 @@ export function createMemoryFocusService(
         ...existing,
         defaultTargetId: nextDefaultTargetId
       });
-      emit(onChange);
+      invalidation.emit("render");
       return;
     }
 
@@ -366,10 +411,11 @@ export function createMemoryFocusService(
       order: registrationOrder
     });
     registrationOrder += 1;
-    emit(onChange);
+    invalidation.emit("render");
   }
 
   return {
+    subscribeInvalidation: invalidation.subscribeInvalidation,
     registerFocusable(componentId, options) {
       register(componentId, options);
     },
@@ -382,21 +428,21 @@ export function createMemoryFocusService(
       if (wasFocused) {
         focusedComponentId = undefined;
       }
-      emit(onChange);
+      invalidation.emit("render");
     },
     requestFocus(componentId) {
       if (focusedComponentId === componentId) {
         return;
       }
       focusedComponentId = componentId;
-      emit(onChange);
+      invalidation.emit("render");
     },
     clearFocus() {
       if (!focusedComponentId) {
         return;
       }
       focusedComponentId = undefined;
-      emit(onChange);
+      invalidation.emit("render");
     },
     getFocusedComponentId() {
       return focusedComponentId;
@@ -441,10 +487,44 @@ export const DEFAULT_THEME_TOKENS: ThemeTokens = {
   }
 };
 
+function themeTokensEqual(left: ThemeTokens, right: ThemeTokens): boolean {
+  return (
+    left.backgroundColor === right.backgroundColor &&
+    left.surfaceColor === right.surfaceColor &&
+    left.textColor === right.textColor &&
+    left.mutedTextColor === right.mutedTextColor &&
+    left.accentColor === right.accentColor &&
+    left.accentTextColor === right.accentTextColor &&
+    left.borderColor === right.borderColor &&
+    left.focusColor === right.focusColor &&
+    left.overlayColor === right.overlayColor &&
+    left.controlHeight === right.controlHeight &&
+    left.spacing === right.spacing &&
+    left.padding === right.padding &&
+    left.radius === right.radius &&
+    left.typography.fontFamily === right.typography.fontFamily &&
+    left.typography.fontSize === right.typography.fontSize &&
+    left.typography.lineHeight === right.typography.lineHeight &&
+    left.typography.fontWeight === right.typography.fontWeight
+  );
+}
+
+function hasThemeGeometryChange(left: ThemeTokens, right: ThemeTokens): boolean {
+  return (
+    left.controlHeight !== right.controlHeight ||
+    left.spacing !== right.spacing ||
+    left.padding !== right.padding ||
+    left.typography.fontFamily !== right.typography.fontFamily ||
+    left.typography.fontSize !== right.typography.fontSize ||
+    left.typography.lineHeight !== right.typography.lineHeight ||
+    left.typography.fontWeight !== right.typography.fontWeight
+  );
+}
+
 export function createThemeService(
   initialTheme: Partial<ThemeTokens> = {},
   onChange?: ChangeListener
-): ThemeService {
+): ThemeService & RuntimeInvalidationSource {
   let tokens: ThemeTokens = {
     ...DEFAULT_THEME_TOKENS,
     ...initialTheme,
@@ -453,8 +533,10 @@ export function createThemeService(
       ...initialTheme.typography
     }
   };
+  const invalidation = createInvalidationEmitter(onChange);
 
   return {
+    subscribeInvalidation: invalidation.subscribeInvalidation,
     getTokens() {
       return {
         ...tokens,
@@ -462,7 +544,7 @@ export function createThemeService(
       };
     },
     update(nextTokens) {
-      tokens = {
+      const next: ThemeTokens = {
         ...tokens,
         ...nextTokens,
         typography: {
@@ -470,7 +552,15 @@ export function createThemeService(
           ...nextTokens.typography
         }
       };
-      emit(onChange);
+      if (themeTokensEqual(tokens, next)) {
+        return;
+      }
+
+      const kind: RuntimeInvalidationKind = hasThemeGeometryChange(tokens, next)
+        ? "layout"
+        : "render";
+      tokens = next;
+      invalidation.emit(kind);
     }
   };
 }
@@ -497,22 +587,22 @@ export function createTimingService(
 export function createSurfaceService(
   initialMetrics: Partial<SurfaceMetrics> = {},
   onChange?: ChangeListener
-): SurfaceService {
+): SurfaceService & RuntimeInvalidationSource {
+  const initialWidth = initialMetrics.width ?? 320;
+  const initialHeight = initialMetrics.height ?? 240;
   let metrics: SurfaceMetrics = {
-    width: initialMetrics.width ?? 320,
-    height: initialMetrics.height ?? 240,
+    width: initialWidth,
+    height: initialHeight,
     pixelDensity: initialMetrics.pixelDensity ?? 1,
     orientation:
       initialMetrics.orientation ??
-      (initialMetrics.width === initialMetrics.height
-        ? "square"
-        : (initialMetrics.width ?? 320) > (initialMetrics.height ?? 240)
-          ? "landscape"
-          : "portrait"),
+      resolveSurfaceOrientation(initialWidth, initialHeight),
     safeArea: copyInsets(createInsets(initialMetrics.safeArea))
   };
+  const invalidation = createInvalidationEmitter(onChange);
 
   return {
+    subscribeInvalidation: invalidation.subscribeInvalidation,
     getMetrics() {
       return {
         ...metrics,
@@ -520,27 +610,58 @@ export function createSurfaceService(
       };
     },
     update(nextMetrics) {
-      metrics = {
-        ...metrics,
-        ...nextMetrics,
+      const width = nextMetrics.width ?? metrics.width;
+      const height = nextMetrics.height ?? metrics.height;
+      const dimensionsSpecified =
+        hasOwn(nextMetrics, "width") || hasOwn(nextMetrics, "height");
+      const next: SurfaceMetrics = {
+        width,
+        height,
+        pixelDensity: nextMetrics.pixelDensity ?? metrics.pixelDensity,
         orientation:
           nextMetrics.orientation ??
-          ((nextMetrics.width ?? metrics.width) === (nextMetrics.height ?? metrics.height)
-            ? "square"
-            : (nextMetrics.width ?? metrics.width) > (nextMetrics.height ?? metrics.height)
-              ? "landscape"
-              : "portrait"),
-        safeArea: nextMetrics.safeArea
+          (dimensionsSpecified
+            ? resolveSurfaceOrientation(width, height)
+            : metrics.orientation),
+        safeArea: hasOwn(nextMetrics, "safeArea") && nextMetrics.safeArea
           ? copyInsets(createInsets(nextMetrics.safeArea))
           : copyInsets(metrics.safeArea)
       };
-      emit(onChange);
+      if (surfaceMetricsEqual(metrics, next)) {
+        return;
+      }
+
+      metrics = next;
+      invalidation.emit("layout");
     }
   };
 }
 
-export function createBitmapService(onChange?: ChangeListener): BitmapService {
+function resolveSurfaceOrientation(
+  width: number,
+  height: number
+): SurfaceMetrics["orientation"] {
+  return width === height ? "square" : width > height ? "landscape" : "portrait";
+}
+
+function surfaceMetricsEqual(left: SurfaceMetrics, right: SurfaceMetrics): boolean {
+  return (
+    left.width === right.width &&
+    left.height === right.height &&
+    left.pixelDensity === right.pixelDensity &&
+    left.orientation === right.orientation &&
+    left.safeArea.top === right.safeArea.top &&
+    left.safeArea.right === right.safeArea.right &&
+    left.safeArea.bottom === right.safeArea.bottom &&
+    left.safeArea.left === right.safeArea.left
+  );
+}
+
+export function createBitmapService(
+  onChange?: ChangeListener
+): BitmapService & RuntimeInvalidationSource {
   const bitmaps = new Map<string, BitmapHandle>();
+  const invalidation = createInvalidationEmitter(onChange);
 
   function resolveRevision(existing: BitmapHandle | undefined, revision: number | undefined): number {
     if (revision !== undefined) {
@@ -550,16 +671,18 @@ export function createBitmapService(onChange?: ChangeListener): BitmapService {
   }
 
   return {
+    subscribeInvalidation: invalidation.subscribeInvalidation,
     allocate(bitmapId, bitmap) {
+      const existing = bitmaps.get(bitmapId);
       const handle: BitmapHandle = {
         kind: "bitmap",
         image: bitmap.image,
         width: bitmap.width,
         height: bitmap.height,
-        revision: resolveRevision(undefined, bitmap.revision)
+        revision: resolveRevision(existing, bitmap.revision)
       };
       bitmaps.set(bitmapId, handle);
-      emit(onChange);
+      invalidation.emit("render");
       return cloneBitmapHandle(handle);
     },
     update(bitmapId, bitmap) {
@@ -576,7 +699,7 @@ export function createBitmapService(onChange?: ChangeListener): BitmapService {
         revision: resolveRevision(existing, bitmap.revision)
       };
       bitmaps.set(bitmapId, next);
-      emit(onChange);
+      invalidation.emit("render");
       return cloneBitmapHandle(next);
     },
     getHandle(bitmapId) {
@@ -589,7 +712,7 @@ export function createBitmapService(onChange?: ChangeListener): BitmapService {
     },
     release(bitmapId) {
       if (bitmaps.delete(bitmapId)) {
-        emit(onChange);
+        invalidation.emit("render");
       }
     }
   };

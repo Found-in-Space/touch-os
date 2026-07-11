@@ -42,7 +42,8 @@ export function createTouchAppRuntime<TState>(
   const sanitizedAppId = sanitizeId(appId);
   const instanceId = `${sanitizedAppId}-1`;
   const windowId = `${sanitizedAppId}-surface`;
-  const surface = createAppSurfaceContext(options.surface);
+  const initialSurface = options.services?.surface?.getMetrics() ?? options.surface;
+  const surface = createAppSurfaceContext(initialSurface);
   const theme = options.services?.theme ?? createThemeService(options.theme);
   const routedOutputs: RuntimeOutput[] = [];
   const runtimeApp = createTouchAppInstance(options.app, {
@@ -71,10 +72,20 @@ export function createTouchAppRuntime<TState>(
       theme
     }
   });
+  let syncedSurfaceMetrics = runtime.getServices().surface.getMetrics();
 
   function syncRoot(): void {
-    updateAppSurface(runtimeApp, runtime.getServices().surface.getMetrics());
+    const metrics = runtime.getServices().surface.getMetrics();
+    updateAppSurface(runtimeApp, metrics);
+    syncedSurfaceMetrics = metrics;
     runtime.setRoot(runtimeApp.render(currentState));
+  }
+
+  function syncSurfaceRoot(): void {
+    const metrics = runtime.getServices().surface.getMetrics();
+    if (!surfaceMetricsEqual(syncedSurfaceMetrics, metrics)) {
+      syncRoot();
+    }
   }
 
   function drainOutputs(): void {
@@ -99,18 +110,28 @@ export function createTouchAppRuntime<TState>(
       runtime.setRoot(root);
     },
     render() {
-      syncRoot();
+      syncSurfaceRoot();
       return runtime.render();
     },
     dispatchInput(event: InputEvent): DispatchResult {
-      syncRoot();
+      syncSurfaceRoot();
+      const routedOutputStart = routedOutputs.length;
       const result = runtime.dispatchInput(event);
       drainOutputs();
-      return result;
+      return {
+        ...result,
+        outputs: routedOutputs.slice(routedOutputStart)
+      };
     },
     resize(metrics: Partial<SurfaceMetrics>) {
       runtime.resize(metrics);
-      syncRoot();
+      syncSurfaceRoot();
+    },
+    invalidateLayout() {
+      runtime.invalidateLayout();
+    },
+    invalidateRender() {
+      runtime.invalidateRender();
     },
     tick(timestamp: number) {
       runtime.tick(timestamp);
@@ -129,7 +150,7 @@ export function createTouchAppRuntime<TState>(
       return runtime.getInteraction();
     },
     getBounds(componentId: string): Rect | undefined {
-      syncRoot();
+      syncSurfaceRoot();
       return runtime.getBounds(componentId);
     },
     isLayoutDirty() {
@@ -139,9 +160,9 @@ export function createTouchAppRuntime<TState>(
       return runtime.isRenderDirty();
     },
     dispose() {
-      runtimeApp.close();
       runtime.dispose();
-      routedOutputs.length = 0;
+      drainOutputs();
+      runtimeApp.close();
     }
   };
 }
@@ -165,6 +186,19 @@ function updateAppSurface(
   runtimeApp.context.surface.height = surface.height;
   runtimeApp.context.surface.pixelDensity = surface.pixelDensity;
   runtimeApp.context.surface.safeArea = copyInsets(surface.safeArea);
+}
+
+function surfaceMetricsEqual(left: SurfaceMetrics, right: SurfaceMetrics): boolean {
+  return (
+    left.width === right.width &&
+    left.height === right.height &&
+    left.pixelDensity === right.pixelDensity &&
+    left.orientation === right.orientation &&
+    left.safeArea.top === right.safeArea.top &&
+    left.safeArea.right === right.safeArea.right &&
+    left.safeArea.bottom === right.safeArea.bottom &&
+    left.safeArea.left === right.safeArea.left
+  );
 }
 
 function sanitizeId(value: string): string {

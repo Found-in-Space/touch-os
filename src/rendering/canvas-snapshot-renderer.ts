@@ -32,6 +32,7 @@ export interface CanvasSurfaceContextLike {
   lineTo?(x: number, y: number): void;
 
   fillText?(text: string, x: number, y: number, maxWidth?: number): void;
+  measureText?(text: string): { width: number };
   drawImage?(image: unknown, x: number, y: number, width: number, height: number): void;
 
   fillStyle?: unknown;
@@ -230,20 +231,58 @@ function drawTextCommand(
   context: CanvasSurfaceContextLike,
   command: TextDrawCommand
 ): void {
-  if (!context.fillText) {
+  if (!context.fillText || command.rect.width <= 0 || command.rect.height <= 0) {
     return;
   }
 
   context.fillStyle = command.color;
-  context.font = `${command.fontWeight ?? 400} ${command.fontSize ?? 14}px sans-serif`;
+  context.font = `${command.fontWeight ?? 400} ${command.fontSize ?? 14}px ${command.fontFamily ?? "sans-serif"}`;
   context.textAlign = command.align ?? "left";
   context.textBaseline = resolveTextBaseline(command.verticalAlign);
-  context.fillText(
-    command.text,
-    resolveTextX(command),
-    resolveTextY(command),
-    command.rect.width
-  );
+  clipTextRect(context, command.rect);
+  const text = command.overflow === "ellipsis"
+    ? ellipsizeText(context, command.text, command.rect.width)
+    : command.text;
+  context.fillText(text, resolveTextX(command), resolveTextY(command));
+}
+
+function clipTextRect(context: CanvasSurfaceContextLike, rect: Rect): void {
+  if (!context.beginPath || !context.rect || !context.clip) {
+    return;
+  }
+
+  context.beginPath();
+  context.rect(rect.x, rect.y, rect.width, rect.height);
+  context.clip();
+}
+
+function ellipsizeText(
+  context: CanvasSurfaceContextLike,
+  text: string,
+  maxWidth: number
+): string {
+  if (!context.measureText || context.measureText(text).width <= maxWidth) {
+    return text;
+  }
+
+  const ellipsis = "\u2026";
+  if (context.measureText(ellipsis).width > maxWidth) {
+    return "";
+  }
+
+  let lower = 0;
+  let upper = text.length;
+  while (lower < upper) {
+    const middle = Math.ceil((lower + upper) / 2);
+    const candidate = `${text.slice(0, middle)}${ellipsis}`;
+    if (context.measureText(candidate).width <= maxWidth) {
+      lower = middle;
+    } else {
+      upper = middle - 1;
+    }
+  }
+
+  return `${text.slice(0, lower)}${ellipsis}`;
 }
 
 function drawLineCommand(

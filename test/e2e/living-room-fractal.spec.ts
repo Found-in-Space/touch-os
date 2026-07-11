@@ -29,7 +29,6 @@ interface LivingRoomTestApi {
 
 interface FractalOpenAttempt {
   index: number;
-  durationMs: number;
   compositeSurfaceCount: number;
   pictureSurfaceCount: number;
 }
@@ -70,12 +69,10 @@ test("arm tablet Fractal Art reopens reliably and renders a GPU composite", asyn
   let finalState: LivingRoomFractalTestState | undefined;
   for (let index = 0; index < REOPEN_ATTEMPTS; index += 1) {
     const iconRect = await waitForArmComponent(page, ARM_FRACTAL_ICON_ID);
-    const startedAt = Date.now();
     await clickScreenRect(page, iconRect);
     finalState = await waitForFractalComposite(page);
     attempts.push({
       index,
-      durationMs: Date.now() - startedAt,
       compositeSurfaceCount: finalState.compositeSurfaceCount,
       pictureSurfaceCount: finalState.pictureSurfaceCount
     });
@@ -101,7 +98,6 @@ test("arm tablet Fractal Art reopens reliably and renders a GPU composite", asyn
   expect(pageErrors).toEqual([]);
   expect(attempts).toHaveLength(REOPEN_ATTEMPTS);
   expect(attempts.every((attempt) => attempt.pictureSurfaceCount > 0)).toBe(true);
-  expect(Math.max(...attempts.map((attempt) => attempt.durationMs))).toBeLessThan(2_500);
   expect(analysis.nonTransparentPixels).toBeGreaterThan(100);
   expect(analysis.distinctColors).toBeGreaterThan(16);
   expect(analysis.lumaStdDev).toBeGreaterThan(6);

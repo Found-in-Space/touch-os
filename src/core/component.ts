@@ -84,6 +84,8 @@ export interface ComponentEventContext<Props, State>
   extends ComponentContextBase<Props, State> {
   bounds: Rect;
   event: ComponentEvent;
+  /** Stops a RuntimeOutput from propagating further or entering the external output queue. */
+  consumeOutput(): void;
 }
 
 export interface ComponentDisposeContext<Props, State>

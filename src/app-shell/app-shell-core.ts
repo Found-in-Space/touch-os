@@ -1,8 +1,4 @@
-import type {
-  ActionEvent,
-  RuntimeOutput,
-  WindowStateChangeEvent
-} from "../core/actions.js";
+import type { RuntimeOutput, WindowStateChangeEvent } from "../core/actions.js";
 import {
   type ComponentEvent,
   type DisplayComponent,
@@ -32,14 +28,18 @@ import type { TouchAppManifest } from "../apps/manifest.js";
 import type { TouchAppRegistry } from "../apps/registry.js";
 import type { SystemCommandInputEvent } from "../core/events.js";
 import type { RuntimeServices } from "../services/contracts.js";
+import { resolveAppOutputRouting } from "./app-output-routing.js";
 import { resolveWindowChromeHeight, type WindowControl } from "../containers/window.js";
 import {
+  appShellOutputScopeKey,
   createHostedAppInputEvent,
   createWindowManagerAppWindow,
   ensureHostedAppWindow,
   publishHostedAppWindow,
   renderAppWindowContent,
+  scopeDisplayNodeIds,
   scopeRuntimeOutput,
+  stripDisplayNodeIdScope,
   stripRuntimeOutputScope,
   unpublishHostedAppWindow,
   updateAppWindowSurface,
@@ -146,7 +146,11 @@ const AppShellComponent: DisplayComponent<AppShellProps, AppShellState> = {
   getChildren(ctx) {
     syncLiveRecords(ctx);
     const presentation = resolvePresentation(ctx.props);
-    return [presentation.render(createPresentationContext(ctx))];
+    const root = presentation.render(createPresentationContext(ctx));
+    const inheritedScope = getInheritedAppOutputScope(ctx.props);
+    return [inheritedScope
+      ? scopeDisplayNodeIds(root, { prefix: inheritedScope })
+      : root];
   },
   measure(ctx) {
     const childId = getPresentationRootId(ctx);
@@ -195,6 +199,21 @@ const AppShellComponent: DisplayComponent<AppShellProps, AppShellState> = {
     const record = findRecordForOutput(ctx.state, ctx.event);
     if (record?.runtime) {
       record.runtime.handleOutput(stripRuntimeOutputScope(ctx.event, record.namespacePrefix));
+      const inheritedScope = getInheritedAppOutputScope(ctx.props);
+      const routing = resolveAppOutputRouting(
+        "same-runtime",
+        ctx.event,
+        record.forwardAppOutputs,
+        Boolean(inheritedScope)
+      );
+      if (routing.consume) {
+        ctx.consumeOutput();
+      }
+      if (routing.emitScope === "record") {
+        ctx.emit(scopeRuntimeOutput(ctx.event, record.namespacePrefix));
+      } else if (routing.emitScope === "inherited" && inheritedScope) {
+        ctx.emit(scopeRuntimeOutput(ctx.event, inheritedScope));
+      }
     }
   },
   dispose(ctx) {
@@ -305,6 +324,7 @@ function getPresentationRootId(ctx: Pick<ShellContext, "id" | "props">): string 
 
 function createRecord(ctx: ShellContext, window: TouchWindowState): WindowManagerAppWindow {
   let record: WindowManagerAppWindow | undefined;
+  const parentNamespacePrefix = getInheritedAppOutputScope(ctx.props);
   record = createWindowManagerAppWindow({
     window,
     app: ctx.props.registry.get(window.appId),
@@ -312,6 +332,7 @@ function createRecord(ctx: ShellContext, window: TouchWindowState): WindowManage
     surface: createSurfaceContext(ctx, window),
     theme: ctx.services.theme,
     forwardAppOutputs: ctx.props.forwardAppOutputs ?? false,
+    ...(parentNamespacePrefix ? { parentNamespacePrefix } : {}),
     actions: {
       emit(event) {
         if (record) {
@@ -613,25 +634,30 @@ function handleWindowLayerOutput(
   ctx: ShellContext,
   output: WindowStateChangeEvent
 ): void {
-  const record = ctx.state.records.get(output.windowId);
+  const inheritedScope = getInheritedAppOutputScope(ctx.props);
+  const windowId = inheritedScope
+    ? stripDisplayNodeIdScope(output.windowId, inheritedScope)
+    : output.windowId;
+  const localOutput = windowId === output.windowId ? output : { ...output, windowId };
+  const record = ctx.state.records.get(windowId);
   if (!record) {
     return;
   }
 
   const previousMode = record.window.mode;
-  record.window = applyWindowStateChange(record.window, output);
+  record.window = applyWindowStateChange(record.window, localOutput);
 
-  if (output.change === "close") {
+  if (localOutput.change === "close") {
     const closedWindow = copyTouchWindowState(record.window);
     closeRecord(record, ctx.services.surfaces);
-    ctx.state.records.delete(output.windowId);
-    if (ctx.state.activeSessionId === output.windowId) {
+    ctx.state.records.delete(windowId);
+    if (ctx.state.activeSessionId === windowId) {
       ctx.state.activeSessionId = undefined;
     }
     emitShellChange(ctx, {
       type: "window-state",
       window: closedWindow,
-      output
+      output: localOutput
     });
     ctx.invalidateLayout();
     return;
@@ -643,17 +669,17 @@ function handleWindowLayerOutput(
     if (previousMode === "minimized") {
       resumeRecord(record);
     }
-    if (output.focused) {
-      focusRecord(ctx, output.windowId);
-      ctx.state.activeSessionId = output.windowId;
+    if (localOutput.focused) {
+      focusRecord(ctx, windowId);
+      ctx.state.activeSessionId = windowId;
     } else if (record.active) {
       deactivateRecord(record);
     }
   }
 
-  if (output.focused) {
+  if (localOutput.focused) {
     for (const candidate of ctx.state.records.values()) {
-      if (candidate.window.id !== output.windowId) {
+      if (candidate.window.id !== windowId) {
         candidate.window.focused = false;
       }
     }
@@ -662,7 +688,7 @@ function handleWindowLayerOutput(
   emitShellChange(ctx, {
     type: "window-state",
     window: record.window,
-    output
+    output: localOutput
   });
 }
 
@@ -723,7 +749,12 @@ function flushHostedAppOutputs(
 
   for (const output of record.hosted.runtime.takeOutputs()) {
     record.runtime?.handleOutput(output);
-    if (record.forwardAppOutputs) {
+    const routing = resolveAppOutputRouting(
+      "child-runtime",
+      output,
+      record.forwardAppOutputs
+    );
+    if (routing.emitScope === "record") {
       ctx.emit(scopeRuntimeOutput(output, record.namespacePrefix));
     }
   }
@@ -1011,6 +1042,12 @@ function getOutputComponentId(output: RuntimeOutput): string | undefined {
   return "componentId" in output ? output.componentId : undefined;
 }
 
+function getInheritedAppOutputScope(props: AppShellProps): string | undefined {
+  return (props as AppShellProps & { [appShellOutputScopeKey]?: string })[
+    appShellOutputScopeKey
+  ];
+}
+
 function isWindowLayerOutput(
   shellId: string,
   event: ComponentEvent
@@ -1067,6 +1104,7 @@ function createMissingRecord(session: AppShellSession): WindowManagerAppWindow {
     hostedSurfaceComponentId: `${session.appId}:${session.instanceId}:${session.id}:surface`,
     forwardAppOutputs: false,
     lastPublishedRevision: undefined,
+    lastPublishedContentSignature: undefined,
     lastPublishedWidth: undefined,
     lastPublishedHeight: undefined,
     active: false,

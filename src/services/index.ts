@@ -14,6 +14,8 @@ export type {
   MutableLayoutService,
   NavigationService,
   NavigationSnapshot,
+  RuntimeInvalidationKind,
+  RuntimeInvalidationSource,
   RuntimeServices,
   ScrollService,
   ScrollState,

@@ -108,3 +108,7 @@ export type {
   RuntimeServiceOverrides
 } from "./runtime.js";
 export { createRuntime } from "./runtime.js";
+export type {
+  RuntimeInvalidationKind,
+  RuntimeInvalidationSource
+} from "../services/contracts.js";

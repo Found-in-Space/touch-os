@@ -831,7 +831,7 @@ describe("window manager", () => {
     });
   });
 
-  it("keeps same-runtime app payload ids unscoped", () => {
+  it("keeps forwarded same-runtime app payload ids unscoped", () => {
     const handledOutputs: RuntimeOutput[] = [];
     const registry = createTouchAppRegistry([
       defineTouchApp({
@@ -864,6 +864,7 @@ describe("window manager", () => {
     const runtime = createRuntime({
       root: createWindowManager("tablet-os", {
         registry,
+        forwardAppOutputs: true,
         initialWindows: [
           createManagedWindow("payload-window", "space.test.payload", "payload-1", 1)
         ]

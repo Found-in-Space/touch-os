@@ -26,6 +26,9 @@ export interface CoordinatedPanel<TSample extends PointerSampleLike, TFrame> {
 }
 
 export interface PointerRoutingResult {
+  /** The panel selected to process this routing step. */
+  panelKey: string | undefined;
+  /** The panel retaining press ownership after this routing step. */
   ownerKey: string | undefined;
   claimed: boolean;
   blocked: boolean;
@@ -46,7 +49,7 @@ export interface PanelCoordinator<TSample extends PointerSampleLike, TFrame> {
 export function createPanelCoordinator<TSample extends PointerSampleLike, TFrame>(
   options: PanelCoordinatorOptions<TSample, TFrame>
 ): PanelCoordinator<TSample, TFrame> {
-  const owners = new Map<string, string>();
+  const owners = new Map<string, CoordinatedPanel<TSample, TFrame>>();
 
   function getPhase(sample: TSample): PointerRoutingPhase | undefined {
     return options.getPhase?.(sample) ?? resolvePointerRoutingPhase(sample);
@@ -63,30 +66,42 @@ export function createPanelCoordinator<TSample extends PointerSampleLike, TFrame
     route(sample, frame) {
       const phase = getPhase(sample);
       const release = isPointerReleasePhase(phase);
-      const ownerKey = owners.get(sample.pointerId);
-      if (ownerKey) {
-        const ownerIndex = options.panels.findIndex((panel) => panel.key === ownerKey);
-        const owner = ownerIndex >= 0 ? options.panels[ownerIndex] : undefined;
-        if (owner?.enabled) {
+      const owner = owners.get(sample.pointerId);
+      if (owner) {
+        const ownerIndex = options.panels.indexOf(owner);
+        if (ownerIndex >= 0 && owner.enabled) {
           clearPanelsExcept(options.panels, sample.pointerId, owner.key);
           const result = owner.process(sample, frame);
           if (release) {
             owners.delete(sample.pointerId);
           }
           return {
-            ownerKey: owner.key,
-            claimed: true,
+            panelKey: owner.key,
+            ownerKey: release ? undefined : owner.key,
+            claimed: result.claimed,
             blocked: result.blocked
           };
         }
 
         owners.delete(sample.pointerId);
+        if (ownerIndex < 0) {
+          owner.clearPointer(sample.pointerId);
+        }
       }
 
-      return routePointerSampleWithOwners(options.panels, sample, frame, owners, release);
+      return routePointerSampleWithOwners(options.panels, sample, frame, owners, phase);
     },
     getOwner(pointerId) {
-      return owners.get(pointerId);
+      const owner = owners.get(pointerId);
+      if (!owner) {
+        return undefined;
+      }
+      if (owner.enabled && options.panels.includes(owner)) {
+        return owner.key;
+      }
+      owners.delete(pointerId);
+      owner.clearPointer(pointerId);
+      return undefined;
     },
     clearPointer,
     clearAllPointers() {
@@ -106,8 +121,8 @@ export function routePointerSample<TSample extends PointerSampleLike, TFrame>(
     panels,
     sample,
     frame,
-    new Map<string, string>(),
-    isPointerReleasePhase(resolvePointerRoutingPhase(sample))
+    new Map<string, CoordinatedPanel<TSample, TFrame>>(),
+    resolvePointerRoutingPhase(sample)
   );
 }
 
@@ -115,8 +130,8 @@ function routePointerSampleWithOwners<TSample extends PointerSampleLike, TFrame>
   panels: readonly CoordinatedPanel<TSample, TFrame>[],
   sample: TSample,
   frame: TFrame,
-  owners: Map<string, string>,
-  release: boolean
+  owners: Map<string, CoordinatedPanel<TSample, TFrame>>,
+  phase: PointerRoutingPhase | undefined
 ): PointerRoutingResult {
   for (const [index, panel] of panels.entries()) {
     if (!panel.enabled) {
@@ -129,22 +144,26 @@ function routePointerSampleWithOwners<TSample extends PointerSampleLike, TFrame>
       continue;
     }
 
-    if (result.claimed && !release) {
-      owners.set(sample.pointerId, panel.key);
-    } else {
+    if (result.claimed && phase === "down") {
+      owners.set(sample.pointerId, panel);
+    } else if (isPointerReleasePhase(phase)) {
       owners.delete(sample.pointerId);
     }
 
     clearLowerPriorityPanels(panels, index, sample.pointerId);
     return {
-      ownerKey: panel.key,
+      panelKey: panel.key,
+      ownerKey: owners.get(sample.pointerId)?.key,
       claimed: result.claimed,
       blocked: result.blocked
     };
   }
 
-  owners.delete(sample.pointerId);
+  if (isPointerReleasePhase(phase)) {
+    owners.delete(sample.pointerId);
+  }
   return {
+    panelKey: undefined,
     ownerKey: undefined,
     claimed: false,
     blocked: false

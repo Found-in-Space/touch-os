@@ -93,7 +93,7 @@ export interface ControlsAppBuilder<TState> {
 export type ControlsAppItem<TState> =
   | ControlsAppToggleItem<TState>
   | ControlsAppStatusItem<TState>
-  | ControlsAppButtonItem<TState>
+  | ControlsAppButtonItem
   | ControlsAppSliderItem<TState>
   | ControlsAppSectionItem<TState>;
 
@@ -113,7 +113,7 @@ export interface ControlsAppStatusItem<TState> {
   tone: "normal" | "muted" | "accent" | "warning" | "danger";
 }
 
-export interface ControlsAppButtonItem<TState> {
+export interface ControlsAppButtonItem {
   kind: "button";
   id: string;
   label: string;

@@ -458,6 +458,7 @@ renderer.setAnimationLoop(() => {
   tvVideoSource.publish(sharedSurfaces, now);
 
   const baseFrame: THREEFrame = {
+    timestamp: now,
     scene: room.scene,
     camera: viewerCamera
   };
@@ -531,7 +532,7 @@ renderer.setAnimationLoop(() => {
     for (const sample of consumeXrSamples(now)) {
       const routing = xrPanelCoordinator.route(sample, xrFrame);
       if (sample.pointerId === "xr-ray" && sample.transport === "ray") {
-        updateXrPointerVisual(sample, routing.ownerKey);
+        updateXrPointerVisual(sample, routing.panelKey ?? routing.ownerKey);
         pointerVisualUpdated = true;
       }
     }
@@ -547,19 +548,6 @@ renderer.setAnimationLoop(() => {
       }
       desktopPanelCoordinator.route(sample, baseFrame);
     }
-  }
-
-  tickActiveRuntime(tvPanel, now);
-  tickActiveRuntime(wallMirrorPanel, now);
-  tickActiveRuntime(wallPicturePanel, now);
-  if (desktopHudPanel.enabled) {
-    tickActiveRuntime(desktopHudPanel, now);
-  }
-  if (xrHudPanel.enabled) {
-    tickActiveRuntime(xrHudPanel, now);
-  }
-  if (armPanel.enabled) {
-    tickActiveRuntime(armPanel, now);
   }
 
   tvPanel.render();
@@ -1306,11 +1294,6 @@ function resolveXrBinding(
   return xrBindings.find(predicate);
 }
 
-function tickActiveRuntime(binding: ThreePanelSession, timestamp: number): void {
-  binding.runtime.tick(timestamp);
-  binding.flushOutputs();
-}
-
 function syncRoomRuntimeControllers(
   state: RoomDemoState
 ): void {
@@ -1415,11 +1398,11 @@ function renderArmPanelForTest(): void {
   room.camera.updateMatrixWorld(true);
   armPanel.enabled = true;
   armPanel.update({
+    timestamp: now,
     scene: room.scene,
     camera: room.camera,
     anchorPose: getTestArmPose()
   });
-  tickActiveRuntime(armPanel, now);
   armPanel.render();
   renderer.render(room.scene, room.camera);
 }

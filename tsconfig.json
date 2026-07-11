@@ -10,6 +10,8 @@
     ],
     "strict": true,
     "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "useUnknownInCatchVariables": true,

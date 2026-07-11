@@ -38,15 +38,13 @@ import {
   type Size
 } from "./geometry.js";
 import type {
-  BitmapService,
   EmbeddedSurfaceChange,
-  FocusService,
   MutableLayoutService,
+  RuntimeInvalidationKind,
+  RuntimeInvalidationSource,
   RuntimeServices,
-  ScrollService,
   SurfaceMetrics,
-  ThemeTokens,
-  TimingService
+  ThemeTokens
 } from "../services/contracts.js";
 import {
   createBitmapService,
@@ -76,6 +74,8 @@ interface RuntimeNodeState {
   childMeasurements: Map<string, Size>;
 }
 
+type EffectiveClip = Rect | null | undefined;
+
 interface HitTestMatch {
   componentId: string;
   targetId: string;
@@ -97,9 +97,24 @@ interface ActivePointerState {
   downTimestamp: number;
 }
 
+interface PointerMetadata {
+  pointerId: string;
+  pointerType: PointerType;
+  pressure: number | undefined;
+  modifiers: ModifierState;
+}
+
+interface TrackedPointerSample extends PointerMetadata {
+  point: Point;
+}
+
 interface PendingEmission {
   emitterNode: RuntimeNodeState;
   output: RuntimeOutput;
+}
+
+interface OutputPropagation {
+  consumed: boolean;
 }
 
 export interface RuntimeServiceOverrides extends Partial<Omit<RuntimeServices, "layout">> {
@@ -128,6 +143,8 @@ export interface DisplayRuntime {
   render(): RenderSnapshot;
   dispatchInput(event: InputEvent): DispatchResult;
   resize(metrics: Partial<SurfaceMetrics>): void;
+  invalidateLayout(): void;
+  invalidateRender(): void;
   tick(timestamp: number): void;
   takeOutputs(): readonly RuntimeOutput[];
   getServices(): RuntimeServices;
@@ -153,55 +170,69 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
   let eventDispatchDepth = 0;
   let isFlushingEmissions = false;
   let layoutPassDepth = 0;
+  let disposed = false;
 
   const services: RuntimeServices = {
     layout,
-    navigation:
-      options.services?.navigation ?? createMemoryNavigationService(() => invalidateLayout()),
-    scroll: options.services?.scroll ?? createMemoryScrollService(() => invalidateScrollLayout()),
+    navigation: options.services?.navigation ?? createMemoryNavigationService(),
+    scroll: options.services?.scroll ?? createMemoryScrollService(),
     focus:
       options.services?.focus ??
       createMemoryFocusService(
-        () => invalidateRender(),
+        undefined,
         (direction, currentFocusId, focusableIds) =>
           resolveVisibleFocusableForTraversal(direction, currentFocusId, focusableIds)
       ),
-    theme: options.services?.theme ?? createThemeService(options.theme, () => invalidateRender()),
+    theme: options.services?.theme ?? createThemeService(options.theme),
     timing:
       options.services?.timing ??
       createTimingService(options.now ?? 0, options.longPressDelay ?? 450),
-    surface: options.services?.surface ?? createSurfaceService(options.surface, () => invalidateLayout()),
-    bitmaps: options.services?.bitmaps ?? createBitmapService(() => invalidateRender()),
+    surface: options.services?.surface ?? createSurfaceService(options.surface),
+    bitmaps: options.services?.bitmaps ?? createBitmapService(),
     surfaces: options.services?.surfaces ?? createEmbeddedSurfaceService()
   };
-
-  const focusService = services.focus;
-  const timingService = services.timing;
-  const unsubscribeSurfaceChanges = services.surfaces.subscribe((change) => {
-    if (isRelevantEmbeddedSurfaceChange(change)) {
-      invalidateRender();
-    }
-  });
 
   let rootDescriptor = options.root;
   let rootNode: RuntimeNodeState | undefined;
   const nodeLookup = new Map<string, RuntimeNodeState>();
   const hoveredMatches = new Map<string, HitTestMatch>();
   const activePointers = new Map<string, ActivePointerState>();
+  const latestPointerSamples = new Map<string, TrackedPointerSample>();
   let latestPointerId: string | undefined;
+  const focusService = services.focus;
+  const timingService = services.timing;
   let focusedComponentId = focusService.getFocusedComponentId();
+
+  const unsubscribeServiceInvalidations = [
+    subscribeServiceInvalidation(services.navigation),
+    subscribeServiceInvalidation(services.scroll, (kind) => {
+      if (kind === "layout") {
+        invalidateScrollLayout();
+      } else {
+        invalidateRender();
+      }
+    }),
+    subscribeServiceInvalidation(services.focus),
+    subscribeServiceInvalidation(services.theme),
+    subscribeServiceInvalidation(services.surface),
+    subscribeServiceInvalidation(services.bitmaps),
+    services.surfaces.subscribe((change) => {
+      if (isRelevantEmbeddedSurfaceChange(change)) {
+        invalidateRender();
+      }
+    })
+  ];
 
   rootNode = mountNode(rootDescriptor, undefined);
 
   function invalidateLayout(): void {
-    treeDirty = true;
     layoutDirty = true;
     renderDirty = true;
   }
 
-  function invalidateLayoutOnly(): void {
-    layoutDirty = true;
-    renderDirty = true;
+  function invalidateComponentTree(): void {
+    treeDirty = true;
+    invalidateLayout();
   }
 
   function invalidateRender(): void {
@@ -214,7 +245,22 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
       return;
     }
 
-    invalidateLayoutOnly();
+    invalidateLayout();
+  }
+
+  function subscribeServiceInvalidation(
+    service: { subscribeInvalidation?: RuntimeInvalidationSource["subscribeInvalidation"] },
+    listener: (kind: RuntimeInvalidationKind) => void = applyServiceInvalidation
+  ): () => void {
+    return service.subscribeInvalidation?.(listener) ?? (() => {});
+  }
+
+  function applyServiceInvalidation(kind: RuntimeInvalidationKind): void {
+    if (kind === "layout") {
+      invalidateLayout();
+      return;
+    }
+    invalidateRender();
   }
 
   function isRelevantEmbeddedSurfaceChange(change: EmbeddedSurfaceChange): boolean {
@@ -275,8 +321,10 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
           continue;
         }
 
-        outputs.push(emission.output);
-        dispatchOutputToAncestors(emission.emitterNode, emission.output);
+        const consumed = dispatchOutputToAncestors(emission.emitterNode, emission.output);
+        if (!consumed) {
+          outputs.push(emission.output);
+        }
       }
     } finally {
       isFlushingEmissions = false;
@@ -286,20 +334,28 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
     }
   }
 
-  function dispatchOutputToAncestors(emitterNode: RuntimeNodeState, output: RuntimeOutput): void {
+  function dispatchOutputToAncestors(
+    emitterNode: RuntimeNodeState,
+    output: RuntimeOutput
+  ): boolean {
     const path = resolvePathNodes(buildPathToRoot(emitterNode));
     if (path.length <= 1) {
-      return;
+      return false;
     }
 
+    const propagation: OutputPropagation = { consumed: false };
     runComponentDispatch(() => {
       const ancestors = path.slice(0, -1);
       for (const node of [...ancestors].reverse()) {
-        node.component.handleEvent?.(createEventContext(node, output));
+        node.component.handleEvent?.(createEventContext(node, output, propagation));
+        if (propagation.consumed) {
+          break;
+        }
       }
     });
 
     invalidateRender();
+    return propagation.consumed;
   }
 
   function createInteractionSnapshot(): RuntimeInteractionSnapshot {
@@ -337,7 +393,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
       emit(output: RuntimeOutput) {
         enqueueEmission(node, output);
       },
-      invalidateLayout,
+      invalidateLayout: invalidateComponentTree,
       invalidateRender,
       estimateTextWidth
     };
@@ -428,12 +484,18 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
 
   function createEventContext(
     node: RuntimeNodeState,
-    event: ComponentEvent
+    event: ComponentEvent,
+    propagation?: OutputPropagation
   ): ComponentEventContext<unknown, unknown> {
     return {
       ...createBaseContext(node),
       bounds: copyRect(node.bounds),
-      event
+      event,
+      consumeOutput() {
+        if (propagation) {
+          propagation.consumed = true;
+        }
+      }
     };
   }
 
@@ -527,6 +589,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
   }
 
   function disposeNode(node: RuntimeNodeState): void {
+    cancelInteractionsForSubtree(node);
     for (const child of node.children) {
       disposeNode(child);
     }
@@ -576,6 +639,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
       clearRemovedInteractionReferences();
       treeDirty = false;
     }
+
     layoutPassDepth += 1;
     try {
       layout.clear();
@@ -607,16 +671,34 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
     renderDirty = false;
   }
 
-  function renderNode(node: RuntimeNodeState, inheritedClip: Rect | undefined): void {
+  function normalizeDrawCommand(command: DrawCommand): DrawCommand {
+    if (command.type !== "text" || command.fontFamily !== undefined) {
+      return command;
+    }
+
+    return {
+      ...command,
+      fontFamily: services.theme.getTokens().typography.fontFamily
+    };
+  }
+
+  function renderNode(node: RuntimeNodeState, inheritedClip: EffectiveClip): void {
     if (node.bounds.width <= 0 || node.bounds.height <= 0) {
       return;
     }
 
-    const effectiveClip = intersectRect(inheritedClip, node.clipRect);
+    const effectiveClip = intersectEffectiveClip(inheritedClip, node.clipRect);
+    if (effectiveClip === null) {
+      return;
+    }
     const nodeCommands = node.component.render?.(createRenderContext(node)) ?? [];
 
     for (const command of nodeCommands) {
-      commands.push(withClip(command, intersectRect(effectiveClip, command.clipRect)));
+      const commandClip = intersectEffectiveClip(effectiveClip, command.clipRect);
+      if (commandClip === null) {
+        continue;
+      }
+      commands.push(withClip(normalizeDrawCommand(command), commandClip));
     }
 
     for (const child of node.children) {
@@ -632,10 +714,13 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
   function hitTestNode(
     node: RuntimeNodeState,
     point: Point,
-    inheritedClip: Rect | undefined,
+    inheritedClip: EffectiveClip,
     ancestorPath: string[]
   ): HitTestMatch | undefined {
-    const effectiveClip = intersectRect(inheritedClip, node.clipRect);
+    const effectiveClip = intersectEffectiveClip(inheritedClip, node.clipRect);
+    if (effectiveClip === null) {
+      return undefined;
+    }
     if (effectiveClip && !rectContainsPoint(effectiveClip, point)) {
       return undefined;
     }
@@ -848,6 +933,40 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
     return Boolean(targetId);
   }
 
+  function trackPointerInput(
+    event: {
+      pointerId?: string;
+      pointerType?: PointerType;
+      pressure?: number;
+      modifiers?: ModifierState;
+    },
+    point: Point,
+    fallback?: PointerMetadata
+  ): PointerMetadata {
+    const pointerId = event.pointerId ?? "default";
+    const previous = latestPointerSamples.get(pointerId);
+    const metadata: PointerMetadata = {
+      pointerId,
+      pointerType: event.pointerType ?? fallback?.pointerType ?? previous?.pointerType ?? "unknown",
+      pressure: event.pressure ?? fallback?.pressure ?? previous?.pressure,
+      modifiers: { ...(event.modifiers ?? DEFAULT_MODIFIERS) }
+    };
+    latestPointerSamples.set(pointerId, {
+      ...metadata,
+      point: { ...point }
+    });
+    return metadata;
+  }
+
+  function updateActivePointerMetadata(
+    pointer: ActivePointerState,
+    metadata: PointerMetadata
+  ): void {
+    pointer.pointerType = metadata.pointerType;
+    pointer.pressure = metadata.pressure;
+    pointer.modifiers = { ...metadata.modifiers };
+  }
+
   function createPointerDisplayEvent(
     type:
       | "pointer-enter"
@@ -866,21 +985,17 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
     point: Point,
     timestamp: number,
     targetId: string,
-    activeState?: ActivePointerState,
+    metadata: PointerMetadata,
     deltas?: { deltaX: number; deltaY: number }
   ): DisplayEvent {
     const localX = point.x - node.bounds.x;
     const localY = point.y - node.bounds.y;
-    const pointerId = activeState?.pointerId ?? "default";
-    const pointerType = activeState?.pointerType ?? "unknown";
-    const pressure = activeState?.pressure;
-    const modifiers = activeState?.modifiers ?? DEFAULT_MODIFIERS;
     const pointerBase = {
       timestamp,
-      pointerId,
-      pointerType,
-      modifiers,
-      ...(pressure === undefined ? {} : { pressure })
+      pointerId: metadata.pointerId,
+      pointerType: metadata.pointerType,
+      modifiers: { ...metadata.modifiers },
+      ...(metadata.pressure === undefined ? {} : { pressure: metadata.pressure })
     };
 
     if (type === "scroll") {
@@ -929,7 +1044,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
     point: Point,
     timestamp: number,
     pointerId: string,
-    pointerState?: ActivePointerState
+    metadata: PointerMetadata
   ): void {
     const nextMatch = hitTest(point);
     const currentHover = hoveredMatches.get(pointerId);
@@ -949,7 +1064,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
           point,
           timestamp,
           previousHover.targetId,
-          pointerState
+          metadata
         )
       );
     }
@@ -968,7 +1083,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
           point,
           timestamp,
           nextMatch.targetId,
-          pointerState
+          metadata
         )
       );
     }
@@ -992,6 +1107,76 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
     syncFocusEvents();
   }
 
+  function cancelInteractionsForSubtree(node: RuntimeNodeState): void {
+    const pointerIds = new Set<string>();
+    for (const [pointerId, pointer] of activePointers) {
+      if (pointer.pathIds.includes(node.id)) {
+        pointerIds.add(pointerId);
+      }
+    }
+    for (const [pointerId, hover] of hoveredMatches) {
+      if (hover.pathIds.includes(node.id)) {
+        pointerIds.add(pointerId);
+      }
+    }
+    for (const pointerId of pointerIds) {
+      cancelTrackedPointer(pointerId, timingService.now());
+    }
+  }
+
+  function cancelTrackedPointer(pointerId: string, timestamp: number): void {
+    const pointer = activePointers.get(pointerId);
+    const hover = hoveredMatches.get(pointerId);
+    const sample = latestPointerSamples.get(pointerId);
+    const point = sample?.point ?? pointer?.lastPoint ?? createPoint(-1, -1);
+    const metadata: PointerMetadata = sample ?? pointer ?? {
+      pointerId,
+      pointerType: "unknown",
+      pressure: undefined,
+      modifiers: { ...DEFAULT_MODIFIERS }
+    };
+
+    if (pointer) {
+      dispatchToPath(pointer.pathIds, pointer.targetId, (pathNode) =>
+        createPointerDisplayEvent(
+          "cancel",
+          pathNode,
+          point,
+          timestamp,
+          pointer.targetId,
+          metadata
+        )
+      );
+      activePointers.delete(pointerId);
+    }
+
+    if (hover) {
+      dispatchToPath(hover.pathIds, hover.targetId, (pathNode) =>
+        createPointerDisplayEvent(
+          "pointer-leave",
+          pathNode,
+          point,
+          timestamp,
+          hover.targetId,
+          metadata
+        )
+      );
+      hoveredMatches.delete(pointerId);
+    }
+
+    latestPointerSamples.delete(pointerId);
+  }
+
+  function cancelAllTrackedPointers(timestamp: number): void {
+    const pointerIds = new Set([
+      ...activePointers.keys(),
+      ...hoveredMatches.keys()
+    ]);
+    for (const pointerId of pointerIds) {
+      cancelTrackedPointer(pointerId, timestamp);
+    }
+  }
+
   function matchesActivePointer(pointer: ActivePointerState, pointerId?: string): boolean {
     return pointerId === undefined || pointer.pointerId === pointerId;
   }
@@ -1013,7 +1198,11 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
         latestPointerId = pointerId;
         const point = createPoint(event.surfaceX, event.surfaceY);
         const pointer = activePointers.get(pointerId);
-        updateHover(point, event.timestamp, pointerId, pointer);
+        const metadata = trackPointerInput(event, point, pointer);
+        if (pointer) {
+          updateActivePointerMetadata(pointer, metadata);
+        }
+        updateHover(point, event.timestamp, pointerId, metadata);
         if (pointer) {
           const deltaX = point.x - pointer.startPoint.x;
           const deltaY = point.y - pointer.startPoint.y;
@@ -1029,7 +1218,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
                 point,
                 event.timestamp,
                 pointer.targetId,
-                pointer,
+                metadata,
                 { deltaX, deltaY }
               )
             );
@@ -1042,7 +1231,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
                 point,
                 event.timestamp,
                 pointer.targetId,
-                pointer,
+                metadata,
                 { deltaX, deltaY }
               )
             );
@@ -1058,7 +1247,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
                   point,
                   event.timestamp,
                   currentHover.targetId,
-                  pointer
+                  metadata
                 )
               );
               componentId = currentHover.componentId;
@@ -1071,7 +1260,14 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
           const currentHover = hoveredMatches.get(pointerId);
           if (currentHover) {
             handled = dispatchToPath(currentHover.pathIds, currentHover.targetId, (node) =>
-              createPointerDisplayEvent("pointer-move", node, point, event.timestamp, currentHover.targetId)
+              createPointerDisplayEvent(
+                "pointer-move",
+                node,
+                point,
+                event.timestamp,
+                currentHover.targetId,
+                metadata
+              )
             );
             componentId = currentHover.componentId;
             targetId = currentHover.targetId;
@@ -1084,15 +1280,12 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
         const pointerId = event.pointerId ?? "default";
         latestPointerId = pointerId;
         const point = createPoint(event.surfaceX, event.surfaceY);
+        const metadata = trackPointerInput(event, point);
         const match = hitTest(point);
-        updateHover(point, event.timestamp, pointerId);
+        updateHover(point, event.timestamp, pointerId, metadata);
         if (match) {
-          const modifiers = event.modifiers ?? DEFAULT_MODIFIERS;
           const activePointer: ActivePointerState = {
-            pointerId,
-            pointerType: event.pointerType ?? "unknown",
-            pressure: event.pressure,
-            modifiers,
+            ...metadata,
             startPoint: point,
             lastPoint: point,
             pathIds: match.pathIds,
@@ -1122,12 +1315,23 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
         if (releaseMatch && !matchesActivePointer(releaseMatch, event.pointerId)) {
           break;
         }
-        updateHover(point, event.timestamp, pointerId, releaseMatch);
+        const metadata = trackPointerInput(event, point, releaseMatch);
+        if (releaseMatch) {
+          updateActivePointerMetadata(releaseMatch, metadata);
+        }
+        updateHover(point, event.timestamp, pointerId, metadata);
         if (releaseMatch) {
           const deltaX = point.x - releaseMatch.startPoint.x;
           const deltaY = point.y - releaseMatch.startPoint.y;
           handled = dispatchToPath(releaseMatch.pathIds, releaseMatch.targetId, (node) =>
-            createPointerDisplayEvent("pointer-up", node, point, event.timestamp, releaseMatch.targetId, releaseMatch)
+            createPointerDisplayEvent(
+              "pointer-up",
+              node,
+              point,
+              event.timestamp,
+              releaseMatch.targetId,
+              metadata
+            )
           );
           if (releaseMatch.dragging) {
             dispatchToPath(releaseMatch.pathIds, releaseMatch.targetId, (node) =>
@@ -1137,7 +1341,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
                 point,
                 event.timestamp,
                 releaseMatch.targetId,
-                releaseMatch,
+                metadata,
                 { deltaX, deltaY }
               )
             );
@@ -1146,7 +1350,14 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
           const match = hitTest(point);
           if (shouldDispatchPress(releaseMatch, match, point)) {
             dispatchToPath(releaseMatch.pathIds, releaseMatch.targetId, (node) =>
-              createPointerDisplayEvent("press", node, point, event.timestamp, releaseMatch.targetId, releaseMatch)
+              createPointerDisplayEvent(
+                "press",
+                node,
+                point,
+                event.timestamp,
+                releaseMatch.targetId,
+                metadata
+              )
             );
           }
           componentId = releaseMatch.componentId;
@@ -1161,9 +1372,20 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
         latestPointerId = pointerId;
         const point = createPoint(event.surfaceX, event.surfaceY);
         const pointer = activePointers.get(pointerId);
+        const metadata = trackPointerInput(event, point, pointer);
+        if (pointer) {
+          updateActivePointerMetadata(pointer, metadata);
+        }
         if (pointer && matchesActivePointer(pointer, event.pointerId)) {
           handled = dispatchToPath(pointer.pathIds, pointer.targetId, (node) =>
-            createPointerDisplayEvent("cancel", node, point, event.timestamp, pointer.targetId, pointer)
+            createPointerDisplayEvent(
+              "cancel",
+              node,
+              point,
+              event.timestamp,
+              pointer.targetId,
+              metadata
+            )
           );
           componentId = pointer.componentId;
           targetId = pointer.targetId;
@@ -1179,7 +1401,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
               point,
               event.timestamp,
               currentHover.targetId,
-              pointer
+              metadata
             )
           );
           hoveredMatches.delete(pointerId);
@@ -1187,6 +1409,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
           componentId = componentId ?? currentHover.componentId;
           targetId = targetId ?? currentHover.targetId;
         }
+        latestPointerSamples.delete(pointerId);
         break;
       }
 
@@ -1196,7 +1419,11 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
         const point = createPoint(event.surfaceX, event.surfaceY);
         const match = hitTest(point);
         const activePointer = activePointers.get(pointerId);
-        updateHover(point, event.timestamp, pointerId, activePointer);
+        const metadata = trackPointerInput(event, point, activePointer);
+        if (activePointer) {
+          updateActivePointerMetadata(activePointer, metadata);
+        }
+        updateHover(point, event.timestamp, pointerId, metadata);
         if (match) {
           handled = dispatchToPath(match.pathIds, match.targetId, (node) =>
             createPointerDisplayEvent(
@@ -1205,7 +1432,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
               point,
               event.timestamp,
               match.targetId,
-              activePointer,
+              metadata,
               { deltaX: event.deltaX, deltaY: event.deltaY }
             )
           );
@@ -1360,17 +1587,24 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
   }
 
   function setRoot(root: DisplayNode<unknown>): void {
+    if (root === rootDescriptor && rootNode) {
+      return;
+    }
+
     rootDescriptor = root;
-    treeDirty = true;
     rootNode = reconcileNode(rootNode, rootDescriptor, undefined);
     clearRemovedInteractionReferences();
-    treeDirty = false;
     layoutDirty = true;
     renderDirty = true;
   }
 
   function resize(metrics: Partial<SurfaceMetrics>): void {
+    const previous = services.surface.getMetrics();
     services.surface.update(metrics);
+    const next = services.surface.getMetrics();
+    if (!surfaceMetricsEqual(previous, next)) {
+      invalidateLayout();
+    }
   }
 
   function takeOutputs(): readonly RuntimeOutput[] {
@@ -1381,16 +1615,27 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
   }
 
   function dispose(): void {
-    unsubscribeSurfaceChanges();
+    if (disposed) {
+      return;
+    }
+    disposed = true;
+
+    cancelAllTrackedPointers(timingService.now());
+    focusService.clearFocus();
+    syncFocusEvents();
+    flushEmissions();
+    for (const unsubscribe of unsubscribeServiceInvalidations) {
+      unsubscribe();
+    }
     if (rootNode) {
       disposeNode(rootNode);
       rootNode = undefined;
     }
+    flushEmissions();
     hoveredMatches.clear();
     activePointers.clear();
+    latestPointerSamples.clear();
     latestPointerId = undefined;
-    outputs = [];
-    pendingEmissions.length = 0;
     commands = [];
   }
 
@@ -1406,6 +1651,8 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
     },
     dispatchInput,
     resize,
+    invalidateLayout,
+    invalidateRender,
     tick,
     takeOutputs,
     getServices() {
@@ -1478,8 +1725,10 @@ function getSharedCommandSignature(command: DrawCommand): string | undefined {
         command.color,
         command.align ?? "",
         command.verticalAlign ?? "",
+        command.fontFamily ?? "",
         command.fontSize ?? 0,
         command.fontWeight ?? 0,
+        command.overflow ?? "clip",
         encodeOptionalRect(command.clipRect)
       ].join(":");
     case "line":
@@ -1546,6 +1795,39 @@ function encodeRect(rect: Rect): string {
 
 function encodeOptionalRect(rect: Rect | undefined): string {
   return rect ? encodeRect(rect) : "";
+}
+
+function surfaceMetricsEqual(left: SurfaceMetrics, right: SurfaceMetrics): boolean {
+  return (
+    left.width === right.width &&
+    left.height === right.height &&
+    left.pixelDensity === right.pixelDensity &&
+    left.orientation === right.orientation &&
+    left.safeArea.top === right.safeArea.top &&
+    left.safeArea.right === right.safeArea.right &&
+    left.safeArea.bottom === right.safeArea.bottom &&
+    left.safeArea.left === right.safeArea.left
+  );
+}
+
+function intersectEffectiveClip(
+  inheritedClip: EffectiveClip,
+  localClip: Rect | undefined
+): EffectiveClip {
+  if (inheritedClip === null) {
+    return null;
+  }
+  if (localClip && (localClip.width <= 0 || localClip.height <= 0)) {
+    return null;
+  }
+  if (!inheritedClip) {
+    return localClip ? copyRect(localClip) : undefined;
+  }
+  if (!localClip) {
+    return copyRect(inheritedClip);
+  }
+
+  return intersectRect(inheritedClip, localClip) ?? null;
 }
 
 function withClip<TCommand extends DrawCommand>(

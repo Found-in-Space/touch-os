@@ -243,7 +243,7 @@ App render state is resolved with `getAppState(window)` first, then by `appState
 
 The launcher and task switcher render above app windows by default. Set `utilityWindows: "back"` for the older behind-app behavior, or `utilityWindows: "none"` to suppress built-in utility windows even if `launcher` or `taskSwitcher` are enabled.
 
-Same-runtime id scoping covers built-in components and the standard `child`/`children`, `header`, `footer`, and dock-slot structural props. Use child-runtime mode when hosting arbitrary app trees or custom components that store child nodes under non-standard prop names.
+Same-runtime id scoping is recursive across nested app shells and covers built-in components plus the standard `child`/`children`, `windows`, `header`, `footer`, and dock-slot structural props. Use child-runtime mode when hosting arbitrary app trees or custom components that store child nodes under non-standard prop names.
 
 For OS-style isolation, switch to child-runtime mode:
 
@@ -654,11 +654,11 @@ const coordinator = createPanelCoordinator({ panels });
 
 for (const sample of pointerSamples) {
   const routing = coordinator.route(sample, frame);
-  updatePointerVisual(sample.pointerId, routing.ownerKey);
+  updatePointerVisual(sample.pointerId, routing.panelKey ?? routing.ownerKey);
 }
 ```
 
-Panels are processed in array order. If a panel misses without blocking, lower-priority panels get the same sample in the same routing step. Once a panel claims a pointer, the coordinator keeps routing that pointer to the owner until an `up` or `cancel` phase is observed.
+Panels are processed in array order. If a panel misses without blocking, lower-priority panels get the same sample in the same routing step. Hover, move, and scroll can select `panelKey` for one step without retaining ownership. Once a panel claims a `down`, the coordinator keeps routing that pointer to `ownerKey` until an `up` or `cancel` phase is observed.
 
 ## Use The Three.js Host Package
 
@@ -686,7 +686,11 @@ const host = createScenePanelHost({
 });
 
 host.attach();
-host.update({ scene, camera });
+host.update({
+  timestamp: performance.now(),
+  scene,
+  camera
+});
 ```
 
 For more advanced Three.js integrations, the host package also includes:
@@ -716,6 +720,168 @@ const coordinator = createPanelCoordinator({
 ```
 
 See [`examples/three-living-room`](../examples/three-living-room) for a fuller end-to-end example.
+
+## Invalidate A Runtime From Mutable Services
+
+The built-in mutable theme, surface, navigation, scroll, focus, and bitmap services notify every runtime that subscribes to them. This works for both runtime-created services and services supplied through `RuntimeOptions.services`. Geometry-affecting theme changes invalidate layout; paint-only changes invalidate rendering; effective no-op updates do neither.
+
+Custom mutable services can implement `RuntimeInvalidationSource.subscribeInvalidation(...)`. When that is not practical, retain the runtime and request work explicitly:
+
+```ts
+const runtime = createRuntime({ root, services: { theme } });
+
+customStore.subscribe((change) => {
+  if (change.affectsGeometry) {
+    runtime.invalidateLayout();
+  } else {
+    runtime.invalidateRender();
+  }
+});
+```
+
+The runtime unsubscribes from observable services when disposed. Repeating `resize(...)`, `setRoot(...)`, or a built-in service update with the same effective value is a no-op.
+
+## Own Frame Timing And Pointer Lifecycles
+
+`HostFrame.timestamp` and `ThreePanelHostFrame.timestamp` are monotonic milliseconds. A Three host or driver advances its runtime exactly once during each `update(frame)` before rendering. Equal timestamps are accepted and do not repeat time-based actions. A directly used runtime has no host-owned clock, so call `runtime.tick(timestamp)` yourself.
+
+`ThreePointerSource.sample(frame)` is a continuous snapshot of every pointer currently owned by that source. If a previously reported id is absent on the next sample, the driver immediately synthesizes cancellation using its last metadata and the current frame timestamp. Tracking loss, hidden or disabled panels, explicit clearing, detachment, and disposal use the same cancellation path.
+
+Use `frame.events` for edge-oriented event queues. Do not represent an unchanged held pointer by omitting it from a `ThreePointerSource` sample.
+
+Three host and driver lifecycle is split deliberately:
+
+- `detach()` cancels interaction and removes scene attachment but preserves resources for a later `attach()`;
+- `dispose()` is final and idempotent, cancels interaction, removes scene objects, and releases owned resources;
+- `ThreePanelSession.hide()` disables that coordinated panel until `session.enabled` is set to `true` again;
+- caller-supplied presenters are borrowed unless `ownsPointerPresenter: true` is set;
+- session lifecycle methods flush cancellation outputs through `outputHandler`;
+- after raw driver lifecycle operations, call `runtime.takeOutputs()` so cancellation outputs such as a hold-stop action are delivered.
+
+## Configure Three Surface Quality
+
+When `ThreePanelHostOptions.surface` is omitted, the host captures the runtime's current metrics at creation. Effective precedence is per-frame `surfaceMetrics`, then the explicit host `surface`, then those captured runtime metrics. Frame overrides are not sticky.
+
+Logical metric changes update renderer transforms and published source dimensions even if the backing canvas dimensions are unchanged. Canvas textures default to sRGB, are not tone-mapped, and transparent UI does not write depth. These policies remain overrideable:
+
+```ts
+const host = createScenePanelHost({
+  runtime,
+  parent: scene,
+  transparent: true,
+  depthWrite: false,
+  toneMapped: false,
+  textureQuality: {
+    anisotropy: renderer.capabilities.getMaxAnisotropy()
+  }
+});
+```
+
+Texture-quality policy is persistent and is reapplied when a resize replaces the `CanvasTexture`. Composite surfaces use the same UI material defaults. Their panel geometry and UV coordinates are cropped to the effective command clip, including nested runtime transforms; fully clipped composites are omitted and stale presenters are disposed.
+
+## Migrate From 0.2 To 0.3
+
+### Supply A Host Timestamp
+
+Before:
+
+```ts
+host.update({ scene, camera });
+```
+
+After:
+
+```ts
+host.update({ timestamp: performance.now(), scene, camera });
+```
+
+The timestamp is monotonic milliseconds. Hosts now own the runtime clock during `update`; remove an extra `runtime.tick(...)` from the same integration loop.
+
+### Use `panelKey` For This Routing Step
+
+In 0.2, `ownerKey` ambiguously named either the panel that handled one hover/scroll sample or a retained press owner. In 0.3, only a successfully claimed `down` creates retained ownership.
+
+Before:
+
+```ts
+const result = coordinator.route(sample, frame);
+updatePointerVisual(sample.pointerId, result.ownerKey);
+```
+
+After:
+
+```ts
+const result = coordinator.route(sample, frame);
+updatePointerVisual(sample.pointerId, result.panelKey ?? result.ownerKey);
+```
+
+`panelKey` is the panel selected for the current routing step. `ownerKey` is the retained pressed-pointer owner after that step and becomes `undefined` on release or cancellation.
+
+### Consume App Events By Default
+
+In 0.2, same-runtime app controls could leak a top-level raw output while also producing an app event. In 0.3, both host modes expose one scoped `app-event` by default.
+
+Before:
+
+```ts
+for (const output of runtime.takeOutputs()) {
+  if (output.type === "action") handleAppAction(output);
+}
+```
+
+After:
+
+```ts
+for (const output of runtime.takeOutputs()) {
+  if (output.type === "app-event") handleAppEvent(output.event);
+}
+```
+
+Set `forwardAppOutputs: true` only for transparent integrations that also need scoped raw component outputs. With forwarding enabled, the app event and raw output describe related activity; output routers must not execute both as the same application intent.
+
+### Detach For Reuse, Dispose For Final Cleanup
+
+Before:
+
+```ts
+driver.detach(); // treated as final cleanup by many integrations
+```
+
+After:
+
+```ts
+driver.detach();
+driver.attach(); // supported
+
+driver.dispose(); // final and idempotent
+```
+
+Calls to `attach`, `update`, or `render` after final disposal now fail instead of silently using released resources.
+
+### Treat Pointer Sources As Continuous
+
+Before, some integrations emitted only pointer edges from `ThreePointerSource.sample()`. In 0.3, report every active pointer every frame:
+
+```ts
+const source = createXrRayPointerSource(() => {
+  return controllerTracked ? currentRaySample : undefined;
+});
+```
+
+Returning `undefined` after a prior sample means tracking was lost and causes immediate cancellation. Put discrete edge events in `frame.events` instead.
+
+### Re-enable A Hidden Coordinated Session
+
+`ThreePanelSession.hide()` now makes the session unavailable to its panel coordinator as well as hiding its mesh and cancelling input. Re-enable it explicitly before its next update:
+
+```ts
+session.hide();
+
+session.enabled = true;
+session.update(nextFrame);
+```
+
+This prevents a coordinator from retaining or routing to a panel after lifecycle cleanup.
 
 ## Roadmap Links
 

@@ -47,6 +47,50 @@ const customStatusRegistration: SchemaKindRegistration<CustomStatusItem> = {
 };
 
 describe("schema adapter", () => {
+  it("renders minimal built-ins when every optional property is omitted", () => {
+    const adapter = createSchemaAdapter("minimal-schema", {
+      version: 1,
+      pages: [
+        {
+          id: "main",
+          items: [
+            { kind: "button", id: "button", label: "Run", actionId: "run" },
+            {
+              kind: "slider",
+              id: "slider",
+              label: "Level",
+              field: "level",
+              value: 1,
+              min: 0,
+              max: 2
+            },
+            {
+              kind: "choice-group",
+              id: "single",
+              field: "single",
+              selectionMode: "single",
+              value: "a",
+              options: [{ value: "a", label: "A" }]
+            },
+            {
+              kind: "choice-group",
+              id: "multiple",
+              field: "multiple",
+              selectionMode: "multiple",
+              options: [{ value: "a", label: "A" }]
+            }
+          ]
+        }
+      ]
+    });
+    const runtime = createRuntime({
+      root: adapter.root,
+      surface: { width: 320, height: 320 }
+    });
+
+    expect(runtime.render().commands.length).toBeGreaterThan(0);
+  });
+
   it("renders schema-driven built-ins and preserves controller updates", () => {
     const adapter = createSchemaAdapter("schema-shell", {
       version: 1,

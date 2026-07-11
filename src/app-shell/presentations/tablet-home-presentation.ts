@@ -13,7 +13,6 @@ import {
   type Rect
 } from "../../core/geometry.js";
 import type { TouchAppManifest } from "../../apps/manifest.js";
-import type { AppShellAction } from "../app-shell-events.js";
 import type {
   AppShellPresentation,
   AppShellPresentationContext

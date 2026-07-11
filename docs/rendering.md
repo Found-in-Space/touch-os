@@ -18,7 +18,7 @@ The Three host canvas renderer and child-runtime snapshot handles both delegate 
 
 - `rect` honors `radius`; it uses `roundRect` when available and a manual arc path when `roundRect` is unavailable.
 - `clipRect` is applied before every command type.
-- `text` uses shared `fontWeight`, `fontSize`, `align`, `verticalAlign`, color, and max-width behavior.
+- `text` uses shared `fontFamily`, `fontWeight`, `fontSize`, `align`, `verticalAlign`, and color behavior. Text is clipped to its command rectangle by default and is never horizontally scaled. Set `overflow: "ellipsis"` to truncate using measured text width and a trailing ellipsis.
 - `bitmap` uses shared `fit`, `opacity`, and `sampling`; `globalAlpha` and `imageSmoothingEnabled` are restored after drawing.
 - `surface` with `compositionMode: "copy"` draws through the shared renderer when the handle is a touch-os render snapshot.
 - `surface` with `compositionMode: "composite"` is reserved for host composition and is not rasterized into the shared canvas.
@@ -51,6 +51,10 @@ Use `compositionMode: "composite"` for live or high-detail content that should n
 - nested child runtimes that contain their own GPU-backed surfaces
 
 In the Three.js host, a composite `three-texture` source is currently presented as a panel-local mesh positioned over the shared panel mesh. This avoids copying the source into the panel canvas, preserves independent texture filtering, and lets nested composite surfaces bubble through child-runtime snapshots. It is still part of the normal Three/WebXR scene render.
+
+Composite placement uses the effective inherited and command clip. The presenter crops both panel-local geometry and texture UVs to the visible rectangle, including mirroring and nested-runtime coordinate transforms. A fully clipped surface has no placement, and driver-managed presenters that disappear from the active command set are disposed rather than retained as an unbounded hidden cache.
+
+The main canvas panel and composite materials use UI-oriented defaults: sRGB textures, `toneMapped: false`, and no depth writes for transparent material. Host options can override these choices. `textureQuality.anisotropy` is persistent policy and is reapplied when a logical resize requires a replacement `CanvasTexture`.
 
 Native or XR compositor layers are a stronger host optimization, not a separate app-facing surface type. A host may choose to present a composite source through a platform layer such as a WebXR quad/media layer when the platform supports it, while retaining a scene mesh as the universal fallback and interaction proxy. This can improve video or dense text quality because the compositor layer is not sampled through the same scene projection pass. It may not match normal scene depth, clipping, or ordering exactly, so hosts should apply it only where those tradeoffs are acceptable.
 

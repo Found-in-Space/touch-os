@@ -17,7 +17,6 @@ import {
   type Insets,
   type Rect
 } from "../../core/geometry.js";
-import type { TouchAppManifest } from "../../apps/manifest.js";
 import {
   mapTouchWindowModeToWindowMode,
   type WindowManagerUtilityWindowPolicy

@@ -7,7 +7,6 @@ import {
   createWindowLayer,
   type DisplayComponent,
   type DrawCommand,
-  type Rect,
   type RuntimeOutput,
   type WindowStateChangeEvent
 } from "../src/index.js";

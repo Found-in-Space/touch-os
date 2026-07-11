@@ -1,18 +1,28 @@
 import * as THREE from "three";
-import type { RuntimeOutput } from "../core/actions.js";
 import type { DisplayRuntime } from "../core/runtime.js";
 import type { DrawCommand, RenderSnapshot, SurfaceDrawCommand } from "../core/draw.js";
-import {
-  DEFAULT_MODIFIERS,
-  type InputEvent,
-  type ModifierState,
-  type PointerType
-} from "../core/events.js";
+import type { ModifierState, PointerType } from "../core/events.js";
 import type { Rect } from "../core/geometry.js";
 import type { SurfaceMetrics } from "../services/contracts.js";
-import type { CoordinatedPanel } from "../coordination/index.js";
 import { drawRenderSnapshotToCanvasContext } from "../rendering/canvas-snapshot-renderer.js";
 import type { HostAdapter } from "./contracts.js";
+import {
+  createPanelInteractorInternal,
+  isSurfacePointInBounds,
+  toSurfaceHit
+} from "./three-panel-interactor.js";
+import {
+  createPanelDriver,
+  type ThreePanelDriverCompositeServices,
+  type ThreePanelHostInternal
+} from "./three-panel-driver.js";
+import { createThreeHostPointerLifecycle } from "./three-host-pointer-lifecycle.js";
+export { createThreePanelSession } from "./three-panel-session.js";
+export type {
+  ThreePanelSession,
+  ThreePanelSessionOptions,
+  ThreePanelSessionOutputHandler
+} from "./three-panel-session.js";
 
 export interface CanvasMeasureTextResult {
   width: number;
@@ -125,7 +135,7 @@ export interface PanelInteractionResult {
 export interface PanelInteractor {
   process(sample: ThreePointerSample, frame: ThreePanelHostFrame): PanelInteractionResult;
   getPointerState(pointerId: string): PointerPresentationState | undefined;
-  clear(pointerId?: string): void;
+  clear(pointerId?: string, timestamp?: number): void;
 }
 
 interface ThreePanelInputEventBase {
@@ -168,6 +178,8 @@ export interface ThreeHostPose {
 }
 
 export interface ThreePanelHostFrame {
+  /** Monotonic frame time in milliseconds. Equal timestamps are allowed. */
+  timestamp: number;
   scene?: THREE.Object3D;
   camera?: THREE.Camera;
   parent?: THREE.Object3D;
@@ -207,13 +219,18 @@ export interface ThreeStaticTransform {
 
 export interface ThreePanelHostOptions extends ThreeStaticTransform {
   runtime: DisplayRuntime;
+  /** Baseline metrics overridden by per-frame metrics; defaults to runtime metrics at creation. */
   surface?: Partial<SurfaceMetrics>;
   panelWidth?: number;
   panelHeight?: number;
   renderOnUpdate?: boolean;
   renderOrder?: number;
   depthTest?: boolean;
+  depthWrite?: boolean;
   transparent?: boolean;
+  toneMapped?: boolean;
+  /** Persistent texture settings reapplied when a resize replaces the canvas texture. */
+  textureQuality?: ThreeTextureQualityPolicy;
   parent?: ThreeParentResolver;
   pointerClaimPolicy?: PointerClaimPolicy;
   createCanvas?: (metrics: SurfaceMetrics) => CanvasLike;
@@ -233,6 +250,26 @@ export interface ThreePanelHost extends HostAdapter<ThreePanelHostFrame> {
   getHit(): ThreePanelHit | null;
   getSurfaceMetrics(): SurfaceMetrics;
   getCompositeSurfaces(): readonly SurfaceDrawCommand[];
+  clearPointer(pointerId?: string, timestamp?: number): void;
+  dispose(): void;
+}
+
+export interface ThreeTextureQualityPolicy {
+  /** Texture anisotropy retained across backing-canvas replacements. */
+  anisotropy?: number;
+  /** Canvas texture color space. Defaults to `THREE.SRGBColorSpace`. */
+  colorSpace?: THREE.ColorSpace;
+}
+
+export interface ThreeCompositeSurfaceUv {
+  /** U coordinate sampled at the left edge of the visible geometry. */
+  left: number;
+  /** U coordinate sampled at the right edge of the visible geometry. */
+  right: number;
+  /** V coordinate sampled at the top edge of the visible geometry. */
+  top: number;
+  /** V coordinate sampled at the bottom edge of the visible geometry. */
+  bottom: number;
 }
 
 export interface ThreeCompositeSurfacePlacement {
@@ -241,7 +278,11 @@ export interface ThreeCompositeSurfacePlacement {
   compositionMode: "composite";
   mirrorX: boolean;
   command: SurfaceDrawCommand;
+  /** Visible command rectangle after all panel-space clipping. */
+  visibleRect: Rect;
   panelRect: Rect;
+  /** Texture coordinates corresponding to the visible rectangle. */
+  uv: ThreeCompositeSurfaceUv;
   localCenter: Vector3Like;
   size: {
     width: number;
@@ -267,7 +308,9 @@ export interface ThreeTextureCompositePresenterOptions {
   zOffset?: number;
   renderOrderOffset?: number;
   depthTest?: boolean;
+  depthWrite?: boolean;
   transparent?: boolean;
+  toneMapped?: boolean;
 }
 
 export interface ThreeTextureCompositePresenter {
@@ -307,6 +350,7 @@ type ThreePointerSourceResolver = (
   | undefined;
 
 export interface ThreePointerSource {
+  /** Return the complete per-frame snapshot of pointer ids currently owned by this source. */
   sample(frame: ThreePanelHostFrame): readonly ThreePointerSample[];
   clear?(): void;
 }
@@ -315,6 +359,8 @@ export interface ThreePanelDriverOptions {
   pointerClaimPolicy?: PointerClaimPolicy;
   pointerSources?: readonly ThreePointerSource[];
   pointerPresenter?: PointerPresenter | readonly PointerPresenter[];
+  /** Dispose supplied pointer presenters with the driver. Presenters are borrowed by default. */
+  ownsPointerPresenter?: boolean;
 }
 
 export interface ScenePanelDriverOptions extends ThreePanelHostOptions, ThreePanelDriverOptions {}
@@ -327,67 +373,38 @@ export interface HudPanelDriverOptions extends HudHostOptions, ThreePanelDriverO
 export interface ThreePanelDriver extends HostAdapter<ThreePanelHostFrame> {
   readonly host: ThreePanelHost;
   readonly interactor: PanelInteractor;
+  processPointer(sample: ThreePointerSample, frame: ThreePanelHostFrame): PanelInteractionResult;
   render(): RenderSnapshot;
   getHit(): ThreePanelHit | null;
   getCompositeSurfaces(): readonly SurfaceDrawCommand[];
   getPointerState(pointerId: string): PointerPresentationState | undefined;
-  clearPointer(pointerId?: string): void;
-}
-
-export type ThreePanelSessionOutputHandler = (
-  output: RuntimeOutput,
-  session: ThreePanelSession
-) => void;
-
-export interface ThreePanelSessionOptions {
-  key: string;
-  runtime: DisplayRuntime;
-  driver: ThreePanelDriver;
-  enabled?: boolean;
-  outputHandler?: ThreePanelSessionOutputHandler;
-}
-
-export interface ThreePanelSession
-  extends CoordinatedPanel<ThreePointerSample, ThreePanelHostFrame> {
-  readonly runtime: DisplayRuntime;
-  readonly driver: ThreePanelDriver;
-  enabled: boolean;
-  attach(): void;
-  update(frame: ThreePanelHostFrame): void;
-  render(): RenderSnapshot;
-  hide(): void;
+  clearPointer(pointerId?: string, timestamp?: number): void;
   dispose(): void;
-  flushOutputs(): void;
-  getPointerState(pointerId: string): PointerPresentationState | undefined;
 }
 
 export type ThreePanelMesh = THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
 
-interface InteractorPointerState extends PointerPresentationState {
-  captured: boolean;
-  pressed: boolean;
-  dispatched: boolean;
-  pointerType: PointerType;
-  pressure: number | undefined;
-  modifiers: ModifierState;
-  timestamp: number;
+export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanelHost {
+  return createScenePanelHostInternal(options);
 }
 
-const CONTACT_PLANE_TOLERANCE_RATIO = 0.02;
-const CONTACT_PLANE_TOLERANCE_MIN = 0.0025;
-const CONTACT_PLANE_TOLERANCE_MAX = 0.01;
-const CONTACT_NORMAL_ALIGNMENT_MIN = 0.25;
-
-export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanelHost {
+function createScenePanelHostInternal(options: ThreePanelHostOptions): ThreePanelHostInternal {
   const runtime = options.runtime;
-  let surfaceMetrics = resolveSurfaceMetrics(options.surface);
+  const configuredSurfaceMetrics = resolveSurfaceMetrics(
+    runtime.getServices().surface.getMetrics(),
+    options.surface
+  );
+  let surfaceMetrics = copySurfaceMetrics(configuredSurfaceMetrics);
   let canvas = (options.createCanvas ?? createDefaultCanvas)(surfaceMetrics);
   let renderer = createCanvasSurfaceRenderer(canvas, surfaceMetrics);
-  let texture = createPanelCanvasTexture(canvas);
+  let texture = createPanelCanvasTexture(canvas, options.textureQuality);
+  const transparent = options.transparent ?? true;
   const material = new THREE.MeshBasicMaterial({
     map: texture,
-    transparent: options.transparent ?? true,
+    transparent,
     depthTest: options.depthTest ?? true,
+    depthWrite: options.depthWrite ?? !transparent,
+    toneMapped: options.toneMapped ?? false,
     side: THREE.DoubleSide
   });
   const mesh: ThreePanelMesh = new THREE.Mesh(
@@ -402,27 +419,40 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
   let lastRenderSnapshot: RenderSnapshot | null = null;
   let lastCompositeSurfaceRevision = -1;
   let lastRenderedSharedSurfaceRevision = -1;
-  let latestHit: ThreePanelHit | null = null;
   let compositeSurfaces: SurfaceDrawCommand[] = [];
-  const capturedPointers = new Set<string>();
+  let attached = false;
+  let disposed = false;
+  let latestFrameTimestamp = 0;
+  const pointerLifecycle = createThreeHostPointerLifecycle({
+    runtime,
+    resolveHit: resolveSurfaceHit,
+    ...(options.pointerClaimPolicy === undefined
+      ? {}
+      : { pointerClaimPolicy: options.pointerClaimPolicy })
+  });
 
   function attach(): void {
-    runtime.resize(surfaceMetrics);
+    assertNotDisposed("attach");
+    if (attached) {
+      return;
+    }
+    attached = true;
+    resizeRuntimeIfChanged(surfaceMetrics);
   }
 
-  function update(frame: ThreePanelHostFrame): void {
-    surfaceMetrics = resolveSurfaceMetrics(options.surface, frame.surfaceMetrics);
-    runtime.resize(surfaceMetrics);
-    const backingSize = getSurfaceBackingSize(surfaceMetrics);
-    if (canvas.width !== backingSize.width || canvas.height !== backingSize.height) {
-      canvas = (options.createCanvas ?? createDefaultCanvas)(surfaceMetrics);
-      renderer = createCanvasSurfaceRenderer(canvas, surfaceMetrics);
-      texture.dispose();
-      texture = createPanelCanvasTexture(canvas);
-      material.map = texture;
-      material.needsUpdate = true;
-      lastRenderedSharedSurfaceRevision = -1;
+  function updateFrame(
+    frame: ThreePanelHostFrame,
+    advanceRuntime: boolean,
+    renderAfterUpdate: boolean
+  ): void {
+    assertNotDisposed("update");
+    if (!attached) {
+      throw new Error("Cannot update a detached Three panel host. Call attach() first.");
     }
+    validateFrameTimestamp(frame.timestamp, latestFrameTimestamp);
+    latestFrameTimestamp = frame.timestamp;
+
+    updateSurfaceMetrics(resolveSurfaceMetrics(configuredSurfaceMetrics, frame.surfaceMetrics));
 
     ensureParent(frame);
     mesh.visible = applyPlacement(frame);
@@ -430,28 +460,49 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
 
     if (mesh.visible) {
       for (const event of frame.events ?? []) {
-        dispatchHostEvent(frame, event);
+        pointerLifecycle.process(frame, event);
       }
     } else {
-      latestHit = null;
+      pointerLifecycle.clear(undefined, frame.timestamp);
     }
 
-    if (options.renderOnUpdate ?? true) {
+    if (advanceRuntime) {
+      runtime.tick(frame.timestamp);
+    }
+    if (renderAfterUpdate) {
       render();
     }
   }
 
   function detach(): void {
+    if (disposed || !attached) {
+      return;
+    }
+    pointerLifecycle.clear(undefined, latestFrameTimestamp);
     if (currentParent) {
       currentParent.remove(mesh);
       currentParent = undefined;
     }
+    mesh.visible = false;
+    attached = false;
+  }
+
+  function dispose(): void {
+    if (disposed) {
+      return;
+    }
+    detach();
+    pointerLifecycle.clear(undefined, latestFrameTimestamp);
     mesh.geometry.dispose();
     material.dispose();
     texture.dispose();
+    compositeSurfaces = [];
+    lastRenderSnapshot = null;
+    disposed = true;
   }
 
   function render(): RenderSnapshot {
+    assertNotDisposed("render");
     if (
       !runtime.isRenderDirty() &&
       lastRenderSnapshot &&
@@ -474,7 +525,34 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
   }
 
   function getHit(): ThreePanelHit | null {
-    return latestHit ? { ...latestHit } : null;
+    return pointerLifecycle.getHit();
+  }
+
+  function updateSurfaceMetrics(nextMetrics: SurfaceMetrics): void {
+    if (equalSurfaceMetrics(surfaceMetrics, nextMetrics)) {
+      return;
+    }
+
+    surfaceMetrics = copySurfaceMetrics(nextMetrics);
+    resizeRuntimeIfChanged(surfaceMetrics);
+    const backingSize = getSurfaceBackingSize(surfaceMetrics);
+    if (canvas.width !== backingSize.width || canvas.height !== backingSize.height) {
+      canvas = (options.createCanvas ?? createDefaultCanvas)(surfaceMetrics);
+      renderer = createCanvasSurfaceRenderer(canvas, surfaceMetrics);
+      texture.dispose();
+      texture = createPanelCanvasTexture(canvas, options.textureQuality);
+      material.map = texture;
+      material.needsUpdate = true;
+    } else {
+      renderer = createCanvasSurfaceRenderer(canvas, surfaceMetrics);
+    }
+    lastRenderedSharedSurfaceRevision = -1;
+  }
+
+  function resizeRuntimeIfChanged(metrics: SurfaceMetrics): void {
+    if (!equalSurfaceMetrics(runtime.getServices().surface.getMetrics(), metrics)) {
+      runtime.resize(metrics);
+    }
   }
 
   function ensureParent(frame: ThreePanelHostFrame): void {
@@ -513,76 +591,10 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
     mesh.updateMatrixWorld(true);
   }
 
-  function dispatchHostEvent(frame: ThreePanelHostFrame, event: ThreePanelHostInputEvent): void {
-    const hit = resolveSurfaceHit(frame, event);
-    const pointerId = event.pointerId ?? "default";
-
-    if (!hit) {
-      dispatchMissedEvent(event, pointerId);
-      if (!capturedPointers.has(pointerId)) {
-        latestHit = null;
-      }
-      return;
+  function assertNotDisposed(operation: string): void {
+    if (disposed) {
+      throw new Error(`Cannot ${operation} a disposed Three panel host.`);
     }
-
-    const result = runtime.dispatchInput(createRuntimeInputEvent(event, pointerId, hit.surfaceX, hit.surfaceY));
-    const hasTargetHit = hasResolvedRuntimeTarget(result.componentId, result.targetId);
-    const hasCapturedPress = updateCapturedPointerState(
-      capturedPointers,
-      pointerId,
-      event.type,
-      hasTargetHit
-    );
-    const blocked = resolvePointerBlocking(
-      options.pointerClaimPolicy ?? "block-on-hit",
-      hasTargetHit,
-      hasCapturedPress
-    );
-
-    latestHit = {
-      blocked,
-      length: hit.distance,
-      surfaceX: hit.surfaceX,
-      surfaceY: hit.surfaceY,
-      componentId: hasTargetHit ? result.componentId : latestHit?.componentId,
-      targetId: hasTargetHit ? result.targetId : latestHit?.targetId,
-      pointerId,
-      source: event.source
-    };
-
-    if (!hasTargetHit && !hasCapturedPress) {
-      latestHit = null;
-    }
-  }
-
-  function dispatchMissedEvent(event: ThreePanelHostInputEvent, pointerId: string): void {
-    const hasCapturedPress = updateCapturedPointerState(capturedPointers, pointerId, event.type, false);
-    if ((!latestHit || latestHit.pointerId !== pointerId) && !hasCapturedPress) {
-      return;
-    }
-
-    if (event.type === "pointer-move") {
-      runtime.dispatchInput(
-        createRuntimeInputEvent(
-          event,
-          pointerId,
-          hasCapturedPress && latestHit?.pointerId === pointerId ? latestHit.surfaceX : -1,
-          hasCapturedPress && latestHit?.pointerId === pointerId ? latestHit.surfaceY : -1
-        )
-      );
-      if (hasCapturedPress && latestHit?.pointerId === pointerId) {
-        latestHit = {
-          ...latestHit,
-          blocked: resolvePointerBlocking(options.pointerClaimPolicy ?? "block-on-hit", false, true)
-        };
-      } else {
-        latestHit = null;
-      }
-      return;
-    }
-
-    runtime.dispatchInput(createCancelInputEvent(event, pointerId));
-    latestHit = null;
   }
 
   function resolveSurfaceHit(
@@ -632,13 +644,20 @@ export function createScenePanelHost(options: ThreePanelHostOptions): ThreePanel
     },
     attach,
     update(frame) {
-      update(frame);
+      updateFrame(frame, true, options.renderOnUpdate ?? true);
+    },
+    updateForDriver(frame) {
+      updateFrame(frame, false, false);
     },
     detach,
+    dispose,
     render,
     getHit,
     getCompositeSurfaces() {
       return compositeSurfaces.map((command) => ({ ...command }));
+    },
+    clearPointer(pointerId, timestamp = latestFrameTimestamp) {
+      pointerLifecycle.clear(pointerId, timestamp);
     }
   };
 }
@@ -657,12 +676,17 @@ export function resolveCompositeSurfacePlacements(
   const halfWidth = panelWidth / 2;
   const halfHeight = panelHeight / 2;
 
-  return host.getCompositeSurfaces().map((command) => {
+  const placements: ThreeCompositeSurfacePlacement[] = [];
+  for (const command of host.getCompositeSurfaces()) {
+    const visibleRect = intersectVisibleRect(command.rect, command.clipRect);
+    if (!visibleRect || command.rect.width <= 0 || command.rect.height <= 0) {
+      continue;
+    }
     const panelRect: Rect = {
-      x: (command.rect.x / metrics.width) * panelWidth,
-      y: (command.rect.y / metrics.height) * panelHeight,
-      width: (command.rect.width / metrics.width) * panelWidth,
-      height: (command.rect.height / metrics.height) * panelHeight
+      x: (visibleRect.x / metrics.width) * panelWidth,
+      y: (visibleRect.y / metrics.height) * panelHeight,
+      width: (visibleRect.width / metrics.width) * panelWidth,
+      height: (visibleRect.height / metrics.height) * panelHeight
     };
     const localCenter = {
       x: -halfWidth + panelRect.x + panelRect.width / 2,
@@ -670,20 +694,38 @@ export function resolveCompositeSurfacePlacements(
       z: 0
     };
 
-    return {
+    const leftRatio = clampUnit((visibleRect.x - command.rect.x) / command.rect.width);
+    const rightRatio = clampUnit(
+      (visibleRect.x + visibleRect.width - command.rect.x) / command.rect.width
+    );
+    const topRatio = clampUnit((visibleRect.y - command.rect.y) / command.rect.height);
+    const bottomRatio = clampUnit(
+      (visibleRect.y + visibleRect.height - command.rect.y) / command.rect.height
+    );
+    const mirrorX = command.mirrorX ?? false;
+
+    placements.push({
       componentId: command.componentId,
       sourceId: command.sourceId,
       compositionMode: "composite" as const,
-      mirrorX: command.mirrorX ?? false,
+      mirrorX,
       command: { ...command },
+      visibleRect,
       panelRect,
+      uv: {
+        left: mirrorX ? 1 - leftRatio : leftRatio,
+        right: mirrorX ? 1 - rightRatio : rightRatio,
+        top: 1 - topRatio,
+        bottom: 1 - bottomRatio
+      },
       localCenter,
       size: {
         width: panelRect.width,
         height: panelRect.height
       }
-    };
-  });
+    });
+  }
+  return placements;
 }
 
 export function createThreeTextureCompositePresenter(
@@ -691,12 +733,13 @@ export function createThreeTextureCompositePresenter(
   options: ThreeTextureCompositePresenterOptions = {}
 ): ThreeTextureCompositePresenter {
   const geometry = new THREE.PlaneGeometry(1, 1);
+  const transparent = options.transparent ?? true;
   const material = new THREE.MeshBasicMaterial({
-    transparent: options.transparent ?? true,
+    transparent,
     depthTest: options.depthTest ?? host.mesh.material.depthTest,
-    depthWrite: false,
+    depthWrite: options.depthWrite ?? (transparent ? false : host.mesh.material.depthWrite),
     side: THREE.DoubleSide,
-    toneMapped: false
+    toneMapped: options.toneMapped ?? host.mesh.material.toneMapped
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = "touch-os-composite-three-texture";
@@ -733,19 +776,33 @@ export function createThreeTextureCompositePresenter(
         options.zOffset ?? 0.001
       );
       mesh.scale.set(
-        placement.size.width * (placement.mirrorX ? -1 : 1),
+        placement.size.width,
         placement.size.height,
         1
       );
+      updateCompositeGeometryUv(geometry, placement.uv);
       mesh.renderOrder = nextHost.mesh.renderOrder + (options.renderOrderOffset ?? 1);
       mesh.visible = nextHost.mesh.visible;
     },
     dispose() {
       mesh.parent?.remove(mesh);
+      material.map = null;
       geometry.dispose();
       material.dispose();
     }
   };
+}
+
+function updateCompositeGeometryUv(
+  geometry: THREE.PlaneGeometry,
+  uv: ThreeCompositeSurfaceUv
+): void {
+  const attribute = geometry.getAttribute("uv");
+  attribute.setXY(0, uv.left, uv.top);
+  attribute.setXY(1, uv.right, uv.top);
+  attribute.setXY(2, uv.left, uv.bottom);
+  attribute.setXY(3, uv.right, uv.bottom);
+  attribute.needsUpdate = true;
 }
 
 export function isThreeTextureSurfaceHandle(handle: unknown): handle is ThreeTextureSurfaceHandle {
@@ -768,6 +825,7 @@ function collectCompositeSurfaceCommands(
   commands: readonly DrawCommand[],
   viewport?: {
     rect: Rect;
+    clipRect?: Rect;
     sourceWidth: number;
     sourceHeight: number;
     mirrorX: boolean;
@@ -793,8 +851,14 @@ function collectCompositeSurfaceCommands(
       continue;
     }
 
+    const visibleViewport = intersectVisibleRect(transformed.rect, transformed.clipRect);
+    if (!visibleViewport) {
+      continue;
+    }
+
     collected.push(...collectCompositeSurfaceCommands(handle.snapshot.commands, {
       rect: transformed.rect,
+      clipRect: visibleViewport,
       sourceWidth: handle.width,
       sourceHeight: handle.height,
       mirrorX: transformed.mirrorX ?? false,
@@ -809,6 +873,7 @@ function transformNestedSurfaceCommand(
   command: SurfaceDrawCommand,
   viewport: {
     rect: Rect;
+    clipRect?: Rect;
     sourceWidth: number;
     sourceHeight: number;
     mirrorX: boolean;
@@ -817,25 +882,76 @@ function transformNestedSurfaceCommand(
 ): SurfaceDrawCommand {
   const scaleX = viewport.sourceWidth > 0 ? viewport.rect.width / viewport.sourceWidth : 1;
   const scaleY = viewport.sourceHeight > 0 ? viewport.rect.height / viewport.sourceHeight : 1;
-  const width = command.rect.width * scaleX;
-  const height = command.rect.height * scaleY;
-  const x = viewport.mirrorX
-    ? viewport.rect.x + viewport.rect.width - (command.rect.x + command.rect.width) * scaleX
-    : viewport.rect.x + command.rect.x * scaleX;
-  const y = viewport.rect.y + command.rect.y * scaleY;
+  const rect = transformNestedRect(command.rect, viewport, scaleX, scaleY);
+  const localClip = command.clipRect
+    ? transformNestedRect(command.clipRect, viewport, scaleX, scaleY)
+    : undefined;
+  const clipRect = intersectClipRects(viewport.clipRect, localClip);
   const mirrorX = viewport.mirrorX ? !(command.mirrorX ?? false) : command.mirrorX;
 
   return {
     ...command,
     componentId: `${viewport.componentPrefix}:${command.componentId}`,
-    rect: {
-      x,
-      y,
-      width,
-      height
-    },
+    rect,
+    ...(clipRect === undefined ? {} : { clipRect }),
     ...(mirrorX === undefined ? {} : { mirrorX })
   };
+}
+
+function transformNestedRect(
+  rect: Rect,
+  viewport: {
+    rect: Rect;
+    mirrorX: boolean;
+  },
+  scaleX: number,
+  scaleY: number
+): Rect {
+  return {
+    x: viewport.mirrorX
+      ? viewport.rect.x + viewport.rect.width - (rect.x + rect.width) * scaleX
+      : viewport.rect.x + rect.x * scaleX,
+    y: viewport.rect.y + rect.y * scaleY,
+    width: rect.width * scaleX,
+    height: rect.height * scaleY
+  };
+}
+
+function intersectClipRects(a: Rect | undefined, b: Rect | undefined): Rect | undefined {
+  if (!a) {
+    return b ? { ...b } : undefined;
+  }
+  if (!b) {
+    return { ...a };
+  }
+
+  const x = Math.max(a.x, b.x);
+  const y = Math.max(a.y, b.y);
+  const right = Math.min(a.x + a.width, b.x + b.width);
+  const bottom = Math.min(a.y + a.height, b.y + b.height);
+  return {
+    x,
+    y,
+    width: Math.max(0, right - x),
+    height: Math.max(0, bottom - y)
+  };
+}
+
+function intersectVisibleRect(rect: Rect, clipRect: Rect | undefined): Rect | undefined {
+  if (rect.width <= 0 || rect.height <= 0) {
+    return undefined;
+  }
+  if (!clipRect) {
+    return { ...rect };
+  }
+  const intersection = intersectClipRects(rect, clipRect);
+  return intersection && intersection.width > 0 && intersection.height > 0
+    ? intersection
+    : undefined;
+}
+
+function clampUnit(value: number): number {
+  return Math.min(1, Math.max(0, value));
 }
 
 function getTouchRuntimeSurfaceSnapshotHandle(
@@ -880,6 +996,12 @@ function isRenderSnapshot(value: unknown): value is RenderSnapshot {
 export function createPoseAnchoredPanelHost(
   options: PoseAnchoredPanelHostOptions
 ): ThreePanelHost {
+  return createPoseAnchoredPanelHostInternal(options);
+}
+
+function createPoseAnchoredPanelHostInternal(
+  options: PoseAnchoredPanelHostOptions
+): ThreePanelHostInternal {
   return createAnchoredPanelHost({
     ...options,
     anchor(frame) {
@@ -897,6 +1019,10 @@ export function createPoseAnchoredPanelHost(
 }
 
 export function createHudHost(options: HudHostOptions): ThreePanelHost {
+  return createHudHostInternal(options);
+}
+
+function createHudHostInternal(options: HudHostOptions): ThreePanelHostInternal {
   const distance = options.distance ?? 0.6;
   const offset = options.offset ?? {};
 
@@ -916,12 +1042,12 @@ export function createHudHost(options: HudHostOptions): ThreePanelHost {
   });
 }
 
-function createAnchoredPanelHost(options: AnchoredPanelHostOptions): ThreePanelHost {
+function createAnchoredPanelHost(options: AnchoredPanelHostOptions): ThreePanelHostInternal {
   const sizing = options.sizing ?? "fixed";
   const anchorOffset = options.anchorOffset ?? { x: 0, y: 0, z: 0 };
   const viewportDistance = Math.abs(anchorOffset.z ?? 0);
 
-  return createScenePanelHost({
+  return createScenePanelHostInternal({
     ...options,
     ...(sizing === "viewport"
       ? {
@@ -975,174 +1101,11 @@ export function createPanelInteractor(options: {
   getSurfaceMetrics(): SurfaceMetrics;
   pointerClaimPolicy?: PointerClaimPolicy;
 }): PanelInteractor {
-  const raycaster = new THREE.Raycaster();
-  const states = new Map<string, InteractorPointerState>();
-
-  function resolveState(pointerId: string): InteractorPointerState {
-    const existing = states.get(pointerId);
-    if (existing) {
-      return existing;
-    }
-
-    const created: InteractorPointerState = {
-      pointerId,
-      claimed: false,
-      blocked: false,
-      hit: null,
-      active: false,
-      captured: false,
-      pressed: false,
-      dispatched: false,
-      pointerType: "unknown",
-      pressure: undefined,
-      modifiers: DEFAULT_MODIFIERS,
-      timestamp: 0
-    };
-    states.set(pointerId, created);
-    return created;
-  }
-
-  function cancelState(state: InteractorPointerState): void {
-    if (!state.dispatched) {
-      return;
-    }
-
-    options.runtime.dispatchInput({
-      type: "cancel",
-      timestamp: state.timestamp,
-      pointerId: state.pointerId,
-      pointerType: state.pointerType,
-      modifiers: state.modifiers,
-      surfaceX: state.hit?.surfaceX ?? -1,
-      surfaceY: state.hit?.surfaceY ?? -1,
-      ...(state.pressure === undefined ? {} : { pressure: state.pressure })
-    });
-  }
-
+  const interactor = createPanelInteractorInternal(options);
   return {
-    process(sample, frame) {
-      const state = resolveState(sample.pointerId);
-      state.pointerType = sample.pointerType;
-      state.pressure = sample.pressure;
-      state.modifiers = sample.modifiers ?? DEFAULT_MODIFIERS;
-      state.timestamp = sample.timestamp;
-      const metrics = options.getSurfaceMetrics();
-      const hit = resolvePointerSampleHit(frame, sample, options.mesh, metrics, raycaster);
-
-      let dispatched = false;
-      let hostEvent: ThreePanelHostInputEvent | undefined;
-      let currentHit: ThreePanelHit | null = null;
-      let hasTargetHit = false;
-
-      if (hit) {
-        hostEvent = createHostEventFromSample(sample, hit);
-        const dispatchResult = options.runtime.dispatchInput(
-          createRuntimeInputEvent(hostEvent, sample.pointerId, hit.surfaceX, hit.surfaceY)
-        );
-        state.dispatched = true;
-        dispatched = true;
-        hasTargetHit = hasResolvedRuntimeTarget(dispatchResult.componentId, dispatchResult.targetId);
-        if (hasTargetHit) {
-          currentHit = {
-            length: hit.distance,
-            surfaceX: hit.surfaceX,
-            surfaceY: hit.surfaceY,
-            componentId: dispatchResult.componentId,
-            targetId: dispatchResult.targetId,
-            pointerId: sample.pointerId,
-            source: sample.transport === "contact" ? "contact" : hostEvent.source,
-            blocked: false
-          };
-        }
-      } else if (state.dispatched) {
-        hostEvent =
-          sample.phase === "move" ? createMissMoveHostEvent(sample) : createCancelHostEvent(sample);
-        const surfaceX = state.captured && state.hit ? state.hit.surfaceX : -1;
-        const surfaceY = state.captured && state.hit ? state.hit.surfaceY : -1;
-        options.runtime.dispatchInput(
-          sample.phase === "move"
-            ? createRuntimeInputEvent(hostEvent, sample.pointerId, surfaceX, surfaceY)
-            : createCancelInputEvent(hostEvent, sample.pointerId)
-        );
-        dispatched = true;
-        if (sample.phase !== "move") {
-          state.dispatched = false;
-        }
-      }
-
-      state.active = sample.phase !== "up" && sample.phase !== "cancel";
-      if (sample.phase === "down") {
-        state.pressed = true;
-        state.captured = hasTargetHit;
-      }
-      const hasCapturedPress = state.captured;
-      if (sample.phase === "up" || sample.phase === "cancel") {
-        state.pressed = false;
-        state.captured = false;
-      }
-
-      const claimed = resolvePointerClaim(
-        options.pointerClaimPolicy ?? "block-on-hit",
-        hasTargetHit,
-        hasCapturedPress
-      );
-      const blocked = resolvePointerBlocking(
-        options.pointerClaimPolicy ?? "block-on-hit",
-        hasTargetHit,
-        hasCapturedPress
-      );
-
-      state.claimed = claimed;
-      state.blocked = blocked;
-      state.hit =
-        currentHit
-          ? { ...currentHit, blocked }
-          : hasCapturedPress && state.hit
-            ? { ...state.hit, blocked }
-            : null;
-
-      if (sample.phase === "up" || sample.phase === "cancel") {
-        states.delete(sample.pointerId);
-      } else if (!state.active && !state.pressed && !state.dispatched && !state.hit) {
-        states.delete(sample.pointerId);
-      } else {
-        states.set(sample.pointerId, state);
-      }
-
-      return {
-        hit: state.hit ? { ...state.hit } : null,
-        claimed,
-        blocked,
-        dispatched,
-        ...(hostEvent ? { hostEvent } : {})
-      };
-    },
-    getPointerState(pointerId) {
-      const state = states.get(pointerId);
-      return state
-        ? {
-            pointerId: state.pointerId,
-            claimed: state.claimed,
-            blocked: state.blocked,
-            hit: state.hit ? { ...state.hit } : null,
-            active: state.active
-          }
-        : undefined;
-    },
-    clear(pointerId) {
-      if (pointerId) {
-        const state = states.get(pointerId);
-        if (state) {
-          cancelState(state);
-        }
-        states.delete(pointerId);
-        return;
-      }
-      for (const state of states.values()) {
-        cancelState(state);
-      }
-      states.clear();
-    }
+    process: interactor.process,
+    getPointerState: interactor.getPointerState,
+    clear: interactor.clear
   };
 }
 
@@ -1165,129 +1128,111 @@ export function createDirectTouchPointerSource(
 }
 
 export function createScenePanelDriver(options: ScenePanelDriverOptions): ThreePanelDriver {
-  return createPanelDriver(
-    createScenePanelHost({
+  return createPanelDriver({
+    host: createScenePanelHostInternal({
       ...options,
       renderOnUpdate: false
     }),
-    options.runtime,
-    options.pointerClaimPolicy,
-    options.pointerSources,
-    options.pointerPresenter
-  );
+    runtime: options.runtime,
+    pointerClaimPolicy: options.pointerClaimPolicy,
+    pointerSources: options.pointerSources,
+    pointerPresenter: options.pointerPresenter,
+    ownsPointerPresenter: options.ownsPointerPresenter ?? false,
+    compositeServices: THREE_PANEL_DRIVER_COMPOSITE_SERVICES
+  });
 }
 
 /** Create a panel driver that follows an explicit pose supplied on each frame. */
 export function createPoseAnchoredPanelDriver(
   options: PoseAnchoredPanelDriverOptions
 ): ThreePanelDriver {
-  return createPanelDriver(
-    createPoseAnchoredPanelHost({
+  return createPanelDriver({
+    host: createPoseAnchoredPanelHostInternal({
       ...options,
       renderOnUpdate: false
     }),
-    options.runtime,
-    options.pointerClaimPolicy,
-    options.pointerSources,
-    options.pointerPresenter
-  );
+    runtime: options.runtime,
+    pointerClaimPolicy: options.pointerClaimPolicy,
+    pointerSources: options.pointerSources,
+    pointerPresenter: options.pointerPresenter,
+    ownsPointerPresenter: options.ownsPointerPresenter ?? false,
+    compositeServices: THREE_PANEL_DRIVER_COMPOSITE_SERVICES
+  });
 }
 
 export function createHudPanelDriver(options: HudPanelDriverOptions): ThreePanelDriver {
-  return createPanelDriver(
-    createHudHost({
+  return createPanelDriver({
+    host: createHudHostInternal({
       ...options,
       renderOnUpdate: false
     }),
-    options.runtime,
-    options.pointerClaimPolicy,
-    options.pointerSources,
-    options.pointerPresenter
-  );
-}
-
-export function createThreePanelSession(options: ThreePanelSessionOptions): ThreePanelSession {
-  const session: ThreePanelSession = {
-    key: options.key,
     runtime: options.runtime,
-    driver: options.driver,
-    enabled: options.enabled ?? true,
-    attach() {
-      options.driver.attach();
-    },
-    update(frame) {
-      if (!session.enabled) {
-        session.hide();
-        return;
-      }
-      options.driver.update(frame);
-      session.flushOutputs();
-    },
-    render() {
-      const snapshot = options.driver.render();
-      session.flushOutputs();
-      return snapshot;
-    },
-    hide() {
-      options.driver.clearPointer();
-      options.driver.host.mesh.visible = false;
-    },
-    dispose() {
-      options.driver.detach();
-    },
-    process(sample, frame) {
-      if (!session.enabled) {
-        options.driver.clearPointer(sample.pointerId);
-        return {
-          claimed: false,
-          blocked: false
-        };
-      }
-
-      const result = options.driver.interactor.process(sample, frame);
-      session.flushOutputs();
-      return {
-        claimed: result.claimed,
-        blocked: result.blocked
-      };
-    },
-    clearPointer(pointerId) {
-      options.driver.clearPointer(pointerId);
-    },
-    flushOutputs() {
-      if (!options.outputHandler) {
-        return;
-      }
-
-      for (const output of options.runtime.takeOutputs()) {
-        options.outputHandler(output, session);
-      }
-    },
-    getPointerState(pointerId) {
-      return options.driver.getPointerState(pointerId);
-    }
-  };
-
-  return session;
+    pointerClaimPolicy: options.pointerClaimPolicy,
+    pointerSources: options.pointerSources,
+    pointerPresenter: options.pointerPresenter,
+    ownsPointerPresenter: options.ownsPointerPresenter ?? false,
+    compositeServices: THREE_PANEL_DRIVER_COMPOSITE_SERVICES
+  });
 }
+
+const THREE_PANEL_DRIVER_COMPOSITE_SERVICES: ThreePanelDriverCompositeServices = {
+  resolvePlacements: resolveCompositeSurfacePlacements,
+  isTextureHandle: isThreeTextureSurfaceHandle,
+  createPresenter: createThreeTextureCompositePresenter
+};
 
 function resolveSurfaceMetrics(
-  initial: Partial<SurfaceMetrics> | undefined,
+  initial: Partial<SurfaceMetrics>,
   override?: Partial<SurfaceMetrics>
 ): SurfaceMetrics {
   const width = override?.width ?? initial?.width ?? 320;
   const height = override?.height ?? initial?.height ?? 240;
   const pixelDensity = override?.pixelDensity ?? initial?.pixelDensity ?? 1;
+  const dimensionsOverridden = override?.width !== undefined || override?.height !== undefined;
   return {
     width,
     height,
     pixelDensity,
     orientation:
       override?.orientation ??
-      initial?.orientation ??
-      (width === height ? "square" : width > height ? "landscape" : "portrait"),
-    safeArea: override?.safeArea ?? initial?.safeArea ?? { top: 0, right: 0, bottom: 0, left: 0 }
+      (!dimensionsOverridden && initial.orientation
+        ? initial.orientation
+        : deriveOrientation(width, height)),
+    safeArea: {
+      ...(override?.safeArea ?? initial.safeArea ?? { top: 0, right: 0, bottom: 0, left: 0 })
+    }
   };
+}
+
+function deriveOrientation(width: number, height: number): SurfaceMetrics["orientation"] {
+  return width === height ? "square" : width > height ? "landscape" : "portrait";
+}
+
+function copySurfaceMetrics(metrics: SurfaceMetrics): SurfaceMetrics {
+  return {
+    ...metrics,
+    safeArea: { ...metrics.safeArea }
+  };
+}
+
+function equalSurfaceMetrics(a: SurfaceMetrics, b: SurfaceMetrics): boolean {
+  return a.width === b.width &&
+    a.height === b.height &&
+    a.pixelDensity === b.pixelDensity &&
+    a.orientation === b.orientation &&
+    a.safeArea.top === b.safeArea.top &&
+    a.safeArea.right === b.safeArea.right &&
+    a.safeArea.bottom === b.safeArea.bottom &&
+    a.safeArea.left === b.safeArea.left;
+}
+
+function validateFrameTimestamp(timestamp: number, previousTimestamp: number): void {
+  if (!Number.isFinite(timestamp)) {
+    throw new TypeError("Three panel frame timestamps must be finite monotonic milliseconds.");
+  }
+  if (timestamp < previousTimestamp) {
+    throw new RangeError("Three panel frame timestamps must be monotonic.");
+  }
 }
 
 function createDefaultCanvas(metrics: SurfaceMetrics): CanvasLike {
@@ -1312,9 +1257,13 @@ function createDefaultCanvas(metrics: SurfaceMetrics): CanvasLike {
   throw new Error("No canvas implementation is available. Provide createCanvas in host options.");
 }
 
-function createPanelCanvasTexture(canvas: CanvasLike): THREE.CanvasTexture {
+function createPanelCanvasTexture(
+  canvas: CanvasLike,
+  quality: ThreeTextureQualityPolicy | undefined
+): THREE.CanvasTexture {
   const texture = new THREE.CanvasTexture(canvas as never);
-  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.colorSpace = quality?.colorSpace ?? THREE.SRGBColorSpace;
+  texture.anisotropy = Math.max(1, quality?.anisotropy ?? 1);
   return texture;
 }
 
@@ -1325,8 +1274,12 @@ function createCanvasSurfaceRenderer(canvas: CanvasLike, metrics: SurfaceMetrics
   }
 
   const { width, height } = getSurfaceBackingSize(metrics);
-  canvas.width = width;
-  canvas.height = height;
+  if (canvas.width !== width) {
+    canvas.width = width;
+  }
+  if (canvas.height !== height) {
+    canvas.height = height;
+  }
 
   return {
     draw(snapshot: RenderSnapshot) {
@@ -1347,135 +1300,6 @@ function getSurfaceBackingSize(metrics: SurfaceMetrics): { width: number; height
   };
 }
 
-function createPanelDriver(
-  host: ThreePanelHost,
-  runtime: DisplayRuntime,
-  pointerClaimPolicy: PointerClaimPolicy | undefined,
-  pointerSources: readonly ThreePointerSource[] | undefined,
-  pointerPresenter: PointerPresenter | readonly PointerPresenter[] | undefined
-): ThreePanelDriver {
-  const interactor = createPanelInteractor({
-    runtime,
-    mesh: host.mesh,
-    getSurfaceMetrics: () => host.getSurfaceMetrics(),
-    ...(pointerClaimPolicy === undefined ? {} : { pointerClaimPolicy })
-  });
-  const sources = pointerSources ?? [];
-  const presenters = Array.isArray(pointerPresenter)
-    ? [...pointerPresenter]
-    : pointerPresenter
-      ? [pointerPresenter]
-      : [];
-  const compositePresenters = new Map<string, ThreeTextureCompositePresenter>();
-  let latestHit: ThreePanelHit | null = null;
-  let latestCompositeRenderRevision = -1;
-  let latestCompositeHostVisible = false;
-
-  return {
-    host,
-    interactor,
-    attach() {
-      host.attach();
-    },
-    update(frame) {
-      if (sources.length > 0 && (frame.events?.length ?? 0) > 0) {
-        throw new Error(
-          "Panel drivers accept either frame.events or pointerSources in a given frame, not both."
-        );
-      }
-
-      host.update(frame);
-      latestHit = host.getHit();
-
-      for (const source of sources) {
-        for (const sample of source.sample(frame)) {
-          const result = interactor.process(sample, frame);
-          latestHit = result.hit;
-          const state = interactor.getPointerState(sample.pointerId) ?? {
-            pointerId: sample.pointerId,
-            claimed: false,
-            blocked: false,
-            hit: null,
-            active: false
-          };
-          for (const presenter of presenters) {
-            presenter.update(state);
-          }
-        }
-      }
-
-      syncCompositePresentersAfterRender(host.render());
-    },
-    detach() {
-      interactor.clear();
-      for (const source of sources) {
-        source.clear?.();
-      }
-      for (const presenter of presenters) {
-        presenter.dispose();
-      }
-      for (const presenter of compositePresenters.values()) {
-        presenter.dispose();
-      }
-      compositePresenters.clear();
-      host.detach();
-    },
-    render() {
-      const snapshot = host.render();
-      syncCompositePresentersAfterRender(snapshot);
-      return snapshot;
-    },
-    getHit() {
-      return latestHit ? { ...latestHit } : null;
-    },
-    getCompositeSurfaces() {
-      return host.getCompositeSurfaces();
-    },
-    getPointerState(pointerId) {
-      return interactor.getPointerState(pointerId);
-    },
-    clearPointer(pointerId) {
-      interactor.clear(pointerId);
-    }
-  };
-
-  function syncCompositePresentersAfterRender(snapshot: RenderSnapshot): void {
-    const visibleChanged = host.mesh.visible !== latestCompositeHostVisible;
-    latestCompositeHostVisible = host.mesh.visible;
-    if (snapshot.revision === latestCompositeRenderRevision && !visibleChanged) {
-      return;
-    }
-    latestCompositeRenderRevision = snapshot.revision;
-    syncCompositePresenters();
-  }
-
-  function syncCompositePresenters(): void {
-    const activeKeys = new Set<string>();
-    for (const placement of resolveCompositeSurfacePlacements(host)) {
-      if (!isThreeTextureSurfaceHandle(placement.command.handle)) {
-        continue;
-      }
-      const key = `${placement.componentId}\n${placement.sourceId ?? ""}`;
-      activeKeys.add(key);
-      let presenter = compositePresenters.get(key);
-      if (!presenter) {
-        presenter = createThreeTextureCompositePresenter(host, {
-          componentId: placement.componentId,
-          ...(placement.sourceId === undefined ? {} : { sourceId: placement.sourceId })
-        });
-        compositePresenters.set(key, presenter);
-      }
-      presenter.update(host);
-    }
-
-    for (const [key, presenter] of compositePresenters) {
-      if (!activeKeys.has(key)) {
-        presenter.mesh.visible = false;
-      }
-    }
-  }
-}
-
 function createTransportPointerSource(
   transport: ThreePointerTransport,
   resolve: ThreePointerSourceResolver
@@ -1494,71 +1318,6 @@ function createTransportPointerSource(
       }));
     }
   };
-}
-
-function updateCapturedPointerState(
-  capturedPointers: Set<string>,
-  pointerId: string,
-  type: ThreePanelHostInputEvent["type"],
-  hasTargetHit: boolean
-): boolean {
-  let hasCapturedPress = capturedPointers.has(pointerId);
-  if (type === "pointer-down") {
-    if (hasTargetHit) {
-      capturedPointers.add(pointerId);
-      return true;
-    }
-
-    capturedPointers.delete(pointerId);
-    return false;
-  }
-
-  if (type === "pointer-up" || type === "cancel") {
-    capturedPointers.delete(pointerId);
-  }
-
-  return hasCapturedPress;
-}
-
-function resolvePointerClaim(
-  policy: PointerClaimPolicy,
-  hasTargetHit: boolean,
-  hasCapturedPress: boolean
-): boolean {
-  switch (policy) {
-    case "block-on-press":
-      return hasCapturedPress;
-    case "passthrough":
-    case "manual":
-      return hasTargetHit || hasCapturedPress;
-    case "block-on-hit":
-    default:
-      return hasTargetHit || hasCapturedPress;
-  }
-}
-
-function resolvePointerBlocking(
-  policy: PointerClaimPolicy,
-  hasTargetHit: boolean,
-  hasCapturedPress: boolean
-): boolean {
-  switch (policy) {
-    case "passthrough":
-    case "manual":
-      return false;
-    case "block-on-press":
-      return hasCapturedPress;
-    case "block-on-hit":
-    default:
-      return hasTargetHit || hasCapturedPress;
-  }
-}
-
-function hasResolvedRuntimeTarget(
-  componentId: string | undefined,
-  targetId: string | undefined
-): boolean {
-  return typeof componentId === "string" && typeof targetId === "string";
 }
 
 function getCameraViewPlane(
@@ -1624,252 +1383,6 @@ function toWorldTransform(object: THREE.Object3D): ThreeStaticTransform {
   };
 }
 
-function resolvePointerSampleHit(
-  frame: ThreePanelHostFrame,
-  sample: ThreePointerSample,
-  mesh: ThreePanelMesh,
-  metrics: SurfaceMetrics,
-  raycaster: THREE.Raycaster
-): { surfaceX: number; surfaceY: number; distance: number } | null {
-  if (!mesh.visible) {
-    return null;
-  }
-
-  switch (sample.transport) {
-    case "surface":
-      if (
-        sample.surfaceX === undefined ||
-        sample.surfaceY === undefined ||
-        !isSurfacePointInBounds(sample.surfaceX, sample.surfaceY, metrics)
-      ) {
-        return null;
-      }
-
-      return {
-        surfaceX: sample.surfaceX,
-        surfaceY: sample.surfaceY,
-        distance: 0
-      };
-    case "screen": {
-      if (!frame.camera || sample.ndcX === undefined || sample.ndcY === undefined) {
-        return null;
-      }
-
-      raycaster.setFromCamera(new THREE.Vector2(sample.ndcX, sample.ndcY), frame.camera);
-      const hit = raycaster.intersectObject(mesh, false)[0];
-      return hit ? toSurfaceHit(hit, metrics) : null;
-    }
-    case "ray": {
-      if (!sample.origin || !sample.direction) {
-        return null;
-      }
-
-      raycaster.ray.origin.set(sample.origin.x, sample.origin.y, sample.origin.z);
-      raycaster.ray.direction
-        .set(sample.direction.x, sample.direction.y, sample.direction.z)
-        .normalize();
-      const hit = raycaster.intersectObject(mesh, false)[0];
-      return hit ? toSurfaceHit(hit, metrics) : null;
-    }
-    case "contact":
-      return sample.contactPoint
-        ? toContactSurfaceHit(mesh, metrics, sample.contactPoint, sample.contactNormal)
-        : null;
-  }
-}
-
-function toContactSurfaceHit(
-  mesh: ThreePanelMesh,
-  metrics: SurfaceMetrics,
-  contactPoint: Vector3Like,
-  contactNormal?: Vector3Like
-): { surfaceX: number; surfaceY: number; distance: number } | null {
-  const localPoint = mesh.worldToLocal(new THREE.Vector3(contactPoint.x, contactPoint.y, contactPoint.z));
-  const geometry = mesh.geometry.parameters;
-  const panelWidth = geometry.width ?? 1;
-  const panelHeight = geometry.height ?? 1;
-  const halfWidth = panelWidth / 2;
-  const halfHeight = panelHeight / 2;
-  const contactPlaneTolerance = clampContactPlaneTolerance(panelWidth, panelHeight);
-  if (
-    localPoint.x < -halfWidth ||
-    localPoint.x > halfWidth ||
-    localPoint.y < -halfHeight ||
-    localPoint.y > halfHeight ||
-    Math.abs(localPoint.z) > contactPlaneTolerance
-  ) {
-    return null;
-  }
-
-  if (!isContactNormalAligned(mesh, contactNormal)) {
-    return null;
-  }
-
-  return {
-    surfaceX: ((localPoint.x + halfWidth) / panelWidth) * metrics.width,
-    surfaceY: ((halfHeight - localPoint.y) / panelHeight) * metrics.height,
-    distance: 0
-  };
-}
-
-function clampContactPlaneTolerance(panelWidth: number, panelHeight: number): number {
-  return Math.min(
-    Math.max(Math.min(panelWidth, panelHeight) * CONTACT_PLANE_TOLERANCE_RATIO, CONTACT_PLANE_TOLERANCE_MIN),
-    CONTACT_PLANE_TOLERANCE_MAX
-  );
-}
-
-function isContactNormalAligned(mesh: ThreePanelMesh, contactNormal?: Vector3Like): boolean {
-  if (!contactNormal) {
-    return true;
-  }
-
-  const worldContactNormal = new THREE.Vector3(contactNormal.x, contactNormal.y, contactNormal.z);
-  if (worldContactNormal.lengthSq() === 0) {
-    return true;
-  }
-
-  worldContactNormal.normalize();
-  const panelNormal = new THREE.Vector3(0, 0, 1).applyQuaternion(mesh.getWorldQuaternion(new THREE.Quaternion()));
-  return Math.abs(panelNormal.dot(worldContactNormal)) >= CONTACT_NORMAL_ALIGNMENT_MIN;
-}
-
-function createHostEventFromSample(
-  sample: ThreePointerSample,
-  hit: { surfaceX: number; surfaceY: number }
-): ThreePanelHostInputEvent {
-  const type = mapSamplePhaseToEventType(sample.phase);
-  const base = {
-    type,
-    timestamp: sample.timestamp,
-    pointerId: sample.pointerId,
-    pointerType: sample.pointerType,
-    ...(sample.pressure === undefined ? {} : { pressure: sample.pressure }),
-    ...(sample.modifiers === undefined ? {} : { modifiers: sample.modifiers }),
-    ...(sample.phase === "scroll"
-      ? {
-          deltaX: sample.deltaX ?? 0,
-          deltaY: sample.deltaY ?? 0
-        }
-      : {})
-  };
-
-  switch (sample.transport) {
-    case "screen":
-      return {
-        ...base,
-        source: "screen",
-        ndcX: sample.ndcX ?? 0,
-        ndcY: sample.ndcY ?? 0
-      };
-    case "ray":
-      return {
-        ...base,
-        source: "ray",
-        origin: sample.origin ?? { x: 0, y: 0, z: 0 },
-        direction: sample.direction ?? { x: 0, y: 0, z: -1 }
-      };
-    case "surface":
-    case "contact":
-      return {
-        ...base,
-        source: "surface",
-        surfaceX: hit.surfaceX,
-        surfaceY: hit.surfaceY
-      };
-  }
-}
-
-function createMissMoveHostEvent(sample: ThreePointerSample): ThreePanelHostInputEvent {
-  return createFallbackHostEvent(sample, "pointer-move");
-}
-
-function createCancelHostEvent(sample: ThreePointerSample): ThreePanelHostInputEvent {
-  return createFallbackHostEvent(sample, "cancel");
-}
-
-function createFallbackHostEvent(
-  sample: ThreePointerSample,
-  type: "pointer-move" | "cancel"
-): ThreePanelHostInputEvent {
-  const base = {
-    type,
-    timestamp: sample.timestamp,
-    pointerId: sample.pointerId,
-    pointerType: sample.pointerType,
-    ...(sample.pressure === undefined ? {} : { pressure: sample.pressure }),
-    ...(sample.modifiers === undefined ? {} : { modifiers: sample.modifiers })
-  };
-
-  switch (sample.transport) {
-    case "screen":
-      return {
-        ...base,
-        source: "screen",
-        ndcX: sample.ndcX ?? 0,
-        ndcY: sample.ndcY ?? 0
-      };
-    case "ray":
-      return {
-        ...base,
-        source: "ray",
-        origin: sample.origin ?? { x: 0, y: 0, z: 0 },
-        direction: sample.direction ?? { x: 0, y: 0, z: -1 }
-      };
-    case "surface":
-    case "contact":
-      return {
-        ...base,
-        source: "surface",
-        surfaceX: sample.surfaceX ?? -1,
-        surfaceY: sample.surfaceY ?? -1
-      };
-  }
-}
-
-function mapSamplePhaseToEventType(
-  phase: ThreePointerPhase
-): ThreePanelHostInputEvent["type"] {
-  switch (phase) {
-    case "move":
-      return "pointer-move";
-    case "down":
-      return "pointer-down";
-    case "up":
-      return "pointer-up";
-    case "cancel":
-      return "cancel";
-    case "scroll":
-      return "scroll";
-  }
-}
-
-function toSurfaceHit(
-  hit: THREE.Intersection<THREE.Object3D>,
-  metrics: SurfaceMetrics
-): { surfaceX: number; surfaceY: number; distance: number } {
-  return {
-    surfaceX: (hit.uv?.x ?? 0) * metrics.width,
-    surfaceY: (1 - (hit.uv?.y ?? 0)) * metrics.height,
-    distance: hit.distance
-  };
-}
-
-function isSurfacePointInBounds(surfaceX: number, surfaceY: number, metrics: SurfaceMetrics): boolean {
-  return surfaceX >= 0 && surfaceX <= metrics.width && surfaceY >= 0 && surfaceY <= metrics.height;
-}
-
-function defaultPointerType(source: ThreePanelHostInputEvent["source"]): PointerType {
-  switch (source) {
-    case "screen":
-      return "mouse";
-    case "ray":
-      return "ray";
-    case "surface":
-      return "touch";
-  }
-}
-
 function applyStaticTransform(mesh: ThreePanelMesh, transform: ThreeStaticTransform): void {
   mesh.position.set(
     transform.position?.x ?? mesh.position.x,
@@ -1885,50 +1398,4 @@ function applyStaticTransform(mesh: ThreePanelMesh, transform: ThreeStaticTransf
       transform.quaternion.w
     );
   }
-}
-
-function createRuntimeInputEvent(
-  event: ThreePanelHostInputEvent,
-  pointerId: string,
-  surfaceX: number,
-  surfaceY: number
-): InputEvent {
-  const base = createInputEventBase(event, pointerId, surfaceX, surfaceY);
-  if (event.type === "scroll") {
-    return {
-      ...base,
-      type: "scroll",
-      deltaX: event.deltaX ?? 0,
-      deltaY: event.deltaY ?? 0
-    };
-  }
-
-  return {
-    ...base,
-    type: event.type
-  };
-}
-
-function createCancelInputEvent(event: ThreePanelHostInputEvent, pointerId: string): InputEvent {
-  return {
-    ...createInputEventBase(event, pointerId, -1, -1),
-    type: "cancel"
-  };
-}
-
-function createInputEventBase(
-  event: ThreePanelHostInputEvent,
-  pointerId: string,
-  surfaceX: number,
-  surfaceY: number
-) {
-  return {
-    timestamp: event.timestamp,
-    pointerId,
-    pointerType: event.pointerType ?? defaultPointerType(event.source),
-    modifiers: event.modifiers ?? DEFAULT_MODIFIERS,
-    surfaceX,
-    surfaceY,
-    ...(event.pressure === undefined ? {} : { pressure: event.pressure })
-  };
 }

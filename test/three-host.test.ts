@@ -44,6 +44,7 @@ describe("three host adapters", () => {
 
     host.attach();
     host.update({
+      timestamp: 2,
       scene,
       camera,
       events: [
@@ -115,7 +116,7 @@ describe("three host adapters", () => {
     });
 
     session.attach();
-    session.update({ scene, camera });
+    session.update({ timestamp: 0, scene, camera });
     const down = coordinator.route({
       pointerId: "pointer",
       pointerType: "mouse",
@@ -124,7 +125,7 @@ describe("three host adapters", () => {
       timestamp: 1,
       ndcX: 0,
       ndcY: 0
-    }, { scene, camera });
+    }, { timestamp: 1, scene, camera });
     coordinator.route({
       pointerId: "pointer",
       pointerType: "mouse",
@@ -133,7 +134,7 @@ describe("three host adapters", () => {
       timestamp: 2,
       ndcX: 0,
       ndcY: 0
-    }, { scene, camera });
+    }, { timestamp: 2, scene, camera });
 
     expect(down).toMatchObject({
       ownerKey: "panel",
@@ -177,6 +178,7 @@ describe("three host adapters", () => {
 
     host.attach();
     host.update({
+      timestamp: 2,
       scene,
       anchorPose: pose,
       events: [
@@ -236,6 +238,7 @@ describe("three host adapters", () => {
 
     host.attach();
     host.update({
+      timestamp: 2,
       scene,
       camera,
       events: [
@@ -296,6 +299,7 @@ describe("three host adapters", () => {
     host.attach();
     const initialTexture = host.texture;
     host.update({
+      timestamp: 0,
       scene,
       camera,
       surfaceMetrics: {
@@ -354,6 +358,7 @@ describe("three host adapters", () => {
 
     host.attach();
     host.update({
+      timestamp: 0,
       scene,
       camera: xrCamera,
       surfaceMetrics: {
@@ -397,6 +402,7 @@ describe("three host adapters", () => {
 
     host.attach();
     host.update({
+      timestamp: 0,
       scene,
       camera
     });
@@ -443,7 +449,7 @@ describe("three host adapters", () => {
     });
 
     host.attach();
-    host.update({ scene, camera });
+    host.update({ timestamp: 0, scene, camera });
 
     expect(host.getCompositeSurfaces()).toHaveLength(1);
     expect(host.getCompositeSurfaces()[0]).toMatchObject({
@@ -514,7 +520,7 @@ describe("three host adapters", () => {
     });
 
     host.attach();
-    host.update({ scene, camera });
+    host.update({ timestamp: 0, scene, camera });
 
     expect(host.getCompositeSurfaces()).toHaveLength(1);
     expect(host.getCompositeSurfaces()[0]).toMatchObject({
@@ -574,7 +580,7 @@ describe("three host adapters", () => {
     });
 
     host.attach();
-    host.update({ scene, camera });
+    host.update({ timestamp: 0, scene, camera });
     expect(host.getCompositeSurfaces()).toHaveLength(0);
 
     host.render();
@@ -618,7 +624,7 @@ describe("three host adapters", () => {
     });
 
     host.attach();
-    host.update({ scene, camera });
+    host.update({ timestamp: 0, scene, camera });
 
     const placements = resolveCompositeSurfacePlacements(host);
     expect(placements).toHaveLength(1);
@@ -678,7 +684,7 @@ describe("three host adapters", () => {
     });
 
     host.attach();
-    host.update({ scene, camera });
+    host.update({ timestamp: 0, scene, camera });
     const initialClearCount = countOperations(recordingCanvas.operations, "clearRect");
 
     surfaces.publish("plot.main", {
@@ -729,7 +735,7 @@ describe("three host adapters", () => {
     });
 
     host.attach();
-    host.update({ scene, camera });
+    host.update({ timestamp: 0, scene, camera });
     presenter.update();
 
     expect(presenter.mesh.parent).toBe(host.mesh);
@@ -786,7 +792,7 @@ describe("three host adapters", () => {
     });
 
     driver.attach();
-    driver.update({ scene, camera });
+    driver.update({ timestamp: 0, scene, camera });
 
     const textureMeshes = driver.host.mesh.children.filter(
       (child): child is THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> => {
@@ -839,7 +845,7 @@ describe("three host adapters", () => {
     });
 
     host.attach();
-    host.update({ scene, camera });
+    host.update({ timestamp: 0, scene, camera });
     presenter.update();
 
     expect(host.mesh.material.depthTest).toBe(false);
