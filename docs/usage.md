@@ -582,6 +582,8 @@ function createHost(runtime: DisplayRuntime): HostAdapter {
       for (const event of frame.events ?? []) {
         runtime.dispatchInput(event);
       }
+
+      runtime.tick(frame.timestamp);
     },
     detach() {}
   };

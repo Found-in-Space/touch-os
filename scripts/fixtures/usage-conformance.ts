@@ -314,7 +314,6 @@ export function createGenericHost(runtime: DisplayRuntime): HostAdapter {
       if (!attached) {
         return;
       }
-      runtime.tick(frame.timestamp);
       runtime.resize({
         width: frame.viewport.width,
         height: frame.viewport.height
@@ -322,6 +321,7 @@ export function createGenericHost(runtime: DisplayRuntime): HostAdapter {
       for (const event of frame.events ?? []) {
         runtime.dispatchInput(event);
       }
+      runtime.tick(frame.timestamp);
     },
     detach() {
       attached = false;

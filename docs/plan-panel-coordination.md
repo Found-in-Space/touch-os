@@ -133,7 +133,8 @@ The coordinator should return a public routing result that tells the application
 
 - whether the sample was claimed
 - whether lower-priority interactions should be blocked
-- which panel, if any, currently owns the pointer
+- which panel, if any, handled the current routing step
+- which panel, if any, retains pressed-pointer ownership
 
 That makes the coordinator useful both for standalone panel interaction and for interoperability with broader application input systems.
 
@@ -153,10 +154,15 @@ interface CoordinatedPanel<TSample, TFrame> {
 }
 
 interface PointerRoutingResult {
+  panelKey: string | undefined;
   ownerKey: string | undefined;
+  claimed: boolean;
   blocked: boolean;
 }
 ```
+
+`panelKey` identifies the panel selected for the current routing step. `ownerKey`
+identifies retained ownership created by a successfully claimed press.
 
 This helper does not need to know the details of any one host system as long as the panel contract remains narrow and explicit.
 

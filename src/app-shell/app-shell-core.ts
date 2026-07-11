@@ -1104,7 +1104,6 @@ function createMissingRecord(session: AppShellSession): WindowManagerAppWindow {
     hostedSurfaceComponentId: `${session.appId}:${session.instanceId}:${session.id}:surface`,
     forwardAppOutputs: false,
     lastPublishedRevision: undefined,
-    lastPublishedContentSignature: undefined,
     lastPublishedWidth: undefined,
     lastPublishedHeight: undefined,
     active: false,

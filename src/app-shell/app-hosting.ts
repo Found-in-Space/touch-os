@@ -49,7 +49,6 @@ export interface WindowManagerAppWindow {
   hostedSurfaceComponentId: string;
   forwardAppOutputs: boolean;
   lastPublishedRevision: number | undefined;
-  lastPublishedContentSignature: string | undefined;
   lastPublishedWidth: number | undefined;
   lastPublishedHeight: number | undefined;
   active: boolean;
@@ -105,6 +104,7 @@ interface HostedAppSyncState {
 }
 
 const hostedAppSyncStates = new WeakMap<HostedAppWindow, HostedAppSyncState>();
+const publishedContentSignatures = new WeakMap<WindowManagerAppWindow, string>();
 
 /** @internal Carries an enclosing same-runtime app namespace into a nested shell. */
 export const appShellOutputScopeKey: unique symbol = Symbol("touch-os.app-shell-output-scope");
@@ -122,7 +122,6 @@ export function createWindowManagerAppWindow(
     hostedSurfaceComponentId: `${namespacePrefix}surface`,
     forwardAppOutputs: options.forwardAppOutputs ?? false,
     lastPublishedRevision: undefined,
-    lastPublishedContentSignature: undefined,
     lastPublishedWidth: undefined,
     lastPublishedHeight: undefined,
     active: false,
@@ -224,12 +223,13 @@ export function unpublishHostedAppWindow(
     record.lastPublishedWidth === undefined &&
     record.lastPublishedHeight === undefined
   ) {
+    publishedContentSignatures.delete(record);
     return;
   }
 
   surfaces.unpublish(record.hosted.surfaceSourceId);
   record.lastPublishedRevision = undefined;
-  record.lastPublishedContentSignature = undefined;
+  publishedContentSignatures.delete(record);
   record.lastPublishedWidth = undefined;
   record.lastPublishedHeight = undefined;
 }
@@ -246,7 +246,7 @@ export function publishHostedAppWindow(
   const metrics = record.hosted.runtime.getServices().surface.getMetrics();
   const contentSignature = createSnapshotContentSignature(snapshot);
   if (
-    record.lastPublishedContentSignature === contentSignature &&
+    publishedContentSignatures.get(record) === contentSignature &&
     record.lastPublishedWidth === metrics.width &&
     record.lastPublishedHeight === metrics.height
   ) {
@@ -254,7 +254,7 @@ export function publishHostedAppWindow(
   }
 
   record.lastPublishedRevision = snapshot.revision;
-  record.lastPublishedContentSignature = contentSignature;
+  publishedContentSignatures.set(record, contentSignature);
   record.lastPublishedWidth = metrics.width;
   record.lastPublishedHeight = metrics.height;
   surfaces.publish(record.hosted.surfaceSourceId, {
