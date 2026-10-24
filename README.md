@@ -225,7 +225,15 @@ Planned but not shipped yet:
 - `npm run typecheck` runs TypeScript without emitting
 - `npm run example:build` builds the Three.js example app
 - `npm run example:living-room` runs the Three.js example app
+- `npm run test:e2e` runs the real Canvas/WebGL browser tests
 - `npm run verify:release` runs the complete stable-release gate, including coverage, packed-package, example, browser-rendering, and production-audit checks
+
+The WebGL browser tests use an explicit SwiftShader backend so screenshots and
+shader compilation work consistently on headless hosts without a GPU. Canvas2D
+fixtures retain their default rendering path and exact-image checks. The fractal test
+still reopens the app five times and checks the rendered image's color variety,
+contrast and saturation; it also fails on shader errors or context loss.
+Software rendering does not establish physical GPU or headset acceptance.
 
 ## CI, Pages, And Release Automation
 

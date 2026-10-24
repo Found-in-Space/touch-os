@@ -1,6 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { inflateSync } from "node:zlib";
 
+// Select a real software WebGL backend on headless hosts, as in the interaction
+// tests. Keep Canvas2D's exact-image fixtures on their default rendering path.
+test.use({ launchOptions: { args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] } });
+
 const ARM_FRACTAL_ICON_ID = "arm-os:home:open:space-found-living-room-fractal-art";
 const ARM_HOME_CONTROL_ID = "arm-os:tablet-screen:home-control";
 const REOPEN_ATTEMPTS = 5;
@@ -54,6 +58,12 @@ test("arm tablet Fractal Art reopens reliably and renders a GPU composite", asyn
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => {
     pageErrors.push(error.message);
+  });
+  page.on("console", (message) => {
+    // Shader failures and context loss may never raise a JavaScript pageerror.
+    if (/(?:THREE\.WebGL|WebGL:).*(?:Error|INVALID_|CONTEXT_LOST)/s.test(message.text())) {
+      pageErrors.push(message.text());
+    }
   });
 
   await page.goto("/?touchOsTest=1", { waitUntil: "domcontentloaded" });
