@@ -30,6 +30,7 @@ const DIRECTION_ORDER: readonly DPadDirection[] = ["up", "left", "right", "down"
 
 const DPadComponent: DisplayComponent<DPadProps, DPadState> = {
   kind: "d-pad",
+  gesture: "activate",
   mount(ctx) {
     syncFocusableRegistration(
       ctx,

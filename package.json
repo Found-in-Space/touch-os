@@ -1,10 +1,12 @@
 {
   "name": "@found-in-space/touch-os",
-  "version": "0.3.0",
+  "version": "0.4.0-alpha.0",
   "description": "A virtual-device UI runtime for shared surfaces in games, XR, simulations, and 3D apps.",
   "license": "MIT",
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/hosts/interaction-three.js"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Found-in-Space/touch-os.git"
@@ -72,6 +74,10 @@
     "./adapters/schema": {
       "types": "./dist/adapters/schema.d.ts",
       "import": "./dist/adapters/schema.js"
+    },
+    "./interaction": {
+      "types": "./dist/interaction/index.d.ts",
+      "import": "./dist/interaction/index.js"
     }
   },
   "scripts": {
@@ -89,15 +95,20 @@
     "verify:release": "npm run typecheck && npm run test:coverage && npm run test:package && npm run example:build && npm run test:e2e && npm audit --audit-level=high && npm audit --omit=dev --audit-level=high"
   },
   "peerDependencies": {
-    "three": ">=0.170.0 <1"
+    "three": ">=0.170.0 <1",
+    "@pmndrs/pointer-events": "6.6.32"
   },
   "peerDependenciesMeta": {
     "three": {
+      "optional": true
+    },
+    "@pmndrs/pointer-events": {
       "optional": true
     }
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
+    "@pmndrs/pointer-events": "6.6.32",
     "@types/three": "^0.180.0",
     "@vitest/coverage-v8": "^3.2.7",
     "three": "^0.180.0",

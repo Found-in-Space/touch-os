@@ -294,6 +294,9 @@ These are intentionally not shipped in the current release line:
 
 Those areas are tracked in:
 
+- [plan-interaction-reengineering.md](./plan-interaction-reengineering.md): the
+  implemented development interaction architecture, shared scene routing and public
+  input/target adapters; see [interaction.md](./interaction.md) for usage and release limits.
 - [plan-browser-hosts.md](./plan-browser-hosts.md)
 - [plan-movable-components.md](./plan-movable-components.md)
 - [plan-presentation-variants.md](./plan-presentation-variants.md)

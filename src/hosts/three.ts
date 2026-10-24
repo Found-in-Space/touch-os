@@ -246,6 +246,8 @@ export interface ThreePanelHost extends HostAdapter<ThreePanelHostFrame> {
   readonly texture: THREE.CanvasTexture;
   readonly material: THREE.MeshBasicMaterial;
   readonly canvas: CanvasLike;
+  /** Placement only: environments schedule timing, dispatch and rendering afterwards. */
+  prepare(frame: ThreePanelHostFrame): void;
   render(): RenderSnapshot;
   getHit(): ThreePanelHit | null;
   getSurfaceMetrics(): SurfaceMetrics;
@@ -646,6 +648,7 @@ function createScenePanelHostInternal(options: ThreePanelHostOptions): ThreePane
     update(frame) {
       updateFrame(frame, true, options.renderOnUpdate ?? true);
     },
+    prepare(frame) { updateFrame(frame, false, false); },
     updateForDriver(frame) {
       updateFrame(frame, false, false);
     },
@@ -1399,3 +1402,15 @@ function applyStaticTransform(mesh: ThreePanelMesh, transform: ThreeStaticTransf
     );
   }
 }
+
+export { createThreeUIEnvironment } from "./interaction-environment.js";
+export type { ThreeUIEnvironment, ThreePanelView, ThreePanelViewOptions } from "./interaction-environment.js";
+export { createThreeInteractionContext, createThreeInteractionResolver } from "./interaction-three.js";
+export type { ThreeInteractionOptions } from "./interaction-three.js";
+export { blocksInteractionRay } from "./interaction-occlusion.js";
+export type { ThreeInteractionOcclusion } from "./interaction-occlusion.js";
+export { createThreePanelTarget } from "./interaction-panel.js";
+export { createThreePointerFeedback } from "./interaction-feedback.js";
+export type { InteractionPresenter } from "./interaction-feedback.js";
+export { createDesktopInteractionInput, createWebXRInteractionInput } from "./interaction-input.js";
+export type { InteractionInputAdapter, InteractionInputFrame } from "./interaction-input.js";

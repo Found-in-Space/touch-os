@@ -334,7 +334,8 @@ export function createHostedAppInputEvent(
         ...base,
         type: "pointer-up",
         surfaceX,
-        surfaceY
+        surfaceY,
+        ...(event.activationAllowed === undefined ? {} : { activationAllowed: event.activationAllowed })
       };
     case "pointer-leave":
     case "cancel":

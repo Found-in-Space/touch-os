@@ -97,6 +97,9 @@ export interface RuntimeChildDescriptor {
 
 export interface DisplayComponent<Props, State = undefined> {
   kind: string;
+  /** Used by runtime gesture arbitration, independent of the input host. */
+  gesture?: "activate" | "continuous" | "scroll";
+  multipleEditors?: boolean;
   mount?(ctx: ComponentMountContext<Props, State>): State | void;
   update?(ctx: ComponentUpdateContext<Props, State>): void;
   getChildren?(ctx: ComponentChildrenContext<Props, State>): readonly DisplayNode<unknown, unknown>[];

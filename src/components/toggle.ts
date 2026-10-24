@@ -11,6 +11,7 @@ export interface ToggleProps {
 
 const ToggleComponent: DisplayComponent<ToggleProps> = {
   kind: "toggle",
+  gesture: "activate",
   mount(ctx) {
     syncFocusableRegistration(ctx, !(ctx.props.disabled ?? false), `${ctx.id}:switch`);
   },

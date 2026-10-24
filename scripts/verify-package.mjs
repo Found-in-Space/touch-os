@@ -4,6 +4,8 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
+  closeSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -26,6 +28,7 @@ const nonThreeEntrypoints = [
   "@found-in-space/touch-os/containers",
   "@found-in-space/touch-os/services",
   "@found-in-space/touch-os/coordination",
+  "@found-in-space/touch-os/interaction",
   "@found-in-space/touch-os/apps",
   "@found-in-space/touch-os/app-shell",
   "@found-in-space/touch-os/window-manager",
@@ -38,12 +41,13 @@ try {
   mkdirSync(packDirectory, { recursive: true });
   mkdirSync(consumerDirectory, { recursive: true });
 
-  const packResult = JSON.parse(run("npm", [
+  const packResponse = JSON.parse(run("npm", [
     "pack",
     "--json",
     "--pack-destination",
     packDirectory
   ], repositoryRoot));
+  const packResult = Array.isArray(packResponse) ? packResponse : Object.values(packResponse);
   const packedFilename = packResult[0]?.filename;
   if (typeof packedFilename !== "string") {
     throw new Error("npm pack did not report a packed filename.");
@@ -78,11 +82,15 @@ try {
       `import * as entry${index} from ${JSON.stringify(entrypoint)};`
     ).join("\n")}\n` +
       `const entries = [${nonThreeEntrypoints.map((_, index) => `entry${index}`).join(", ")}];\n` +
+      `if (globalThis.pointerEventspointerMap !== undefined) throw new Error("Headless imports loaded pointer-events.");\n` +
       `if (entries.some((entry) => typeof entry !== "object")) throw new Error("Invalid ESM entrypoint.");\n`
   );
   run(process.execPath, ["non-three.mjs"], consumerDirectory);
 
   const consumerThreePath = join(consumerDirectory, "node_modules", "three");
+  const pointerPath = join(consumerDirectory, "node_modules", "@pmndrs", "pointer-events");
+  mkdirSync(dirname(pointerPath), { recursive: true });
+  symlinkDirectory(join(repositoryRoot, "node_modules", "@pmndrs", "pointer-events"), pointerPath);
   const consumerTypesPath = join(consumerDirectory, "node_modules", "@types", "three");
   mkdirSync(dirname(consumerTypesPath), { recursive: true });
   symlinkDirectory(join(repositoryRoot, "node_modules", "three"), consumerThreePath);
@@ -145,11 +153,11 @@ try {
 }
 
 function run(command, args, cwd) {
-  return execFileSync(command, args, {
-    cwd,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "inherit"]
-  });
+  const output = join(temporaryRoot, "command-output.txt");
+  const fd = openSync(output, "w");
+  try { execFileSync(command, args, { cwd, stdio: ["ignore", fd, "inherit"] }); }
+  finally { closeSync(fd); }
+  return readFileSync(output, "utf8");
 }
 
 function symlinkDirectory(source, destination) {

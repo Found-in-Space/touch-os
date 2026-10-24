@@ -5,6 +5,7 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
+        interaction: new URL("./interaction.html", import.meta.url).pathname,
         main: new URL("./index.html", import.meta.url).pathname,
         rendering: new URL("./render-fixture.html", import.meta.url).pathname
       }

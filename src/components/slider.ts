@@ -1,3 +1,4 @@
+import { createContinuousValueBehavior, type ContinuousValueBehavior } from "../interaction/behaviors.js";
 import { type DisplayComponent, type DisplayNode, createNode } from "../core/component.js";
 import { clamp, createRect, rectContainsPoint } from "../core/geometry.js";
 import type { ThemeTokens } from "../services/contracts.js";
@@ -12,24 +13,19 @@ import {
 export type { SliderProps, SliderValueLabel } from "./slider-contract.js";
 
 interface SliderState {
-  dragging: boolean;
-  hovered: boolean;
-  lastEmittedValue: number | undefined;
+  editing: ContinuousValueBehavior;
 }
 
 const SliderComponent: DisplayComponent<SliderProps, SliderState> = {
   kind: "slider",
+  gesture: "continuous",
   mount(ctx) {
     syncFocusableRegistration(
       ctx,
       !(normalizeSliderProps(ctx.props, `Slider "${ctx.id}"`).disabled ?? false),
       `${ctx.id}:thumb`
     );
-    return {
-      dragging: false,
-      hovered: false,
-      lastEmittedValue: undefined
-    };
+    return { editing: createContinuousValueBehavior() };
   },
   update(ctx) {
     const props = normalizeSliderProps(ctx.props, `Slider "${ctx.id}"`);
@@ -38,9 +34,7 @@ const SliderComponent: DisplayComponent<SliderProps, SliderState> = {
       return;
     }
 
-    ctx.state.dragging = false;
-    ctx.state.hovered = false;
-    ctx.state.lastEmittedValue = undefined;
+    ctx.state.editing.cancel();
   },
   measure(ctx) {
     const theme = ctx.services.theme.getTokens();
@@ -60,7 +54,7 @@ const SliderComponent: DisplayComponent<SliderProps, SliderState> = {
     const fillWidth = Math.max(0, track.width * ratio);
     const accentFill = props.disabled
       ? theme.borderColor
-      : ctx.state.dragging || ctx.state.hovered
+      : ctx.state.editing.dragging || ctx.state.editing.hovered
         ? theme.accentColor
         : theme.borderColor;
     const trackStroke = props.disabled ? theme.borderColor : theme.borderColor;
@@ -145,33 +139,19 @@ const SliderComponent: DisplayComponent<SliderProps, SliderState> = {
   },
   handleEvent(ctx) {
     const props = normalizeSliderProps(ctx.props, `Slider "${ctx.id}"`);
-    switch (ctx.event.type) {
-      case "pointer-enter":
-      case "pointer-move":
-        ctx.state.hovered = true;
-        break;
-      case "pointer-leave":
-        ctx.state.hovered = false;
-        break;
-      case "pointer-down":
-        ctx.state.dragging = true;
-        ctx.state.lastEmittedValue = props.value;
-        if (ctx.event.targetId === `${ctx.id}:track`) {
-          emitSliderValue(ctx, props, ctx.event.localX);
-        }
-        break;
-      case "pointer-up":
-      case "drag-end":
-      case "cancel":
-        ctx.state.dragging = false;
-        ctx.state.lastEmittedValue = undefined;
-        break;
-      case "drag-move":
-        emitSliderValue(ctx, props, ctx.event.localX);
-        break;
-    }
+    if (!("timestamp" in ctx.event) || ctx.event.type === "system-command") return;
+    const track = getTrackRect(ctx.bounds, ctx.services.theme.getTokens());
+    ctx.state.editing.handle(ctx.event, {
+      disabled: props.disabled,
+      value: props.value,
+      map: x => valueFromLocalX(x, track.width, track.x - ctx.bounds.x, props),
+      change(value, phase) {
+        ctx.emit({ type: "change-request", componentId: ctx.id, field: props.field, value, phase });
+      }
+    });
   },
   dispose(ctx) {
+    ctx.state.editing.cancel();
     clearFocusableRegistration(ctx);
   }
 };
@@ -251,24 +231,4 @@ function valueFromLocalX(
   const raw = props.min + ratio * (props.max - props.min);
   const step = props.step ?? 1;
   return normalizeSliderValue(raw, props.min, props.max, step);
-}
-
-function emitSliderValue(
-  ctx: Parameters<NonNullable<DisplayComponent<SliderProps, SliderState>["handleEvent"]>>[0],
-  props: SliderProps,
-  localX: number
-): void {
-  const track = getTrackRect(ctx.bounds, ctx.services.theme.getTokens());
-  const nextValue = valueFromLocalX(localX, track.width, track.x - ctx.bounds.x, props);
-  if (ctx.state.lastEmittedValue === nextValue) {
-    return;
-  }
-
-  ctx.state.lastEmittedValue = nextValue;
-  ctx.emit({
-    type: "change-request",
-    componentId: ctx.id,
-    field: props.field,
-    value: nextValue
-  });
 }

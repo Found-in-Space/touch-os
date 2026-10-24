@@ -1,4 +1,5 @@
-import { type DisplayComponent, type DisplayNode, createNode } from "../core/component.js";
+import { createDragBehavior, type DragBehavior } from "../interaction/behaviors.js";
+import { type DisplayComponent, type DisplayNode, createNode, isDisplayEvent } from "../core/component.js";
 import type { DrawCommand } from "../core/draw.js";
 import { createRect, type Insets, type LayoutConstraints } from "../core/geometry.js";
 import { layoutVerticalChildren, measureVerticalChildren, resolvePadding } from "./shared.js";
@@ -12,17 +13,18 @@ export interface ScrollContainerProps {
 }
 
 interface ScrollContainerState {
-  dragging: boolean;
+  drag: DragBehavior;
   dragStartOffsetX: number;
   dragStartOffsetY: number;
 }
 
 const ScrollContainerComponent: DisplayComponent<ScrollContainerProps, ScrollContainerState> = {
   kind: "scroll-container",
+  gesture: "scroll",
   mount(ctx) {
     ctx.services.scroll.register(ctx.id);
     return {
-      dragging: false,
+      drag: createDragBehavior(),
       dragStartOffsetX: 0,
       dragStartOffsetY: 0
     };
@@ -167,33 +169,18 @@ const ScrollContainerComponent: DisplayComponent<ScrollContainerProps, ScrollCon
     return ctx.bounds.width > 0 && ctx.bounds.height > 0 ? { targetId: `${ctx.id}:viewport` } : null;
   },
   handleEvent(ctx) {
-    switch (ctx.event.type) {
-      case "scroll":
-        ctx.services.scroll.scrollBy(ctx.id, 0, ctx.event.deltaY);
-        break;
-      case "drag-start": {
-        const scrollState = ctx.services.scroll.getState(ctx.id);
-        ctx.state.dragging = true;
-        ctx.state.dragStartOffsetX = scrollState.offsetX;
-        ctx.state.dragStartOffsetY = scrollState.offsetY;
-        break;
+    if (!isDisplayEvent(ctx.event)) return;
+    if (ctx.event.type === "scroll") ctx.services.scroll.scrollBy(ctx.id, 0, ctx.event.deltaY);
+    ctx.state.drag.handle(ctx.event, {
+      begin() {
+        const state = ctx.services.scroll.getState(ctx.id);
+        ctx.state.dragStartOffsetX = state.offsetX;
+        ctx.state.dragStartOffsetY = state.offsetY;
+      },
+      update(deltaX, deltaY) {
+        ctx.services.scroll.setOffset(ctx.id, ctx.state.dragStartOffsetX - deltaX, ctx.state.dragStartOffsetY - deltaY);
       }
-      case "drag-move":
-        if (!ctx.state.dragging) {
-          return;
-        }
-        ctx.services.scroll.setOffset(
-          ctx.id,
-          ctx.state.dragStartOffsetX - ctx.event.deltaX,
-          ctx.state.dragStartOffsetY - ctx.event.deltaY
-        );
-        break;
-      case "drag-end":
-      case "cancel":
-      case "pointer-leave":
-        ctx.state.dragging = false;
-        break;
-    }
+    });
   }
 };
 

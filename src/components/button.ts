@@ -1,3 +1,4 @@
+import { createActivationBehavior, type ActivationBehavior } from "../interaction/behaviors.js";
 import { type DisplayComponent, type DisplayNode, createNode } from "../core/component.js";
 import { rectContainsPoint } from "../core/geometry.js";
 import { clearFocusableRegistration, syncFocusableRegistration } from "./focusable.js";
@@ -9,21 +10,17 @@ export interface ButtonProps {
   disabled?: boolean;
 }
 
-interface ButtonState {
-  hovered: boolean;
-  pressed: boolean;
-}
+interface ButtonState { interaction: ActivationBehavior }
 
 const ButtonComponent: DisplayComponent<ButtonProps, ButtonState> = {
   kind: "button",
+  gesture: "activate",
   mount(ctx) {
     syncFocusableRegistration(ctx, !(ctx.props.disabled ?? false), `${ctx.id}:face`);
-    return {
-      hovered: false,
-      pressed: false
-    };
+    return { interaction: createActivationBehavior() };
   },
   update(ctx) {
+    if (ctx.props.disabled) ctx.state.interaction.cancel();
     syncFocusableRegistration(ctx, !(ctx.props.disabled ?? false), `${ctx.id}:face`);
   },
   measure(ctx) {
@@ -38,9 +35,9 @@ const ButtonComponent: DisplayComponent<ButtonProps, ButtonState> = {
     const disabled = ctx.props.disabled ?? false;
     const fill = disabled
       ? theme.borderColor
-      : ctx.state.pressed
+      : ctx.state.interaction.pressed
         ? theme.accentColor
-        : ctx.state.hovered
+        : ctx.state.interaction.hovered
           ? theme.surfaceColor
           : theme.backgroundColor;
     const stroke =
@@ -78,34 +75,10 @@ const ButtonComponent: DisplayComponent<ButtonProps, ButtonState> = {
     return { targetId: `${ctx.id}:face`, role: "button-face" };
   },
   handleEvent(ctx) {
-    if (ctx.props.disabled) {
-      return;
-    }
-
-    switch (ctx.event.type) {
-      case "pointer-enter":
-        ctx.state.hovered = true;
-        break;
-      case "pointer-leave":
-        ctx.state.hovered = false;
-        ctx.state.pressed = false;
-        break;
-      case "pointer-down":
-        ctx.state.pressed = true;
-        break;
-      case "pointer-up":
-      case "cancel":
-        ctx.state.pressed = false;
-        break;
-      case "press":
-        ctx.state.pressed = false;
-        ctx.emit({
-          type: "action",
-          actionId: ctx.props.actionId,
-          componentId: ctx.id,
-          ...(ctx.props.payload ? { payload: ctx.props.payload } : {})
-        });
-        break;
+    if (!("timestamp" in ctx.event)) return;
+    if (ctx.state.interaction.handle(ctx.event, ctx.props.disabled)) {
+      ctx.emit({ type: "action", actionId: ctx.props.actionId, componentId: ctx.id,
+        ...(ctx.props.payload ? { payload: ctx.props.payload } : {}) });
     }
   },
   dispose(ctx) {

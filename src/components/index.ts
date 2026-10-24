@@ -26,3 +26,4 @@ export type { ToggleProps } from "./toggle.js";
 export { createToggle } from "./toggle.js";
 export type { ValueReadoutProps } from "./value-readout.js";
 export { createValueReadout } from "./value-readout.js";
+export { createDial, type DialProps } from "./dial.js";

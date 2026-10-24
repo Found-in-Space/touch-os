@@ -13,6 +13,7 @@ export interface ChangeRequestEvent<TValue = unknown> {
   componentId: string;
   field: string;
   value: TValue;
+  phase?: "begin" | "update" | "commit" | "cancel";
 }
 
 export interface NavigationRequestEvent {

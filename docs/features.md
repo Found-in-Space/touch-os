@@ -1,8 +1,17 @@
 # Features
 
-This document describes the current shipped feature set for `touch-os`.
+This document describes the current feature set for `touch-os`. The 0.4 APIs are a development prerelease until registry publication.
 
 It is intentionally scoped to what exists in the package today. Future work lives in the linked `plan-*` docs at the end.
+
+## Shared interaction (0.4 development)
+
+`/interaction` exports headless input/target/capture contracts, shared arbitration,
+activation and continuous-value behaviors, and authoritative value bindings.
+`/hosts/three` exports `createThreeUIEnvironment`, independent panel targets,
+desktop/WebXR input and a default beam/marker presenter over pointer-events 6.6.32.
+Sliders and dials share continuous editing, applied-value rendering and explicit
+edit lifecycle phases. See [interaction.md](./interaction.md).
 
 ## Core Runtime
 

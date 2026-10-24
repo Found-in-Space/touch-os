@@ -7,3 +7,4 @@ export * from "./app-shell/index.js";
 export * from "./window-manager/index.js";
 export * from "./coordination/index.js";
 export type { HostAdapter, HostFrame } from "./hosts/contracts.js";
+export * from "./interaction/index.js";

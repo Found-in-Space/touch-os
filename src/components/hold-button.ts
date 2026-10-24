@@ -18,6 +18,7 @@ interface HoldButtonState {
 
 const HoldButtonComponent: DisplayComponent<HoldButtonProps, HoldButtonState> = {
   kind: "hold-button",
+  gesture: "activate",
   mount(ctx) {
     syncFocusableRegistration(ctx, !(ctx.props.disabled ?? false), `${ctx.id}:face`);
     return {

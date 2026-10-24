@@ -12,6 +12,13 @@ It is designed for things like:
 
 The runtime stays headless and display-space-only. Hosts own environment-specific work such as scene placement, ray conversion, and native input translation.
 
+The 0.4 development path is [shared interaction](./docs/interaction.md): create one
+Three UI environment, then mount panels with content, bindings and placement.
+Panel and scene targets share arbitration, capture and standard beam/marker
+feedback. The standalone `/interaction.html` example shows two panels with
+sliders and dials. Registry publication and physical headset acceptance are
+separate from the implementation checks.
+
 ## What Ships Today
 
 - a strict TypeScript, ESM-only core runtime
@@ -34,6 +41,7 @@ The runtime stays headless and display-space-only. Hosts own environment-specifi
 | `@found-in-space/touch-os/components` | Built-in leaf components such as buttons, sliders, choice groups, graphs, and embedded surfaces. |
 | `@found-in-space/touch-os/containers` | Built-in containers such as row, column, stack, overlay, scroll, page, section, and dock layout. |
 | `@found-in-space/touch-os/services` | Runtime service contracts plus default in-memory implementations. |
+| `@found-in-space/touch-os/interaction` | Headless input, target, capture, routing, behaviors and applied-value binding. |
 | `@found-in-space/touch-os/coordination` | Generic ordered panel routing, fallthrough, and pointer ownership helpers. |
 | `@found-in-space/touch-os/apps` | Standard app bundle, app context, registry, and lifecycle helpers. |
 | `@found-in-space/touch-os/app-shell` | App shell core, sessions, desktop-window presentation, and tablet-home presentation. |
@@ -55,7 +63,7 @@ npm install @found-in-space/touch-os
 Core runtime plus the Three.js host:
 
 ```sh
-npm install @found-in-space/touch-os three
+npm install @found-in-space/touch-os@0.4.0-alpha.0 three @pmndrs/pointer-events@6.6.32
 ```
 
 ## Quick Start

@@ -2,6 +2,13 @@
 
 This document shows the supported integration patterns for `touch-os` today.
 
+## Mount interactive panels (0.4 development)
+
+Use [the shared interaction environment](./interaction.md) for new Three/XR
+integrations. It coordinates panel and scene targets, capture, feedback and
+lifecycle once. The older panel-only coordinator/driver patterns below remain
+for existing consumers during migration.
+
 ## Choose An Authoring Style
 
 `touch-os` supports two authoring styles:

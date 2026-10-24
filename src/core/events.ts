@@ -49,6 +49,8 @@ export interface PointerDownEvent extends PointerEventBase {
 
 export interface PointerUpEvent extends PointerEventBase {
   type: "pointer-up";
+  /** False completes editing/holds without synthesizing a press. Preserve when forwarding to child runtimes. */
+  activationAllowed?: boolean;
 }
 
 export interface PressEvent extends PointerEventBase {
@@ -132,6 +134,8 @@ export interface InputPointerEvent extends EventBase {
   type: "pointer-move" | "pointer-down" | "pointer-up" | "cancel";
   surfaceX: number;
   surfaceY: number;
+  /** On pointer-up, false vetoes press synthesis after shared host arbitration. Defaults to true. */
+  activationAllowed?: boolean;
 }
 
 export interface InputScrollEvent extends EventBase {

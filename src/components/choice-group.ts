@@ -36,6 +36,7 @@ const INDICATOR_SIZE = 16;
 
 const ChoiceGroupComponent: DisplayComponent<ChoiceGroupProps<string>, ChoiceGroupState> = {
   kind: "choice-group",
+  gesture: "activate",
   mount(ctx) {
     const props = normalizeChoiceGroupProps(ctx.props, `Choice group "${ctx.id}"`);
     syncFocusableRegistration(

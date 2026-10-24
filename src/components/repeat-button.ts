@@ -20,6 +20,7 @@ interface RepeatButtonState {
 
 const RepeatButtonComponent: DisplayComponent<RepeatButtonProps, RepeatButtonState> = {
   kind: "repeat-button",
+  gesture: "activate",
   mount(ctx) {
     syncFocusableRegistration(ctx, !(ctx.props.disabled ?? false), `${ctx.id}:face`);
     return {

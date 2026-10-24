@@ -31,6 +31,7 @@ interface EmbeddedSurfaceState {
 
 const EmbeddedSurfaceComponent: DisplayComponent<EmbeddedSurfaceProps, EmbeddedSurfaceState> = {
   kind: "embedded-surface",
+  gesture: "continuous",
   mount(ctx) {
     syncFocusableRegistration(
       ctx,

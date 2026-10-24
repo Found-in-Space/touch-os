@@ -249,6 +249,7 @@ describe("built-in controls", () => {
       type: "change-request",
       componentId: "track-slider",
       field: "brightness",
+      phase: "update",
       value: 80
     });
 
@@ -272,6 +273,7 @@ describe("built-in controls", () => {
       type: "change-request",
       componentId: "track-slider",
       field: "brightness",
+      phase: "update",
       value: 90
     });
   });
@@ -316,7 +318,7 @@ describe("built-in controls", () => {
       surfaceY: -1,
       timestamp: 3
     });
-    expect(cancelResult.outputs).toHaveLength(0);
+    expect(cancelResult.outputs).toContainEqual(expect.objectContaining({ type: "change-request", phase: "cancel" }));
 
     const afterCancelMove = runtime.dispatchInput({
       type: "pointer-move",

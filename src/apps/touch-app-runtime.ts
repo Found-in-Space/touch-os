@@ -149,6 +149,7 @@ export function createTouchAppRuntime<TState>(
     getInteraction() {
       return runtime.getInteraction();
     },
+    queryHit: runtime.queryHit,
     getBounds(componentId: string): Rect | undefined {
       syncSurfaceRoot();
       return runtime.getBounds(componentId);

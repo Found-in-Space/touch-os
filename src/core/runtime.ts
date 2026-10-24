@@ -150,6 +150,8 @@ export interface DisplayRuntime {
   getServices(): RuntimeServices;
   getInteraction(): RuntimeInteractionSnapshot;
   getBounds(componentId: string): Rect | undefined;
+  /** Pure display-space query. A componentId tests that component directly, ignoring ancestor clipping for capture validation. */
+  queryHit(point: Point, componentId?: string): { componentId: string; targetId: string } | undefined;
   isLayoutDirty(): boolean;
   isRenderDirty(): boolean;
   dispose(): void;
@@ -1210,6 +1212,15 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
             !pointer.dragging &&
             Math.hypot(deltaX, deltaY) >= resolveDragThreshold(pointer.pointerType)
           ) {
+            const scrollId = [...pointer.pathIds].reverse().find(id => nodeLookup.get(id)?.component.gesture === "scroll");
+            const hasContinuous = pointer.pathIds.some(id => nodeLookup.get(id)?.component.gesture === "continuous");
+            if (scrollId && !hasContinuous && Math.abs(deltaY) > Math.abs(deltaX) && services.scroll.getState(scrollId).maxOffsetY > 0) {
+              const losers = pointer.pathIds.filter(id => id !== scrollId);
+              dispatchToPath(losers, pointer.targetId, node => createPointerDisplayEvent("cancel", node, point, event.timestamp, pointer.targetId, metadata));
+              pointer.pathIds = pointer.pathIds.filter(id => id === scrollId || !nodeLookup.get(id)?.component.gesture);
+              pointer.componentId = scrollId;
+              pointer.targetId = `${scrollId}:viewport`;
+            }
             pointer.dragging = true;
             dispatchToPath(pointer.pathIds, pointer.targetId, (node) =>
               createPointerDisplayEvent(
@@ -1283,7 +1294,10 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
         const metadata = trackPointerInput(event, point);
         const match = hitTest(point);
         updateHover(point, event.timestamp, pointerId, metadata);
-        if (match) {
+        if (match && !Array.from(activePointers.values()).some(pointer => pointer.pointerId !== pointerId && pointer.componentId === match.componentId && nodeLookup.get(match.componentId)?.component.gesture === "continuous" && !nodeLookup.get(match.componentId)?.component.multipleEditors)) {
+          if (match.pathIds.some(id => nodeLookup.get(id)?.component.gesture === "continuous")) {
+            match.pathIds = match.pathIds.filter(id => nodeLookup.get(id)?.component.gesture !== "scroll");
+          }
           const activePointer: ActivePointerState = {
             ...metadata,
             startPoint: point,
@@ -1323,16 +1337,17 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
         if (releaseMatch) {
           const deltaX = point.x - releaseMatch.startPoint.x;
           const deltaY = point.y - releaseMatch.startPoint.y;
-          handled = dispatchToPath(releaseMatch.pathIds, releaseMatch.targetId, (node) =>
-            createPointerDisplayEvent(
+          handled = dispatchToPath(releaseMatch.pathIds, releaseMatch.targetId, (node) => ({
+            ...createPointerDisplayEvent(
               "pointer-up",
               node,
               point,
               event.timestamp,
               releaseMatch.targetId,
               metadata
-            )
-          );
+            ),
+            ...(event.activationAllowed === undefined ? {} : { activationAllowed: event.activationAllowed })
+          }));
           if (releaseMatch.dragging) {
             dispatchToPath(releaseMatch.pathIds, releaseMatch.targetId, (node) =>
               createPointerDisplayEvent(
@@ -1348,7 +1363,7 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
           }
 
           const match = hitTest(point);
-          if (shouldDispatchPress(releaseMatch, match, point)) {
+          if (event.activationAllowed !== false && shouldDispatchPress(releaseMatch, match, point)) {
             dispatchToPath(releaseMatch.pathIds, releaseMatch.targetId, (node) =>
               createPointerDisplayEvent(
                 "press",
@@ -1661,6 +1676,16 @@ export function createRuntime(options: RuntimeOptions): DisplayRuntime {
     getInteraction() {
       syncFocusEvents();
       return createInteractionSnapshot();
+    },
+    queryHit(point, componentId) {
+      if (componentId !== undefined) {
+        ensureLayout();
+        const node = nodeLookup.get(componentId);
+        const hit = node?.component.hitTest?.(createHitTestContext(node, point));
+        return hit ? { componentId, targetId: hit.targetId } : undefined;
+      }
+      const match = hitTest(point);
+      return match ? { componentId: match.componentId, targetId: match.targetId } : undefined;
     },
     getBounds(componentId) {
       ensureLayout();
